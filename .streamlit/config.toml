@@ -1,0 +1,15 @@
+[theme]
+primaryColor="#16A66A"
+backgroundColor="#F6F8FB"
+secondaryBackgroundColor="#FFFFFF"
+textColor="#14213D"
+font="sans serif"
+
+[server]
+headless = true
+runOnSave = false
+enableWebsocketCompression = false
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
