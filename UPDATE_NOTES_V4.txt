@@ -1,0 +1,10 @@
+FINAL V4 UPDATE
+
+Account registration change:
+- New Supervisor accounts are approved automatically at registration.
+- New Engineer accounts are approved automatically at registration.
+- New Administrator accounts are approved automatically at registration.
+- Users can sign in immediately after successful registration.
+- Existing roles, plant assignment, approvals/sign-off for maintenance inspections, reports, reminders, activity log, Neon database integration, and dashboard functionality are unchanged.
+
+Note: Supervisors still need a plant assignment to access plant-specific maintenance functions if the application requires one.

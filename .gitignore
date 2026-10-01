@@ -1,0 +1,15 @@
+# Secrets
+.streamlit/secrets.toml
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local database (not used in Neon version, but prevent accidental commits)
+*.db
+
+# Streamlit
+.streamlit/secrets.toml

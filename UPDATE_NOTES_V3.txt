@@ -1,0 +1,20 @@
+SOLAR MAINTENANCE SYSTEM - V3 UI UPDATE
+
+Changes in this version:
+1. Navigation moved from the left sidebar to a responsive top navigation bar.
+2. Plant selector, user information, notifications and sign-out are available at the top.
+3. Overview redesigned as a live operational dashboard matching the supplied reference style:
+   - Live solar plant map with panel/table GREEN/RED status.
+   - Grass-cutting status is reflected in zone borders and labels on the map.
+   - Panel cleaning, grass cutting and loss/repair status panels.
+   - Panel cleaning, grass cutting and inverter-wise detail cards.
+4. Dashboard worker filter now includes Engineers as well as Supervisors and other assigned users.
+5. Existing Engineer/Admin reports, PDF/Excel exports and Approvals & Sign-off remain available.
+6. Approval records retain Edit/Save and Delete controls for Engineers/Admins.
+7. Activity Log retains Edit/Delete controls for Engineers/Admins.
+8. Supervisor registration and Admin/Engineer registration remain separate and all new accounts require administrator approval.
+9. Technical Power BI configuration is not exposed in the user navigation.
+10. Dashboard cards and responsive styles remain compatible with light/dark system themes.
+11. Bulk status queries and cached plant-image loading are retained for faster dashboard refreshes.
+
+Keep the real .streamlit/secrets.toml outside source control and keep the existing working Neon DATABASE_URL.

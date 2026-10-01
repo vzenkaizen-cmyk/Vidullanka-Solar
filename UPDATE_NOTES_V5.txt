@@ -1,0 +1,9 @@
+FINAL V5 ROLE UPDATE
+
+The following four accounts are mapped to the Administrator role, which includes Engineer permissions: 
+- roshants@vidullanka.com
+- manchanayakeu@vidullanka.com
+- sampathr@vidullanka.com
+- damithab@vidullanka.com
+
+These accounts have all-plant access, inspection approval/sign-off, management report exports, and Activity Log edit/delete access, along with administrator functions. Other management and plant supervisor role mappings remain unchanged.

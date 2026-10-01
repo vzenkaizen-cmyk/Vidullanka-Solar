@@ -1,0 +1,26 @@
+FINAL NEON + ADMIN SETUP
+
+Create .streamlit\\secrets.toml:
+
+DATABASE_URL = "YOUR_NEON_CONNECTION_STRING"
+ADMIN_EMAIL = "samodas@vidullanka.com"
+ADMIN_PASSWORD = "YOUR_NEW_STRONG_PASSWORD"
+ENABLE_EMAIL = "false"
+SMTP_HOST = "smtp.office365.com"
+SMTP_PORT = "587"
+SMTP_USERNAME = ""
+SMTP_PASSWORD = ""
+SMTP_FROM = ""
+SMTP_USE_TLS = "true"
+POWERBI_PUSH_URL = ""
+
+Then run:
+  pip install -r requirements.txt
+  python reset_admin.py
+  streamlit run app.py
+
+Login:
+  samodas@vidullanka.com
+  password = ADMIN_PASSWORD from secrets.toml
+
+Do not commit secrets.toml.

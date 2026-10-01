@@ -1,0 +1,9 @@
+FINAL UPDATE - ACCOUNT APPROVAL REMOVED
+
+- Supervisor, Engineer, and Administrator accounts are created active immediately.
+- No administrator approval is required for newly registered accounts.
+- Login checks only whether the account is active.
+- Removed the user approval checkbox and account-approval count from Admin/User Management.
+- Existing legacy `users.approved` database column is retained for schema compatibility and is automatically kept TRUE.
+- Maintenance inspection approval/sign-off is unchanged: Engineers and Administrators can still approve or decline maintenance inspections and record electronic signatures.
+- Plant assignment and account active/inactive controls remain available to administrators.
