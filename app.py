@@ -481,10 +481,9 @@ def seed_database():
         # be updated later from Plants and the site staff section.
         configured_sites = [
             ("HOF", "HOF"),
-            ("MTR-I", "Matara I Solar Power Plant"),
-            ("MTR-II", "Matara II Solar Power Plant"),
-            ("HS1", "HS1 Solar Power Plant"),
-            ("HS2", "Horana II Solar Power Plant"),
+            ("MTR", "Matara Solar Power Plant"),
+            ("HRN 1", "Horana I Solar Power Plant"),
+            ("HRN 2 ", "Horana II Solar Power Plant"),
             ("MDP", "MDP Solar Power Plant"),
             ("ORK", "ORK Solar Power Plant"),
         ]
@@ -494,8 +493,8 @@ def seed_database():
                              inverter_count=10, table_count=80, zone_count=10, active=True))
         db.commit()
 
-        # HRN has been renamed to HS1 in the application. If an older Neon database
-        # still contains HRN, migrate it to HS1 without deleting the plant data.
+        # HS1  has been renamed to HRN1 in the application. If an older Neon database
+        # still contains HRN, migrate it to HRN1 without deleting the plant data.
         old_hrn = db.query(Plant).filter(Plant.code == "HRN").first()
         hs1_plant = db.query(Plant).filter(Plant.code == "HS1").first()
         if old_hrn and not hs1_plant:
@@ -1507,15 +1506,12 @@ def operations_staff_section(db, user, plant):
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
         defaults = {
-            "HOF": ("", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN1": ("HRN1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN2": ("HRN2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            
         }
         sup, eng, hof = defaults.get(plant.code.upper(), ("", "", "Mr. Mahela Wanigasooriya"))
         profile = PlantOperationsProfile(plant_id=plant.id, operating_staff_count=0,
@@ -1575,12 +1571,9 @@ def overview_context(db, user, plant, show_notifications=True, show_details=True
         # Use the approved operations contacts until an authorised user edits the site profile.
         code = (plant.code or "").upper().replace("_", "-").strip()
         defaults = {
-            "HOF": ("HOF In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN1": ("HRN1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN2": ("HRN2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
         }
@@ -1658,9 +1651,9 @@ def overview_context(db, user, plant, show_notifications=True, show_details=True
                 )
         specs = {
             "ORK": ["ORK (Monaragala)", "0.88 MW", "535 Wp × 1,870", "2279 × 1134 mm", "Mono", "100 kW × 8", "18 panels × 13 strings", "34 panels × 1 table + 36 panels × 51 tables", "1000 kVA 33 kV/400 V", "N/A", "18%", "Orik Corporation (Pvt) Ltd", "87%", "6.67 acres", "Pasindu"],
-            "HS1": ["HRN I (Horana)", "2 MW", "535 Wp × 4,480", "2285 × 1134 mm", "Mono", "200 kW × 10", "28 panels × 28 strings", "56 panels × 80 tables", "2200 kVA 33 kV/800 V", "10 kVA 230 V/800 V", "21%", "Vidulsolar (Pvt) Ltd", "100%", "8.99 acres", "Roshan"],
-            "HS2": ["HRN 2 (Horana)", "2 MW", "615 Wp × 4,060", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 7", "29 panels × 20 strings", "58 panels × 70 tables", "2250 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "20%", "Vidulsolar (Pvt) Ltd", "100%", "6.5 acres", "Roshan"],
-            "MTR-I": ["MTR (Matara)", "3 MW", "615 Wp × 6,160", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 10", "28 panels × 22 strings", "56 panels × 110 tables", "3300 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "21.04%", "Vidul Matara Solar Power (Pvt) Ltd", "100%", "10.5 acres", "Sudheera"],
+            "HRN1": ["HRN I (Horana)", "2 MW", "535 Wp × 4,480", "2285 × 1134 mm", "Mono", "200 kW × 10", "28 panels × 28 strings", "56 panels × 80 tables", "2200 kVA 33 kV/800 V", "10 kVA 230 V/800 V", "21%", "Vidulsolar (Pvt) Ltd", "100%", "8.99 acres", "Roshan"],
+            "HRN2": ["HRN 2 (Horana)", "2 MW", "615 Wp × 4,060", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 7", "29 panels × 20 strings", "58 panels × 70 tables", "2250 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "20%", "Vidulsolar (Pvt) Ltd", "100%", "6.5 acres", "Roshan"],
+            "MTR": ["MTR (Matara)", "3 MW", "615 Wp × 6,160", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 10", "28 panels × 22 strings", "56 panels × 110 tables", "3300 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "21.04%", "Vidul Matara Solar Power (Pvt) Ltd", "100%", "10.5 acres", "Sudheera"],
             "MDP": ["MDP (Madampe)", "6 MW", "615 Wp × 12,320", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 20", "28 panels × 22 strings", "56 panels × 220 tables", "6000 kVA 33 kV/800 V", "50 kVA 230 V/800 V", "21.00%", "Vidulsolar (Pvt) Ltd", "100%", "20 acres", "Sansala"],
         }
         spec = specs.get((plant.code or "").upper())
