@@ -483,7 +483,7 @@ def seed_database():
             ("HOF", "HOF"),
             ("MTR-I", "Matara I Solar Power Plant"),
             ("MTR-II", "Matara II Solar Power Plant"),
-            ("HS1", "Horana I Solar Power Plant"),
+            ("HS1", "HS1 Solar Power Plant"),
             ("HS2", "Horana II Solar Power Plant"),
             ("MDP", "MDP Solar Power Plant"),
             ("ORK", "ORK Solar Power Plant"),
@@ -1070,7 +1070,7 @@ def css():
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
         .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:12px 14px;min-height:92px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
-        .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:105px;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:7px}.plant-detail-value{color:var(--text);font-size:19px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:6px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
+        .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:112px;height:auto;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:visible}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:8px}.plant-detail-value{color:var(--text);font-size:18px;font-weight:800;line-height:1.3;overflow-wrap:anywhere;word-break:normal;white-space:normal}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:7px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
         </style>""",unsafe_allow_html=True)
@@ -1278,7 +1278,7 @@ def top_nav(db, user):
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
         st.divider()
-        notification_center(db, user)
+        # Notifications are displayed on the Overview page only.
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
@@ -1569,8 +1569,33 @@ def operations_staff_section(db, user, plant):
 
 
 def overview_context(db, user, plant):
-    """Compact overview context: notifications + site details."""
+    """Show notifications and the selected plant's current site details on Overview."""
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
+    if profile is None:
+        # Use the approved operations contacts until an authorised user edits the site profile.
+        code = (plant.code or "").upper().replace("_", "-").strip()
+        defaults = {
+            "HOF": ("HOF In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR-I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR-II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+        }
+        supervisor_default, engineer_default, hof_default = defaults.get(
+            code, (f"{code or 'Site'} In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya")
+        )
+        profile = PlantOperationsProfile(
+            plant_id=plant.id, operating_staff_count=0,
+            supervisor_name=supervisor_default, engineer_name=engineer_default,
+            hof_name=hof_default,
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
     unread = db.query(Notification).filter(
         Notification.user_id == user.id, Notification.is_read == False
     ).count()
@@ -1595,7 +1620,7 @@ def overview_context(db, user, plant):
     else:
         st.markdown('<div class="overview-empty">🟢 No new notifications for this plant.</div>', unsafe_allow_html=True)
     if unread:
-        st.caption(f"{unread} unread notification(s). Full notification history is available from the sidebar.")
+        st.caption(f"{unread} unread notification(s). Notification history is shown here on the Overview page.")
 
     st.markdown("### 🏭 Power Plant Details")
     staff_count = int(profile.operating_staff_count or 0) if profile else 0
@@ -1611,9 +1636,9 @@ def overview_context(db, user, plant):
         ("Supervisor / In-charge", supervisor, "Site contact"),
         ("Relevant Engineer", engineer, "Engineering contact"),
     ]
-    cols = st.columns(4)
+    cols = st.columns(3, gap="medium")
     for idx, (label, value, hint) in enumerate(details):
-        with cols[idx % 4]:
+        with cols[idx % 3]:
             st.markdown(
                 f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
                 f'<div class="plant-detail-value">{value}</div><div class="plant-detail-hint">{hint}</div></div>',
