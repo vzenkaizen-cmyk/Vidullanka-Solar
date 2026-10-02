@@ -446,18 +446,6 @@ PLANT_SUPERVISOR_EMAILS = {
     "ork.ops@vidullanka.com": "ORK",
 }
 
-# Verified technical details transcribed from "Solar power plants details.docx".
-# Keys use the current application plant codes. MTR-I represents the MTR site in the document.
-PLANT_MASTER_DETAILS = {
-    "ORK": {"display_name": "ORK Solar Power Plant", "location": "Monaragala", "capacity": "0.88 MW", "capacity_mw": 0.88, "panels": "535 Wp × 1,870 panels", "panel_size": "2279 mm × 1134 mm", "cell_type": "Mono", "inverters": "100 kW × 8", "inverter_count": 8, "panel_connection": "18 panels × 13 strings", "table_arrangement": "34 panels × 1 table + 36 panels × 51 tables", "table_count": 52, "main_transformer": "1000 kVA, 33 kV/400 V", "aux_transformer": "N/A", "plant_factor": "18%", "project_company": "Orik Corporation (Pvt) Ltd", "ownership": "87%", "land_area": "6.67 acres", "in_charge": "Pasindu"},
-    "HS1": {"display_name": "HS1 Solar Power Plant", "location": "Horana I", "capacity": "2 MW", "capacity_mw": 2, "panels": "535 Wp × 4,480 panels", "panel_size": "2285 mm × 1134 mm", "cell_type": "Mono", "inverters": "200 kW × 10", "inverter_count": 10, "panel_connection": "28 panels × 28 strings", "table_arrangement": "56 panels × 80 tables", "table_count": 80, "main_transformer": "2200 kVA, 33 kV/800 V", "aux_transformer": "10 kVA, 230 V/800 V", "plant_factor": "21%", "project_company": "Vidulsolar (Pvt) Ltd", "ownership": "100%", "land_area": "8.99 acres", "in_charge": "Roshan"},
-    "HS2": {"display_name": "HS2 Solar Power Plant", "location": "Horana II", "capacity": "2 MW", "capacity_mw": 2, "panels": "615 Wp × 4,060 panels", "panel_size": "2382 mm × 1134 mm", "cell_type": "N-Type TOPCon", "inverters": "300 kW × 7", "inverter_count": 7, "panel_connection": "29 panels × 20 strings", "table_arrangement": "58 panels × 70 tables", "table_count": 70, "main_transformer": "2250 kVA, 33 kV/800 V", "aux_transformer": "5 kVA, 230 V/800 V", "plant_factor": "20%", "project_company": "Vidulsolar (Pvt) Ltd", "ownership": "100%", "land_area": "6.5 acres", "in_charge": "Roshan"},
-    "MTR-I": {"display_name": "Matara Solar Power Plant", "location": "Matara", "capacity": "3 MW", "capacity_mw": 3, "panels": "615 Wp × 6,160 panels", "panel_size": "2382 mm × 1134 mm", "cell_type": "N-Type TOPCon", "inverters": "300 kW × 10", "inverter_count": 10, "panel_connection": "28 panels × 22 strings", "table_arrangement": "56 panels × 110 tables", "table_count": 110, "main_transformer": "3300 kVA, 33 kV/800 V", "aux_transformer": "5 kVA, 230 V/800 V", "plant_factor": "21.04%", "project_company": "Vidul Matara Solar Power (Pvt) Ltd", "ownership": "100%", "land_area": "10.5 acres", "in_charge": "Sudheera"},
-    "MDP": {"display_name": "MDP Solar Power Plant", "location": "Madampe", "capacity": "6 MW", "capacity_mw": 6, "panels": "615 Wp × 12,320 panels", "panel_size": "2382 mm × 1134 mm", "cell_type": "N-Type TOPCon", "inverters": "300 kW × 20", "inverter_count": 20, "panel_connection": "28 panels × 22 strings", "table_arrangement": "56 panels × 220 tables", "table_count": 220, "main_transformer": "6000 kVA, 33 kV/800 V", "aux_transformer": "50 kVA, 230 V/800 V", "plant_factor": "21.00%", "project_company": "Vidulsolar (Pvt) Ltd", "ownership": "100%", "land_area": "20 acres", "in_charge": "Sansala"},
-}
-
-SITE_SUPERVISOR_NAMES = {"ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan", "MTR-I": "Sudheera", "MDP": "Sansala"}
-
 def _plant_id_for_code(db, code):
     if not code:
         return None
@@ -504,18 +492,6 @@ def seed_database():
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
                              inverter_count=10, table_count=80, zone_count=10, active=True))
-        db.commit()
-
-        # Synchronize known plant specifications from the supplied plant-details document.
-        for code, spec in PLANT_MASTER_DETAILS.items():
-            site = db.query(Plant).filter(Plant.code == code).first()
-            if site:
-                site.name = spec["display_name"]
-                site.capacity_mw = spec["capacity_mw"]
-                site.inverter_count = spec["inverter_count"]
-                site.table_count = spec["table_count"]
-                if not site.zone_count or site.zone_count < 1:
-                    site.zone_count = 10
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -1513,7 +1489,7 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
     fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        height=760 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
+        height=440 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
@@ -1531,13 +1507,15 @@ def operations_staff_section(db, user, plant):
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
         defaults = {
-            "HOF": ("HOF In-Charge", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("Roshan", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("Roshan", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-I": ("Sudheera", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MDP": ("Sansala", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "ORK": ("Pasindu", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HOF": ("", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
         }
         sup, eng, hof = defaults.get(plant.code.upper(), ("", "", "Mr. Mahela Wanigasooriya"))
         profile = PlantOperationsProfile(plant_id=plant.id, operating_staff_count=0,
@@ -1545,12 +1523,6 @@ def operations_staff_section(db, user, plant):
         db.add(profile)
         db.commit()
         db.refresh(profile)
-    else:
-        site_supervisor = SITE_SUPERVISOR_NAMES.get((plant.code or "").upper())
-        generic_values = {"", "Not set", f"{plant.code} In-Charge", f"{plant.code} In-Charge".replace("-", " ")}
-        if site_supervisor and (not profile.supervisor_name or profile.supervisor_name.strip() in generic_values):
-            profile.supervisor_name = site_supervisor
-            db.commit()
 
     st.markdown("### 👷 Operating Staff & Site Contacts")
     st.caption("Headcount and contact details are site-specific. An authorised supervisor, engineer, or administrator can update these values later.")
@@ -1596,7 +1568,7 @@ def operations_staff_section(db, user, plant):
     c3.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Engineer</div><div class="staff-summary-value staff-summary-text">{profile.engineer_name or "Not set"}</div></div>', unsafe_allow_html=True)
 
 
-def overview_context(db, user, plant):
+def overview_context(db, user, plant, show_notifications=True, show_details=True):
     """Show notifications and the selected plant's current site details on Overview."""
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
@@ -1604,13 +1576,13 @@ def overview_context(db, user, plant):
         code = (plant.code or "").upper().replace("_", "-").strip()
         defaults = {
             "HOF": ("HOF In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("Roshan", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("Roshan", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR": ("Sudheera", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-I": ("Sudheera", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR-I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR-II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MDP": ("Sansala", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "ORK": ("Pasindu", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
         }
         supervisor_default, engineer_default, hof_default = defaults.get(
             code, (f"{code or 'Site'} In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya")
@@ -1623,88 +1595,86 @@ def overview_context(db, user, plant):
         db.add(profile)
         db.commit()
         db.refresh(profile)
-    else:
-        site_supervisor = SITE_SUPERVISOR_NAMES.get((plant.code or "").upper())
-        generic_values = {"", "Not set", f"{plant.code} In-Charge", f"{plant.code} In-Charge".replace("-", " ")}
-        if site_supervisor and (not profile.supervisor_name or profile.supervisor_name.strip() in generic_values):
-            profile.supervisor_name = site_supervisor
-            db.commit()
 
-    unread = db.query(Notification).filter(
-        Notification.user_id == user.id, Notification.is_read == False
-    ).count()
-    notifications = db.query(Notification).filter(
-        Notification.user_id == user.id,
-        or_(Notification.plant_id == plant.id, Notification.plant_id == None),
-    ).order_by(Notification.created_at.desc()).limit(5).all()
+    if show_notifications:
+        unread = db.query(Notification).filter(
+            Notification.user_id == user.id, Notification.is_read == False
+        ).count()
+        notifications = db.query(Notification).filter(
+            Notification.user_id == user.id,
+            or_(Notification.plant_id == plant.id, Notification.plant_id == None),
+        ).order_by(Notification.created_at.desc()).limit(5).all()
 
-    st.markdown("### 🔔 Notifications")
-    if notifications:
-        cols = st.columns(min(3, len(notifications)))
-        for idx, n in enumerate(notifications[:3]):
-            with cols[idx % len(cols)]:
-                cls = "bad" if n.severity == "High" else "warn"
-                icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
+        with st.expander(f"🔔 Notifications ({unread} unread)", expanded=False):
+            if unread:
+                if st.button("Mark all as read", key=f"overview_mark_all_{plant.id}"):
+                    for notification in notifications:
+                        notification.is_read = True
+                    db.commit()
+                    st.rerun()
+            if notifications:
+                for n in notifications:
+                    cls = "bad" if n.severity == "High" else "warn"
+                    icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
+                    c1, c2 = st.columns([6, 1])
+                    with c1:
+                        st.markdown(
+                            f'<div class="overview-notification"><b>{icon} {n.title}</b>'
+                            f'<div class="small-muted">{n.message}</div>'
+                            f'<div class="{cls}">{n.created_at:%d %b %Y %H:%M}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with c2:
+                        if not n.is_read and st.button("Read", key=f"overview_read_{n.id}"):
+                            n.is_read = True
+                            db.commit()
+                            st.rerun()
+            else:
+                st.caption("🟢 No new notifications for this plant.")
+
+
+    if show_details:
+        st.markdown("### 🏭 Power Plant Details & Technical Specifications")
+        staff_count = int(profile.operating_staff_count or 0) if profile else 0
+        supervisor = (profile.supervisor_name or "Not set") if profile else "Not set"
+        engineer = (profile.engineer_name or "Not set") if profile else "Not set"
+        details = [
+            ("Plant", plant.name, "Site identity"),
+            ("Capacity", f"{plant.capacity_mw:g} MW", "Installed capacity"),
+            ("Inverters", str(plant.inverter_count), "Operational units"),
+            ("Tables", str(plant.table_count), "Solar panel tables"),
+            ("Zones", str(plant.zone_count), "Grass-cutting zones"),
+            ("Operating Staff", str(staff_count), "Site headcount"),
+            ("Supervisor / In-charge", supervisor, "Site contact"),
+            ("Relevant Engineer", engineer, "Engineering contact"),
+        ]
+        cols = st.columns(3, gap="medium")
+        for idx, (label, value, hint) in enumerate(details):
+            with cols[idx % 3]:
                 st.markdown(
-                    f'<div class="overview-notification"><b>{icon} {n.title}</b>'
-                    f'<div class="small-muted">{n.message}</div>'
-                    f'<div class="{cls}">{n.created_at:%d %b %Y %H:%M}</div></div>',
+                    f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
+                    f'<div class="plant-detail-value">{value}</div><div class="plant-detail-hint">{hint}</div></div>',
                     unsafe_allow_html=True,
                 )
-    else:
-        st.markdown('<div class="overview-empty">🟢 No new notifications for this plant.</div>', unsafe_allow_html=True)
-    if unread:
-        st.caption(f"{unread} unread notification(s). Notification history is shown here on the Overview page.")
-
-    st.markdown("### 🏭 Power Plant Details")
-    staff_count = int(profile.operating_staff_count or 0) if profile else 0
-    spec = PLANT_MASTER_DETAILS.get((plant.code or "").upper(), {})
-    supervisor = SITE_SUPERVISOR_NAMES.get((plant.code or "").upper(), (profile.supervisor_name if profile else "") or "Not specified")
-    engineer = (profile.engineer_name or "Mr. Prasanna Kottege") if profile else "Mr. Prasanna Kottege"
-    details = [
-        ("Plant", spec.get("display_name", plant.name), "Site identity"),
-        ("Capacity", spec.get("capacity", f"{plant.capacity_mw:g} MW"), "Installed capacity"),
-        ("Inverters", str(spec.get("inverter_count", plant.inverter_count)), "Operational units"),
-        ("Tables", str(spec.get("table_count", plant.table_count)), "Solar panel tables"),
-        ("Zones", str(plant.zone_count), "Grass-cutting zones"),
-        ("Operating Staff", str(staff_count), "Site headcount"),
-        ("Site Supervisor / In-Charge", supervisor, "Name from the plant-details document"),
-        ("Relevant Engineer", engineer, "Engineering contact"),
-    ]
-    cols = st.columns(3, gap="medium")
-    for idx, (label, value, hint) in enumerate(details):
-        with cols[idx % 3]:
-            st.markdown(
-                f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
-                f'<div class="plant-detail-value">{value}</div><div class="plant-detail-hint">{hint}</div></div>',
-                unsafe_allow_html=True,
-            )
-
-    if spec:
-        st.markdown("#### Technical Specifications")
-        specification_rows = [
-            ("Location", spec.get("location", "—")),
-            ("Panels", spec.get("panels", "—")),
-            ("Panel Size", spec.get("panel_size", "—")),
-            ("Cell Type", spec.get("cell_type", "—")),
-            ("Inverter Rating", spec.get("inverters", "—")),
-            ("Panel Connection for Inverter", spec.get("panel_connection", "—")),
-            ("Table Arrangement", spec.get("table_arrangement", "—")),
-            ("Main Transformer", spec.get("main_transformer", "—")),
-            ("Auxiliary Transformer", spec.get("aux_transformer", "—")),
-            ("Plant Factor", spec.get("plant_factor", "—")),
-            ("Project Company", spec.get("project_company", "—")),
-            ("Ownership", spec.get("ownership", "—")),
-            ("Land Area", spec.get("land_area", "—")),
-            ("Plant In-Charge", spec.get("in_charge", supervisor)),
-        ]
-        st.dataframe(pd.DataFrame(specification_rows, columns=["Specification", "Details"]),
-                     use_container_width=True, hide_index=True)
+        specs = {
+            "ORK": ["ORK (Monaragala)", "0.88 MW", "535 Wp × 1,870", "2279 × 1134 mm", "Mono", "100 kW × 8", "18 panels × 13 strings", "34 panels × 1 table + 36 panels × 51 tables", "1000 kVA 33 kV/400 V", "N/A", "18%", "Orik Corporation (Pvt) Ltd", "87%", "6.67 acres", "Pasindu"],
+            "HS1": ["HRN I (Horana)", "2 MW", "535 Wp × 4,480", "2285 × 1134 mm", "Mono", "200 kW × 10", "28 panels × 28 strings", "56 panels × 80 tables", "2200 kVA 33 kV/800 V", "10 kVA 230 V/800 V", "21%", "Vidulsolar (Pvt) Ltd", "100%", "8.99 acres", "Roshan"],
+            "HS2": ["HRN 2 (Horana)", "2 MW", "615 Wp × 4,060", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 7", "29 panels × 20 strings", "58 panels × 70 tables", "2250 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "20%", "Vidulsolar (Pvt) Ltd", "100%", "6.5 acres", "Roshan"],
+            "MTR-I": ["MTR (Matara)", "3 MW", "615 Wp × 6,160", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 10", "28 panels × 22 strings", "56 panels × 110 tables", "3300 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "21.04%", "Vidul Matara Solar Power (Pvt) Ltd", "100%", "10.5 acres", "Sudheera"],
+            "MDP": ["MDP (Madampe)", "6 MW", "615 Wp × 12,320", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 20", "28 panels × 22 strings", "56 panels × 220 tables", "6000 kVA 33 kV/800 V", "50 kVA 230 V/800 V", "21.00%", "Vidulsolar (Pvt) Ltd", "100%", "20 acres", "Sansala"],
+        }
+        spec = specs.get((plant.code or "").upper())
+        if spec:
+            labels = ["Power Plant", "AC Capacity", "Panels", "Panel Size", "Cell Type", "Inverters", "Panel Connection for Inverter", "Table Arrangement", "Main Transformer", "Auxiliary Transformer", "Plant Factor", "Project Company", "Ownership", "Land Area", "Plant In-Charge"]
+            st.markdown("#### Technical specification")
+            st.dataframe(pd.DataFrame({"Specification": labels, "Details": spec}), use_container_width=True, hide_index=True)
+        else:
+            st.caption("Detailed technical specifications have not been added for this site yet.")
 
 
 def overview_page(db, user, plant):
     header(plant)
-    overview_context(db, user, plant)
+    overview_context(db, user, plant, show_notifications=True, show_details=False)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
@@ -1772,12 +1742,12 @@ def overview_page(db, user, plant):
         st.progress(metrics["grass_pct"] / 100, text=f"{metrics['grass_pct']:.0f}% completed")
         st.write(f"🟢 Completed **{metrics['grass_done']} / {metrics['grass_total']}**")
         st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
-        st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
-        st.markdown('<div class="map-section-title">⚠️ Loss & Repair</div>', unsafe_allow_html=True)
-        if metrics["open_repairs"]:
-            st.error(f"{metrics['open_repairs']} active repair item(s)")
-        else:
-            st.success("No open repair items")
+
+    st.markdown("### ⚠️ Current Loss & Repair Status")
+    if metrics["open_repairs"]:
+        st.error(f"{metrics['open_repairs']} active repair item(s)")
+    else:
+        st.success("No open repair items")
 
     # Bottom panels mirror the reference dashboard and keep all cards equal height.
     st.markdown("### 📋 Current Status Details")
@@ -1828,6 +1798,9 @@ def overview_page(db, user, plant):
 # ============================================================
 # Panel Cleaning
 # ============================================================
+
+    overview_context(db, user, plant, show_notifications=False, show_details=True)
+
 
 def panel_cleaning_page(db, user, plant):
     header(plant)
