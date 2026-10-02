@@ -1243,9 +1243,9 @@ def top_nav(db, user):
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
-        pages = ["🏠 Overview", "🛰️ Satellite Table Map", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
+        pages = ["🏠 Overview", "👷 Operating Staff & Site Contacts", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
     else:
-        pages = ["🏠 Overview", "🛰️ Satellite Table Map", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Loss & Repair", "📋 Activity Log"]
+        pages = ["🏠 Overview", "👷 Operating Staff & Site Contacts", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Loss & Repair", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "✅ Approvals & Sign-off"]
     if user.role == "admin":
@@ -1253,7 +1253,7 @@ def top_nav(db, user):
     # Keep navigation in the left sidebar, as requested.
     with st.sidebar:
         st.divider()
-        page = st.radio("Navigation", pages, key="top_navigation")
+        page = st.radio("Navigation", pages, key="top_navigation_v2")
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
         if st.button("🚪 Sign out", use_container_width=True, key="sidebar_signout_bottom"):
             st.session_state.clear()
@@ -1318,16 +1318,17 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
-def satellite_table_map_page(db, user, plant):
-    """Show the real satellite photo with live table-status markers overlaid."""
+def satellite_table_map_page(db, user, plant, embedded=False):
+    """Show the real satellite photo with live table and zone status overlays."""
     import plotly.graph_objects as go
     from PIL import Image
 
-    header(plant)
-    st.markdown("## 🛰️ Satellite Table Map")
-    st.caption("Satellite photo with live table status. Green markers are completed panel cleaning; red markers are pending. Update statuses in Panel Cleaning; this view refreshes from the saved database records.")
+    if not embedded:
+        header(plant)
+        st.markdown("## 🛰️ Satellite Table Map")
+        st.caption("Satellite photo with live table and zone status. Table markers show panel cleaning; zone outlines show grass cutting.")
 
-    task_date = st.date_input("Status date", value=date.today(), key="satellite_map_date")
+    task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     image_candidates = [
         os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
         os.path.join(os.path.dirname(__file__), "assets", "HR1.jpg"),
@@ -1347,6 +1348,9 @@ def satellite_table_map_page(db, user, plant):
     assets = asset_list(plant, "Table")
     records = status_map(db, plant.id, "Panel Cleaning", task_date)
     completed = {a for a, r in records.items() if r.status == "Completed"}
+    grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+    zone_assets = asset_list(plant, "Zone")
+    completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
 
     # Marker coordinates are a configurable starting overlay on the satellite photo.
@@ -1360,6 +1364,10 @@ def satellite_table_map_page(db, user, plant):
         (670, 350, 850, 755), (865, 315, 1080, 755), (500, 80, 665, 340),
         (680, 360, 1080, 730),
     ]
+    # The saved zone map is defined on a 1080 x 755 reference canvas; scale it
+    # to the actual dimensions of the supplied satellite image.
+    scale_x = img_width / 1080.0
+    scale_y = img_height / 755.0
     xs, ys, colors, hover = [], [], [], []
     for idx, asset in enumerate(assets):
         zone_idx = min(idx // per_zone, zones - 1)
@@ -1373,14 +1381,30 @@ def satellite_table_map_page(db, user, plant):
         x = x1 + (col + 0.5) * (x2 - x1) / cols
         y = y1 + (row + 0.5) * (y2 - y1) / rows
         done = asset in completed
-        xs.append(x)
-        ys.append(img_height - y)  # Plotly's y-axis is bottom-up; image coordinates are top-down.
+        xs.append(x * scale_x)
+        ys.append(img_height - y * scale_y)  # Plotly y-axis is bottom-up.
         colors.append("#16a66a" if done else "#ff4e59")
-        hover.append(f"{asset}<br>Panel cleaning: {'Completed' if done else 'Pending'}<br>Click Panel Cleaning in navigation to update")
+        zone_asset = zone_assets[zone_idx] if zone_idx < len(zone_assets) else f"Zone {zone_idx + 1}"
+        grass_done = zone_asset in completed_grass
+        hover.append(f"{asset}<br>Panel cleaning: {'Completed' if done else 'Pending'}<br>{zone_asset} grass cutting: {'Completed' if grass_done else 'Pending'}")
 
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
+    # Draw a coloured outline around each zone on the actual satellite photo.
+    # Green outline = grass cutting completed; red outline = pending.
+    for z_idx, zone_asset in enumerate(zone_assets):
+        if z_idx >= len(zone_boxes):
+            break
+        zx1, zy1, zx2, zy2 = zone_boxes[z_idx]
+        grass_done = zone_asset in completed_grass
+        fig.add_shape(
+            type="rect", xref="x", yref="y",
+            x0=zx1*scale_x, x1=zx2*scale_x,
+            y0=img_height-zy2*scale_y, y1=img_height-zy1*scale_y,
+            line=dict(color="#16a66a" if grass_done else "#ff4e59", width=3),
+            fillcolor="rgba(0,0,0,0)", layer="above",
+        )
     fig.add_trace(go.Scatter(
         x=xs, y=ys, mode="markers+text",
         text=[a.replace("T-", "") for a in assets], textposition="middle center",
@@ -1396,11 +1420,12 @@ def satellite_table_map_page(db, user, plant):
         showlegend=False, hovermode="closest",
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "scrollZoom": True})
-    green_col, red_col, action_col = st.columns([1, 1, 2])
-    green_col.metric("Completed tables", len(completed))
-    red_col.metric("Pending tables", pending_count)
-    with action_col:
-        st.info("To change a table's colour, open **Panel Cleaning**, select the same status date, and mark the table completed or pending. The satellite map uses the saved status.")
+    green_col, red_col, grass_col = st.columns(3)
+    green_col.metric("Panel cleaning completed", len(completed))
+    red_col.metric("Panel cleaning pending", pending_count)
+    grass_col.metric("Grass-cutting zones completed", len(completed_grass))
+    if not embedded:
+        st.caption("Update table colours in Panel Cleaning and zone outlines in Grass Cutting. Saved records appear on this map for the selected date.")
 
 
 def operations_staff_section(db, user, plant):
@@ -1470,7 +1495,6 @@ def operations_staff_section(db, user, plant):
 
 def overview_page(db, user, plant):
     header(plant)
-    operations_staff_section(db, user, plant)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
@@ -1520,8 +1544,11 @@ def overview_page(db, user, plant):
     for col, (title, val, label, cls) in zip(st.columns(6), cards):
         col.markdown(f'<div class="dashboard-card"><h4>{title}</h4><div class="dashboard-value {cls}">{val}</div><div class="dashboard-label">{label}</div></div>', unsafe_allow_html=True)
 
-    # Overview remains the dashboard summary. The satellite photo is available
-    # separately from the navigation menu so it does not crowd this page.
+    # Keep the real satellite image on Overview, with live table markers and
+    # grass-cutting zone outlines. The image keeps its aspect ratio.
+    st.markdown("### 🛰️ Satellite Solar Table Status")
+    satellite_table_map_page(db, user, plant, embedded=True)
+
     panel_col, grass_col = st.columns(2, gap="large")
     with panel_col:
         st.markdown('<div class="map-section-title">🧹 Panel Cleaning Status</div>', unsafe_allow_html=True)
@@ -2550,8 +2577,9 @@ def main():
 
     if page == "🏠 Overview":
         overview_page(db, user, plant)
-    elif page == "🛰️ Satellite Table Map":
-        satellite_table_map_page(db, user, plant)
+    elif page == "👷 Operating Staff & Site Contacts":
+        header(plant)
+        operations_staff_section(db, user, plant)
     elif page == "🧹 Panel Cleaning":
         panel_cleaning_page(db, user, plant)
     elif page == "🌿 Grass Cutting":
