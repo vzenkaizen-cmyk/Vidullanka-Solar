@@ -253,6 +253,20 @@ def initialize_database(_engine):
     Base.metadata.create_all(_engine)
     if _engine.dialect.name == "postgresql":
         with _engine.begin() as conn:
+            # Existing Neon projects may pre-date the operating-staff feature.
+            # create_all() does not modify an existing schema, so explicitly create
+            # this table if it is missing. This prevents UndefinedTable on Overview.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS plant_operations_profiles (
+                    id SERIAL PRIMARY KEY,
+                    plant_id INTEGER NOT NULL UNIQUE REFERENCES plants(id),
+                    operating_staff_count INTEGER NOT NULL DEFAULT 0,
+                    supervisor_name VARCHAR(200) NOT NULL DEFAULT '',
+                    engineer_name VARCHAR(200) NOT NULL DEFAULT '',
+                    hof_name VARCHAR(200) NOT NULL DEFAULT '',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_status VARCHAR(30) DEFAULT 'Pending'"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_by INTEGER"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
@@ -428,7 +442,7 @@ MANAGEMENT_ROLE_BY_EMAIL = {
 PLANT_SUPERVISOR_EMAILS = {
     "mtr.ops@vidullanka.com": "MTR",
     "mdp.ops@vidullanka.com": "MDP",
-    "hrn.ops@vidullanka.com": "HRN",
+    "hrn.ops@vidullanka.com": "HS1",
     "ork.ops@vidullanka.com": "ORK",
 }
 
@@ -480,10 +494,32 @@ def seed_database():
                              inverter_count=10, table_count=80, zone_count=10, active=True))
         db.commit()
 
-        # HRN's confirmed installed capacity is 2 MW. Correct existing seeded records too.
-        hrn_plant = db.query(Plant).filter(Plant.code == "HRN").first()
-        if hrn_plant and hrn_plant.capacity_mw != 2:
-            hrn_plant.capacity_mw = 2
+        # HRN has been renamed to HS1 in the application. If an older Neon database
+        # still contains HRN, migrate it to HS1 without deleting the plant data.
+        old_hrn = db.query(Plant).filter(Plant.code == "HRN").first()
+        hs1_plant = db.query(Plant).filter(Plant.code == "HS1").first()
+        if old_hrn and not hs1_plant:
+            old_hrn.code = "HS1"
+            old_hrn.name = "HS1 Solar Power Plant"
+            hs1_plant = old_hrn
+        elif old_hrn and hs1_plant:
+            # Merge legacy HRN records into the existing HS1 row so maintenance
+            # history, repairs, reminders, notifications and staff assignments are
+            # not stranded on an inactive plant.
+            for table_name in ("users", "maintenance_records", "repair_items", "notifications", "maintenance_reminders"):
+                db.execute(text(f"UPDATE {table_name} SET plant_id = :new_id WHERE plant_id = :old_id"),
+                           {"new_id": hs1_plant.id, "old_id": old_hrn.id})
+            old_profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == old_hrn.id).first()
+            new_profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == hs1_plant.id).first()
+            if old_profile and not new_profile:
+                old_profile.plant_id = hs1_plant.id
+            elif old_profile and new_profile:
+                db.delete(old_profile)
+            old_hrn.active = False
+        if hs1_plant:
+            hs1_plant.name = "HS1 Solar Power Plant"
+            if hs1_plant.capacity_mw in (None, 0):
+                hs1_plant.capacity_mw = 2
 
         # Make the configured administrator account an approved active admin.
         admin_email = ADMIN_EMAIL.lower().strip()
@@ -1033,6 +1069,9 @@ def css():
         .map-zone{position:absolute;padding:7px;background:rgba(6,24,42,.66);border:2px solid rgba(255,78,89,.9);border-radius:10px;box-sizing:border-box;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2)}.map-zone-title{display:inline-block;color:#fff;padding:5px 8px;border-radius:5px;font-size:12px;font-weight:800;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.4)}.map-tables{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.map-table{height:12px;border-radius:3px;opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.28)}.map-green{background:#16e879}.map-red{background:#ff4e59}.map-controls{position:absolute;right:10px;top:10px;width:108px;max-width:18%;background:rgba(4,24,45,.88);color:#fff;padding:5px 7px;border-radius:7px;z-index:5;font-size:9px;line-height:1.35;box-sizing:border-box;overflow-wrap:anywhere}.map-controls b{display:block;margin-bottom:2px}
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
+        .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:12px 14px;min-height:92px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
+        .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:105px;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:7px}.plant-detail-value{color:var(--text);font-size:19px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:6px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
+
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
         </style>""",unsafe_allow_html=True)
 
@@ -1159,7 +1198,7 @@ def login_page():
 
         with r1:
             registration_form("supervisor", "Supervisor Account", "reg_supervisor")
-            st.caption("The MTR, MDP, HRN and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
+            st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
         with r2:
             registration_form("management", "Engineer / Administrator Account", "reg_management")
             st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
@@ -1325,7 +1364,7 @@ def satellite_table_map_page(db, user, plant, embedded=False):
 
     if not embedded:
         header(plant)
-        st.markdown("## 🛰️ Satellite Solar Table Status")
+        st.markdown("## 🛰️ Solar Plant Map")
         st.caption("Each solar-table strip is coloured by panel-cleaning status. Zone outlines show grass-cutting status.")
 
     task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
@@ -1469,7 +1508,7 @@ def operations_staff_section(db, user, plant):
     if profile is None:
         defaults = {
             "HOF": ("", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
-            "HRN": ("HRN In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
@@ -1501,7 +1540,8 @@ def operations_staff_section(db, user, plant):
 
     editable = user.role in ("admin", "engineer", "supervisor")
     with st.form(f"site_staff_profile_{plant.id}"):
-        c1, c2 = st.columns([1, 1])
+        # Give the contact fields more room so full engineer/supervisor names remain visible.
+        c1, c2 = st.columns([0.9, 1.35], gap="large")
         with c1:
             count = st.number_input("No. of operating staff members", min_value=0, max_value=10000,
                                     value=int(profile.operating_staff_count or 0), step=1, disabled=not editable)
@@ -1522,14 +1562,68 @@ def operations_staff_section(db, user, plant):
             db.commit()
             st.success(f"Operating staff and contacts saved for {plant.name}.")
             st.rerun()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Operating staff", int(profile.operating_staff_count or 0))
-    c2.metric("Supervisor / In-charge", profile.supervisor_name or "Not set")
-    c3.metric("Engineer", profile.engineer_name or "Not set")
+    c1, c2, c3 = st.columns([0.9, 1.15, 1.55], gap="large")
+    c1.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Operating staff</div><div class="staff-summary-value">{int(profile.operating_staff_count or 0)}</div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Supervisor / In-charge</div><div class="staff-summary-value staff-summary-text">{profile.supervisor_name or "Not set"}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Engineer</div><div class="staff-summary-value staff-summary-text">{profile.engineer_name or "Not set"}</div></div>', unsafe_allow_html=True)
+
+
+def overview_context(db, user, plant):
+    """Compact overview context: notifications + site details."""
+    profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
+    unread = db.query(Notification).filter(
+        Notification.user_id == user.id, Notification.is_read == False
+    ).count()
+    notifications = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        or_(Notification.plant_id == plant.id, Notification.plant_id == None),
+    ).order_by(Notification.created_at.desc()).limit(5).all()
+
+    st.markdown("### 🔔 Notifications")
+    if notifications:
+        cols = st.columns(min(3, len(notifications)))
+        for idx, n in enumerate(notifications[:3]):
+            with cols[idx % len(cols)]:
+                cls = "bad" if n.severity == "High" else "warn"
+                icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
+                st.markdown(
+                    f'<div class="overview-notification"><b>{icon} {n.title}</b>'
+                    f'<div class="small-muted">{n.message}</div>'
+                    f'<div class="{cls}">{n.created_at:%d %b %Y %H:%M}</div></div>',
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.markdown('<div class="overview-empty">🟢 No new notifications for this plant.</div>', unsafe_allow_html=True)
+    if unread:
+        st.caption(f"{unread} unread notification(s). Full notification history is available from the sidebar.")
+
+    st.markdown("### 🏭 Power Plant Details")
+    staff_count = int(profile.operating_staff_count or 0) if profile else 0
+    supervisor = (profile.supervisor_name or "Not set") if profile else "Not set"
+    engineer = (profile.engineer_name or "Not set") if profile else "Not set"
+    details = [
+        ("Plant", plant.name, "Site identity"),
+        ("Capacity", f"{plant.capacity_mw:g} MW", "Installed capacity"),
+        ("Inverters", str(plant.inverter_count), "Operational units"),
+        ("Tables", str(plant.table_count), "Solar panel tables"),
+        ("Zones", str(plant.zone_count), "Grass-cutting zones"),
+        ("Operating Staff", str(staff_count), "Site headcount"),
+        ("Supervisor / In-charge", supervisor, "Site contact"),
+        ("Relevant Engineer", engineer, "Engineering contact"),
+    ]
+    cols = st.columns(4)
+    for idx, (label, value, hint) in enumerate(details):
+        with cols[idx % 4]:
+            st.markdown(
+                f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
+                f'<div class="plant-detail-value">{value}</div><div class="plant-detail-hint">{hint}</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 def overview_page(db, user, plant):
     header(plant)
+    overview_context(db, user, plant)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
@@ -1581,7 +1675,7 @@ def overview_page(db, user, plant):
 
     # Keep the real satellite image on Overview, with live table markers and
     # grass-cutting zone outlines. The image keeps its aspect ratio.
-    st.markdown("### 🛰️ Satellite Solar Table Status")
+    st.markdown("### 🛰️ Solar Plant Map")
     satellite_table_map_page(db, user, plant, embedded=True)
 
     panel_col, grass_col = st.columns(2, gap="large")
