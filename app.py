@@ -1319,14 +1319,14 @@ def render_solar_layout(db, plant, task_date):
     st.markdown(''.join(html), unsafe_allow_html=True)
 
 def satellite_table_map_page(db, user, plant, embedded=False):
-    """Show the real satellite photo with live table and zone status overlays."""
+    """Show the real satellite photo with each solar-table row coloured by saved status."""
     import plotly.graph_objects as go
     from PIL import Image
 
     if not embedded:
         header(plant)
-        st.markdown("## 🛰️ Satellite Table Map")
-        st.caption("Satellite photo with live table and zone status. Table markers show panel cleaning; zone outlines show grass cutting.")
+        st.markdown("## 🛰️ Satellite Solar Table Status")
+        st.caption("Each solar-table strip is coloured by panel-cleaning status. Zone outlines show grass-cutting status.")
 
     task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     image_candidates = [
@@ -1346,76 +1346,111 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     image_uri = f"data:image/jpeg;base64,{encoded}"
 
     assets = asset_list(plant, "Table")
-    records = status_map(db, plant.id, "Panel Cleaning", task_date)
-    completed = {a for a, r in records.items() if r.status == "Completed"}
+    panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+    completed = {a for a, r in panel_records.items() if r.status == "Completed"}
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
     zone_assets = asset_list(plant, "Zone")
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
 
-    # Marker coordinates are a configurable starting overlay on the satellite photo.
-    # They are distributed across the visible panel-array blocks; exact table-to-photo
-    # alignment can be fine-tuned if a surveyed table coordinate map is provided.
-    zones = max(1, int(plant.zone_count or 1))
-    per_zone = (len(assets) + zones - 1) // zones
-    zone_boxes = [
-        (245, 20, 435, 325), (455, 145, 660, 385), (665, 65, 850, 330),
-        (850, 10, 1080, 310), (285, 370, 460, 755), (470, 390, 655, 755),
-        (670, 350, 850, 755), (865, 315, 1080, 755), (500, 80, 665, 340),
-        (680, 360, 1080, 730),
+    # These quadrilaterals follow the real solar-array blocks in assets/HR1.jpeg.
+    # Coordinates use the 1280x720 reference photo and scale with the actual image.
+    # Each block is filled with separate long row-shaped polygons, not floating dots.
+    blocks = [
+        # top-left array
+        ((250, 8), (438, 0), (300, 325), (465, 320)),
+        # upper middle-left array
+        ((466, 145), (653, 132), (493, 350), (672, 348)),
+        # upper middle-right array
+        ((650, 78), (833, 58), (690, 348), (850, 340)),
+        # upper-right array
+        ((833, 15), (1045, 0), (870, 315), (1072, 310)),
+        # lower-left array
+        ((305, 390), (492, 377), (340, 700), (515, 710)),
+        # lower middle-left array
+        ((485, 390), (665, 370), (520, 710), (690, 710)),
+        # lower middle-right array
+        ((666, 350), (855, 328), (705, 704), (875, 695)),
+        # lower-right array
+        ((850, 325), (1074, 310), (885, 685), (1095, 670)),
     ]
-    # The saved zone map is defined on a 1080 x 755 reference canvas; scale it
-    # to the actual dimensions of the supplied satellite image.
-    scale_x = img_width / 1080.0
-    scale_y = img_height / 755.0
-    xs, ys, colors, hover = [], [], [], []
-    for idx, asset in enumerate(assets):
-        zone_idx = min(idx // per_zone, zones - 1)
-        box = zone_boxes[zone_idx] if zone_idx < len(zone_boxes) else (240, 20, 1080, 755)
-        x1, y1, x2, y2 = box
-        in_zone_idx = idx % per_zone
-        cols = min(5, max(1, per_zone))
-        rows = max(1, (per_zone + cols - 1) // cols)
-        col = in_zone_idx % cols
-        row = in_zone_idx // cols
-        x = x1 + (col + 0.5) * (x2 - x1) / cols
-        y = y1 + (row + 0.5) * (y2 - y1) / rows
-        done = asset in completed
-        xs.append(x * scale_x)
-        ys.append(img_height - y * scale_y)  # Plotly y-axis is bottom-up.
-        colors.append("#16a66a" if done else "#ff4e59")
-        zone_asset = zone_assets[zone_idx] if zone_idx < len(zone_assets) else f"Zone {zone_idx + 1}"
-        grass_done = zone_asset in completed_grass
-        hover.append(f"{asset}<br>Panel cleaning: {'Completed' if done else 'Pending'}<br>{zone_asset} grass cutting: {'Completed' if grass_done else 'Pending'}")
+    # Allocate table records over the physical blocks in proportion to their visible size.
+    weights = [10, 8, 9, 10, 10, 10, 11, 12]
+    if assets:
+        total_weight = sum(weights)
+        counts = [len(assets) * w // total_weight for w in weights]
+        for i in range(len(assets) - sum(counts)):
+            counts[i % len(counts)] += 1
+    else:
+        counts = [0] * len(blocks)
 
+    scale_x, scale_y = img_width / 1280.0, img_height / 720.0
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
-    # Draw a coloured outline around each zone on the actual satellite photo.
-    # Green outline = grass cutting completed; red outline = pending.
-    for z_idx, zone_asset in enumerate(zone_assets):
-        if z_idx >= len(zone_boxes):
+
+    # Draw grass-cutting status around each physical array block. Zone status is
+    # selected from the site's configured zones and is saved independently from cleaning.
+    zone_count = max(1, len(zone_assets))
+    for block_idx, block in enumerate(blocks):
+        if not zone_assets:
             break
-        zx1, zy1, zx2, zy2 = zone_boxes[z_idx]
-        grass_done = zone_asset in completed_grass
-        fig.add_shape(
-            type="rect", xref="x", yref="y",
-            x0=zx1*scale_x, x1=zx2*scale_x,
-            y0=img_height-zy2*scale_y, y1=img_height-zy1*scale_y,
-            line=dict(color="#16a66a" if grass_done else "#ff4e59", width=3),
-            fillcolor="rgba(0,0,0,0)", layer="above",
-        )
-    fig.add_trace(go.Scatter(
-        x=xs, y=ys, mode="markers+text",
-        text=[a.replace("T-", "") for a in assets], textposition="middle center",
-        textfont=dict(size=7, color="white"),
-        marker=dict(symbol="square", size=15, color=colors, line=dict(color="white", width=1)),
-        hovertext=hover, hoverinfo="text", name="Table status",
-    ))
+        zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(blocks) - 1)))
+        zone_name = zone_assets[zone_idx]
+        grass_done = zone_name in completed_grass
+        points = [block[0], block[1], block[3], block[2], block[0]]
+        fig.add_trace(go.Scatter(
+            x=[x * scale_x for x, y in points],
+            y=[img_height - y * scale_y for x, y in points],
+            mode="lines", line=dict(color="#13c982" if grass_done else "#ff4e59", width=3),
+            hoverinfo="text", text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
+            showlegend=False,
+        ))
+
+    # A table is represented by a narrow polygon matching one real panel row.
+    asset_index = 0
+    for block_idx, (block, count) in enumerate(zip(blocks, counts)):
+        if count <= 0:
+            continue
+        top_left, top_right, bottom_left, bottom_right = block
+        # Slight inset avoids painting the paths and gaps between solar tables.
+        inset = 0.018
+        for row_idx in range(count):
+            if asset_index >= len(assets):
+                break
+            asset = assets[asset_index]
+            asset_index += 1
+            f0 = row_idx / count + inset / count
+            f1 = (row_idx + 1) / count - inset / count
+
+            def interp(a, b, f):
+                return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+
+            # Interpolate both ends along the slanted sides of the array block.
+            tl = interp(top_left, bottom_left, f0)
+            tr = interp(top_right, bottom_right, f0)
+            br = interp(top_right, bottom_right, f1)
+            bl = interp(top_left, bottom_left, f1)
+            polygon = [tl, tr, br, bl, tl]
+            is_done = asset in completed
+            zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets)))) if zone_assets else 0
+            zone_name = zone_assets[zone_idx] if zone_assets else f"Zone {zone_idx + 1}"
+            grass_done = zone_name in completed_grass
+            fig.add_trace(go.Scatter(
+                x=[x * scale_x for x, y in polygon],
+                y=[img_height - y * scale_y for x, y in polygon],
+                mode="lines", fill="toself",
+                fillcolor="#16c982" if is_done else "#ff4e59",
+                line=dict(color="#062337", width=1),
+                hoverinfo="text",
+                text=[f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}<br>{zone_name} grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(polygon),
+                showlegend=False,
+            ))
+
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
     fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        height=760, margin=dict(l=0, r=0, t=0, b=0),
+        height=760 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
@@ -1425,7 +1460,7 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     red_col.metric("Panel cleaning pending", pending_count)
     grass_col.metric("Grass-cutting zones completed", len(completed_grass))
     if not embedded:
-        st.caption("Update table colours in Panel Cleaning and zone outlines in Grass Cutting. Saved records appear on this map for the selected date.")
+        st.caption("Save progress in Panel Cleaning and Grass Cutting. The satellite table colours and zone borders update from the saved records for the selected date.")
 
 
 def operations_staff_section(db, user, plant):
