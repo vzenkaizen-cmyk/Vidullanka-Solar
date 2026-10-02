@@ -480,7 +480,6 @@ def seed_database():
         # information is available. Unknown capacities/headcounts stay at zero and can
         # be updated later from Plants and the site staff section.
         configured_sites = [
-            ("HOF", "HOF"),
             ("MTR", "Matara Solar Power Plant"),
             ("HRN 1", "Horana I Solar Power Plant"),
             ("HRN 2 ", "Horana II Solar Power Plant"),
