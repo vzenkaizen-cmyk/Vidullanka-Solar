@@ -1243,9 +1243,9 @@ def top_nav(db, user):
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
-        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
+        pages = ["🏠 Overview", "🛰️ Satellite Table Map", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
     else:
-        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Loss & Repair", "📋 Activity Log"]
+        pages = ["🏠 Overview", "🛰️ Satellite Table Map", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Loss & Repair", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "✅ Approvals & Sign-off"]
     if user.role == "admin":
@@ -1317,6 +1317,91 @@ def render_solar_layout(db, plant, task_date):
         )
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
+
+def satellite_table_map_page(db, user, plant):
+    """Show the real satellite photo with live table-status markers overlaid."""
+    import plotly.graph_objects as go
+    from PIL import Image
+
+    header(plant)
+    st.markdown("## 🛰️ Satellite Table Map")
+    st.caption("Satellite photo with live table status. Green markers are completed panel cleaning; red markers are pending. Update statuses in Panel Cleaning; this view refreshes from the saved database records.")
+
+    task_date = st.date_input("Status date", value=date.today(), key="satellite_map_date")
+    image_candidates = [
+        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
+        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpg"),
+        os.path.join(os.path.dirname(__file__), "HR1.jpeg"),
+    ]
+    image_path = next((p for p in image_candidates if os.path.exists(p)), None)
+    if not image_path:
+        st.error("Satellite image not found. Add the supplied site photo to the repository as assets/HR1.jpeg.")
+        return
+
+    with Image.open(image_path) as im:
+        img_width, img_height = im.size
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    image_uri = f"data:image/jpeg;base64,{encoded}"
+
+    assets = asset_list(plant, "Table")
+    records = status_map(db, plant.id, "Panel Cleaning", task_date)
+    completed = {a for a, r in records.items() if r.status == "Completed"}
+    pending_count = max(0, len(assets) - len(completed))
+
+    # Marker coordinates are a configurable starting overlay on the satellite photo.
+    # They are distributed across the visible panel-array blocks; exact table-to-photo
+    # alignment can be fine-tuned if a surveyed table coordinate map is provided.
+    zones = max(1, int(plant.zone_count or 1))
+    per_zone = (len(assets) + zones - 1) // zones
+    zone_boxes = [
+        (245, 20, 435, 325), (455, 145, 660, 385), (665, 65, 850, 330),
+        (850, 10, 1080, 310), (285, 370, 460, 755), (470, 390, 655, 755),
+        (670, 350, 850, 755), (865, 315, 1080, 755), (500, 80, 665, 340),
+        (680, 360, 1080, 730),
+    ]
+    xs, ys, colors, hover = [], [], [], []
+    for idx, asset in enumerate(assets):
+        zone_idx = min(idx // per_zone, zones - 1)
+        box = zone_boxes[zone_idx] if zone_idx < len(zone_boxes) else (240, 20, 1080, 755)
+        x1, y1, x2, y2 = box
+        in_zone_idx = idx % per_zone
+        cols = min(5, max(1, per_zone))
+        rows = max(1, (per_zone + cols - 1) // cols)
+        col = in_zone_idx % cols
+        row = in_zone_idx // cols
+        x = x1 + (col + 0.5) * (x2 - x1) / cols
+        y = y1 + (row + 0.5) * (y2 - y1) / rows
+        done = asset in completed
+        xs.append(x)
+        ys.append(img_height - y)  # Plotly's y-axis is bottom-up; image coordinates are top-down.
+        colors.append("#16a66a" if done else "#ff4e59")
+        hover.append(f"{asset}<br>Panel cleaning: {'Completed' if done else 'Pending'}<br>Click Panel Cleaning in navigation to update")
+
+    fig = go.Figure()
+    fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
+                              sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys, mode="markers+text",
+        text=[a.replace("T-", "") for a in assets], textposition="middle center",
+        textfont=dict(size=7, color="white"),
+        marker=dict(symbol="square", size=15, color=colors, line=dict(color="white", width=1)),
+        hovertext=hover, hoverinfo="text", name="Table status",
+    ))
+    fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
+    fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
+    fig.update_layout(
+        height=760, margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False, hovermode="closest",
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "scrollZoom": True})
+    green_col, red_col, action_col = st.columns([1, 1, 2])
+    green_col.metric("Completed tables", len(completed))
+    red_col.metric("Pending tables", pending_count)
+    with action_col:
+        st.info("To change a table's colour, open **Panel Cleaning**, select the same status date, and mark the table completed or pending. The satellite map uses the saved status.")
+
 
 def operations_staff_section(db, user, plant):
     """Show/edit per-site operating headcount and contacts; values persist in Neon."""
@@ -1435,24 +1520,21 @@ def overview_page(db, user, plant):
     for col, (title, val, label, cls) in zip(st.columns(6), cards):
         col.markdown(f'<div class="dashboard-card"><h4>{title}</h4><div class="dashboard-value {cls}">{val}</div><div class="dashboard-label">{label}</div></div>', unsafe_allow_html=True)
 
-    # Reference-style live dashboard: map on the left, progress/status panels on the right.
-    map_col, status_col = st.columns([2.15, 1.0], gap="medium")
-    with map_col:
-        st.markdown('<div class="map-section-title">🗺️ Solar Plant Map</div>', unsafe_allow_html=True)
-        st.caption("Live panel-cleaning and grass-cutting status. Green = completed, red = pending.")
-        st.markdown('<div class="layout-wrap">', unsafe_allow_html=True)
-        render_solar_layout(db, plant, end_date)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with status_col:
+    # Overview remains the dashboard summary. The satellite photo is available
+    # separately from the navigation menu so it does not crowd this page.
+    panel_col, grass_col = st.columns(2, gap="large")
+    with panel_col:
         st.markdown('<div class="map-section-title">🧹 Panel Cleaning Status</div>', unsafe_allow_html=True)
         donut_chart(metrics["panel_pct"], "Completed", "overview_panel_donut")
         st.progress(metrics["panel_pct"] / 100, text=f"{metrics['panel_pct']:.0f}% completed")
         st.write(f"🟢 Completed **{metrics['panel_done']} / {metrics['panel_total']}**")
         st.write(f"🔴 Pending **{metrics['panel_total'] - metrics['panel_done']}**")
+    with grass_col:
         st.markdown('<div class="map-section-title">🌿 Grass Cutting Status</div>', unsafe_allow_html=True)
         donut_chart(metrics["grass_pct"], "Completed", "overview_grass_donut")
         st.progress(metrics["grass_pct"] / 100, text=f"{metrics['grass_pct']:.0f}% completed")
         st.write(f"🟢 Completed **{metrics['grass_done']} / {metrics['grass_total']}**")
+        st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
         st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
         st.markdown('<div class="map-section-title">⚠️ Loss & Repair</div>', unsafe_allow_html=True)
         if metrics["open_repairs"]:
@@ -2468,6 +2550,8 @@ def main():
 
     if page == "🏠 Overview":
         overview_page(db, user, plant)
+    elif page == "🛰️ Satellite Table Map":
+        satellite_table_map_page(db, user, plant)
     elif page == "🧹 Panel Cleaning":
         panel_cleaning_page(db, user, plant)
     elif page == "🌿 Grass Cutting":
