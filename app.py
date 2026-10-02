@@ -235,6 +235,19 @@ class MaintenanceReminder(Base):
     plant = relationship("Plant", back_populates="reminders")
 
 
+class PlantOperationsProfile(Base):
+    """Editable operating-staff and contact details for each solar site."""
+    __tablename__ = "plant_operations_profiles"
+
+    id = Column(Integer, primary_key=True)
+    plant_id = Column(Integer, ForeignKey("plants.id"), unique=True, nullable=False)
+    operating_staff_count = Column(Integer, default=0, nullable=False)
+    supervisor_name = Column(String(200), default="", nullable=False)
+    engineer_name = Column(String(200), default="", nullable=False)
+    hof_name = Column(String(200), default="", nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 @st.cache_resource(show_spinner=False)
 def initialize_database(_engine):
     Base.metadata.create_all(_engine)
@@ -441,13 +454,36 @@ def seed_database():
                 Plant(
                     code="HRN",
                     name="HRN Solar Power Plant",
-                    capacity_mw=4,
+                    capacity_mw=2,
                     inverter_count=17,
                     table_count=150,
                     zone_count=10,
                 )
             )
             db.commit()
+
+        # Ensure the requested sites are selectable even before their detailed plant
+        # information is available. Unknown capacities/headcounts stay at zero and can
+        # be updated later from Plants and the site staff section.
+        configured_sites = [
+            ("HOF", "HOF"),
+            ("MTR-I", "Matara I Solar Power Plant"),
+            ("MTR-II", "Matara II Solar Power Plant"),
+            ("HS1", "Horana I Solar Power Plant"),
+            ("HS2", "Horana II Solar Power Plant"),
+            ("MDP", "MDP Solar Power Plant"),
+            ("ORK", "ORK Solar Power Plant"),
+        ]
+        for site_code, site_name in configured_sites:
+            if not db.query(Plant).filter(Plant.code == site_code).first():
+                db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
+                             inverter_count=10, table_count=80, zone_count=10, active=True))
+        db.commit()
+
+        # HRN's confirmed installed capacity is 2 MW. Correct existing seeded records too.
+        hrn_plant = db.query(Plant).filter(Plant.code == "HRN").first()
+        if hrn_plant and hrn_plant.capacity_mw != 2:
+            hrn_plant.capacity_mw = 2
 
         # Make the configured administrator account an approved active admin.
         admin_email = ADMIN_EMAIL.lower().strip()
@@ -992,12 +1028,12 @@ def css():
         .status-tile{padding:13px 14px;min-height:78px;box-sizing:border-box}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}.status-green{background:var(--green)}.status-red{background:var(--red)}.status-pending{background:var(--yellow)}
         .group-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:8px 0 20px;width:100%;box-sizing:border-box}.group-title{font-size:16px;font-weight:800;color:var(--text);margin:12px 0 8px}.check-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:6px 0;min-height:58px;width:100%;display:flex;align-items:center;box-sizing:border-box}.group-card [data-testid="stHorizontalBlock"]{gap:1.1rem;align-items:center}.group-card [data-testid="stSelectbox"]{min-width:180px}.group-card [data-testid="stTextInput"]{min-width:220px}
         .layout-wrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px;box-shadow:var(--shadow)}
-        .solar-map{position:relative;width:100%;min-height:760px;aspect-ratio:1280/900;overflow:hidden;border-radius:14px;background:radial-gradient(ellipse at 50% 45%,#173d4b 0%,#09233b 55%,#06162a 100%);border:1px solid #244765;box-shadow:inset 0 0 0 8px rgba(35,93,125,.12)}
-        .solar-map-title{position:absolute;left:14px;top:12px;background:rgba(4,24,45,.90);color:#fff;padding:8px 12px;border-radius:8px;font-weight:800;z-index:5}.solar-map-legend{position:absolute;left:14px;bottom:12px;background:rgba(4,24,45,.92);color:#fff;padding:8px 12px;border-radius:8px;z-index:5;font-size:12px}.legend-dot{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:5px}.legend-green{background:#16e879}.legend-red{background:#ff4e59}
-        .map-zone{position:absolute;padding:7px;background:rgba(6,24,42,.66);border:2px solid rgba(255,78,89,.9);border-radius:10px;box-sizing:border-box;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2)}.map-zone-title{display:inline-block;color:#fff;padding:5px 8px;border-radius:5px;font-size:12px;font-weight:800;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.4)}.map-tables{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.map-table{height:12px;border-radius:3px;opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.28)}.map-green{background:#16e879}.map-red{background:#ff4e59}.map-controls{position:absolute;right:10px;top:10px;width:132px;max-width:22%;background:rgba(4,24,45,.88);color:#fff;padding:5px 7px;border-radius:7px;z-index:5;font-size:9px;line-height:1.35;box-sizing:border-box;overflow-wrap:anywhere}.map-controls b{display:block;margin-bottom:2px}
+        .solar-map{position:relative;width:100%;min-height:900px;aspect-ratio:1280/1000;overflow:hidden;border-radius:14px;background:radial-gradient(ellipse at 50% 45%,#173d4b 0%,#09233b 55%,#06162a 100%);border:1px solid #244765;box-shadow:inset 0 0 0 8px rgba(35,93,125,.12)}
+        .solar-map-title{position:absolute;left:14px;top:12px;background:rgba(4,24,45,.90);color:#fff;padding:8px 12px;border-radius:8px;font-weight:800;z-index:5}.solar-map-legend{position:absolute;right:12px;bottom:12px;background:rgba(4,24,45,.92);color:#fff;padding:8px 12px;border-radius:8px;z-index:5;font-size:12px}.legend-dot{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:5px}.legend-green{background:#16e879}.legend-red{background:#ff4e59}
+        .map-zone{position:absolute;padding:7px;background:rgba(6,24,42,.66);border:2px solid rgba(255,78,89,.9);border-radius:10px;box-sizing:border-box;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2)}.map-zone-title{display:inline-block;color:#fff;padding:5px 8px;border-radius:5px;font-size:12px;font-weight:800;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.4)}.map-tables{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.map-table{height:12px;border-radius:3px;opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.28)}.map-green{background:#16e879}.map-red{background:#ff4e59}.map-controls{position:absolute;right:10px;top:10px;width:108px;max-width:18%;background:rgba(4,24,45,.88);color:#fff;padding:5px 7px;border-radius:7px;z-index:5;font-size:9px;line-height:1.35;box-sizing:border-box;overflow-wrap:anywhere}.map-controls b{display:block;margin-bottom:2px}
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
-        @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:720px}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:118px;font-size:8px}}
+        @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
         </style>""",unsafe_allow_html=True)
 
 def header(plant):
@@ -1194,13 +1230,8 @@ def top_nav(db, user):
     current_id = st.session_state.get("selected_plant_id") or (user.plant_id if user.role not in ("admin", "engineer") else plants[0].id)
     current_name = next((n for n, pid in plant_options.items() if pid == current_id), plants[0].name)
 
-    # Compact application bar at the top of the page; detailed plant dashboard title is rendered immediately below.
-    top_left, top_right = st.columns([4, 1.4])
-    with top_left:
-        st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
-    with top_right:
-        if st.button("🚪 Sign out", use_container_width=True, key="top_signout"):
-            st.session_state.clear(); st.rerun()
+    # Keep the signed-in identity in the main area; sign-out lives at the bottom of the sidebar navigation.
+    st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
@@ -1223,6 +1254,10 @@ def top_nav(db, user):
     with st.sidebar:
         st.divider()
         page = st.radio("Navigation", pages, key="top_navigation")
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        if st.button("🚪 Sign out", use_container_width=True, key="sidebar_signout_bottom"):
+            st.session_state.clear()
+            st.rerun()
 
     reminder_key = f"_reminders_checked_{st.session_state.selected_plant_id}_{date.today().isoformat()}"
     if user.role == "admin" and not st.session_state.get(reminder_key):
@@ -1246,17 +1281,17 @@ def render_solar_layout(db, plant, task_date):
     # Arrange up to 10 zones in a 3-column schematic. The fourth row leaves
     # enough bottom space for Zone 10 and the legend never covers a zone.
     positions = [
-        (3, 12, 29, 17), (35.5, 12, 29, 17), (68, 12, 29, 17),
-        (3, 32, 29, 17), (35.5, 32, 29, 17), (68, 32, 29, 17),
-        (3, 52, 29, 17), (35.5, 52, 29, 17), (68, 52, 29, 17),
-        (3, 72, 29, 17),
+        (3, 16, 29, 17), (35.5, 16, 29, 17), (68, 16, 29, 17),
+        (3, 36, 29, 17), (35.5, 36, 29, 17), (68, 36, 29, 17),
+        (3, 56, 29, 17), (35.5, 56, 29, 17), (68, 56, 29, 17),
+        (3, 76, 29, 17),
     ]
     zones = max(1, plant.zone_count)
     per_zone = (len(assets) + zones - 1) // zones
     html = [
         '<div class="solar-map">',
         '<div class="solar-map-title">☀️ Solar Plant Layout • Live Status</div>',
-        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = OK</span><br><span style="color:#ff4e59">● RED = NOT OK / PENDING</span><br>Each table reflects panel cleaning.<br>Zone status reflects grass cutting.</div>',
+        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = OK</span><br><span style="color:#ff4e59">● RED = NOT OK / PENDING</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
         '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>GREEN — OK &nbsp;&nbsp; <span class="legend-dot legend-red"></span>RED — NOT OK / Pending</div>'
     ]
     for z in range(zones):
@@ -1283,8 +1318,74 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
+def operations_staff_section(db, user, plant):
+    """Show/edit per-site operating headcount and contacts; values persist in Neon."""
+    profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
+    if profile is None:
+        defaults = {
+            "HOF": ("", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
+            "HRN": ("HRN In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "MTR II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+        }
+        sup, eng, hof = defaults.get(plant.code.upper(), ("", "", "Mr. Mahela Wanigasooriya"))
+        profile = PlantOperationsProfile(plant_id=plant.id, operating_staff_count=0,
+                                         supervisor_name=sup, engineer_name=eng, hof_name=hof)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    st.markdown("### 👷 Operating Staff & Site Contacts")
+    st.caption("Headcount and contact details are site-specific. An authorised supervisor, engineer, or administrator can update these values later.")
+    # All sites share the published operations leadership roster; the site profile below is editable.
+    leadership = [
+        ("Mr. Roshan Siriwardana", "Director – Operations"),
+        ("Mr. Manchanayeke Upul", "General Manager – Operations"),
+        ("Mr. Sampath Raweendra", "Chief Electrical Engineer"),
+        ("Mr. Damitha Bandulawansha", "Assistant Manager – Operations"),
+        ("Mr. Prasanna Kottege", "Electrical Engineer"),
+        ("Mr. Mahela Wanigasooriya", "Mechanical Engineer / HOF staff"),
+    ]
+    with st.expander("Operations leadership roster", expanded=False):
+        st.dataframe(pd.DataFrame(leadership, columns=["Name", "Position"]), use_container_width=True, hide_index=True)
+
+    editable = user.role in ("admin", "engineer", "supervisor")
+    with st.form(f"site_staff_profile_{plant.id}"):
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            count = st.number_input("No. of operating staff members", min_value=0, max_value=10000,
+                                    value=int(profile.operating_staff_count or 0), step=1, disabled=not editable)
+            supervisor = st.text_input("Site supervisor / in-charge", value=profile.supervisor_name or "",
+                                       placeholder="Enter supervisor name", disabled=not editable)
+        with c2:
+            engineer = st.text_input("Relevant engineer", value=profile.engineer_name or "",
+                                     placeholder="Enter responsible engineer", disabled=not editable)
+            hof = st.text_input("HOF / mechanical contact", value=profile.hof_name or "Mr. Mahela Wanigasooriya",
+                                disabled=not editable)
+        submitted = st.form_submit_button("Save site staff details", use_container_width=True, disabled=not editable)
+        if submitted:
+            profile.operating_staff_count = int(count)
+            profile.supervisor_name = supervisor.strip()
+            profile.engineer_name = engineer.strip()
+            profile.hof_name = hof.strip()
+            profile.updated_at = datetime.utcnow()
+            db.commit()
+            st.success(f"Operating staff and contacts saved for {plant.name}.")
+            st.rerun()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Operating staff", int(profile.operating_staff_count or 0))
+    c2.metric("Supervisor / In-charge", profile.supervisor_name or "Not set")
+    c3.metric("Engineer", profile.engineer_name or "Not set")
+
+
 def overview_page(db, user, plant):
     header(plant)
+    operations_staff_section(db, user, plant)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
