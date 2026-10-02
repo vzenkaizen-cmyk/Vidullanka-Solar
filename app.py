@@ -483,7 +483,7 @@ def seed_database():
             ("HOF", "HOF"),
             ("MTR-I", "Matara I Solar Power Plant"),
             ("MTR-II", "Matara II Solar Power Plant"),
-            ("HS1", "HS1 Solar Power Plant"),
+            ("HS1", "Horana I Solar Power Plant"),
             ("HS2", "Horana II Solar Power Plant"),
             ("MDP", "MDP Solar Power Plant"),
             ("ORK", "ORK Solar Power Plant"),
@@ -1060,7 +1060,12 @@ def css():
         .nav-wrap [role="radiogroup"]{gap:4px;flex-wrap:wrap}.nav-wrap label{border-radius:9px;padding:5px 10px!important;border:1px solid transparent;min-height:34px}.nav-wrap label:hover{background:var(--surface2);border-color:var(--border)}
         .card,.dashboard-card,.status-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
         .dashboard-card{height:158px;min-height:158px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 14px 12px;box-sizing:border-box;overflow:hidden}.dashboard-card h4{margin:0;color:var(--muted);font-size:13px;line-height:1.25;min-height:17px}.dashboard-value{color:var(--text);font-size:28px;font-weight:800;line-height:1.1;margin-top:2px}.dashboard-label,.small-muted{color:var(--muted);font-size:11px;line-height:1.25;overflow-wrap:anywhere}.dashboard-label{margin-top:auto;min-height:29px}.pending-inline{display:block;margin-top:2px;white-space:normal;line-height:1.2}.good{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}.warn{color:var(--yellow);font-weight:800}.section-title{font-size:20px;font-weight:800;color:var(--text)}
-        div[data-testid="stMetric"]{background:var(--surface);border:1px solid var(--border);padding:12px;border-radius:12px;box-shadow:var(--shadow);min-height:108px;box-sizing:border-box}div[data-baseweb="select"]>div,div[data-baseweb="input"]>div,div[data-baseweb="textarea"]>div{background:var(--surface)}
+        div[data-testid="stMetric"]{background:var(--surface);border:1px solid var(--border);padding:12px;border-radius:12px;box-shadow:var(--shadow);min-height:108px;box-sizing:border-box;min-width:0}
+        div[data-testid="stMetric"] label{white-space:normal!important;overflow-wrap:anywhere;line-height:1.25}
+        /* Keep Streamlit's image/element toolbar compact when it appears. */
+        [data-testid="stElementToolbar"]{transform:scale(.72);transform-origin:top right;right:3px!important;top:3px!important}
+        .modebar-container{transform:scale(.72);transform-origin:top right}
+        div[data-baseweb="select"]>div,div[data-baseweb="input"]>div,div[data-baseweb="textarea"]>div{background:var(--surface)}
         .status-tile{padding:13px 14px;min-height:78px;box-sizing:border-box}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}.status-green{background:var(--green)}.status-red{background:var(--red)}.status-pending{background:var(--yellow)}
         .group-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:8px 0 20px;width:100%;box-sizing:border-box}.group-title{font-size:16px;font-weight:800;color:var(--text);margin:12px 0 8px}.check-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:6px 0;min-height:58px;width:100%;display:flex;align-items:center;box-sizing:border-box}.group-card [data-testid="stHorizontalBlock"]{gap:1.1rem;align-items:center}.group-card [data-testid="stSelectbox"]{min-width:180px}.group-card [data-testid="stTextInput"]{min-width:220px}
         .layout-wrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px;box-shadow:var(--shadow)}
@@ -1069,8 +1074,8 @@ def css():
         .map-zone{position:absolute;padding:7px;background:rgba(6,24,42,.66);border:2px solid rgba(255,78,89,.9);border-radius:10px;box-sizing:border-box;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2)}.map-zone-title{display:inline-block;color:#fff;padding:5px 8px;border-radius:5px;font-size:12px;font-weight:800;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.4)}.map-tables{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.map-table{height:12px;border-radius:3px;opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.28)}.map-green{background:#16e879}.map-red{background:#ff4e59}.map-controls{position:absolute;right:10px;top:10px;width:108px;max-width:18%;background:rgba(4,24,45,.88);color:#fff;padding:5px 7px;border-radius:7px;z-index:5;font-size:9px;line-height:1.35;box-sizing:border-box;overflow-wrap:anywhere}.map-controls b{display:block;margin-bottom:2px}
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
-        .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:12px 14px;min-height:92px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
-        .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:112px;height:auto;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:visible}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:8px}.plant-detail-value{color:var(--text);font-size:18px;font-weight:800;line-height:1.3;overflow-wrap:anywhere;word-break:normal;white-space:normal}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:7px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
+        .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:9px 11px;min-height:68px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
+        .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:105px;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:7px}.plant-detail-value{color:var(--text);font-size:19px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:6px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
         </style>""",unsafe_allow_html=True)
@@ -1278,7 +1283,7 @@ def top_nav(db, user):
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
         st.divider()
-        # Notifications are displayed on the Overview page only.
+        notification_center(db, user)
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
@@ -1329,9 +1334,9 @@ def render_solar_layout(db, plant, task_date):
     per_zone = (len(assets) + zones - 1) // zones
     html = [
         '<div class="solar-map">',
-        '<div class="solar-map-title">☀️ Solar Plant Layout • Live Status</div>',
-        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = OK</span><br><span style="color:#ff4e59">● RED = NOT OK / PENDING</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
-        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>GREEN — OK &nbsp;&nbsp; <span class="legend-dot legend-red"></span>RED — NOT OK / Pending</div>'
+        '<div class="solar-map-title">🛰️ Solar Plant Map • Live Status</div>',
+        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = Completed</span><br><span style="color:#ff4e59">● RED = Pending</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
+        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>Completed &nbsp;&nbsp; <span class="legend-dot legend-red"></span>Pending / Pending</div>'
     ]
     for z in range(zones):
         items = assets[z*per_zone:(z+1)*per_zone]
@@ -1342,12 +1347,12 @@ def render_solar_layout(db, plant, task_date):
         grass_done = zone_id in completed_grass
         zone_color = "#16e879" if grass_done else "#ff4e59"
         cells = ''.join(
-            f'<span class="map-table {"map-green" if a in completed_panel else "map-red"}" title="{a}: {"GREEN — OK" if a in completed_panel else "RED — NOT OK / Pending"}"></span>'
+            f'<span class="map-table {"map-green" if a in completed_panel else "map-red"}" title="{a}: {"Completed" if a in completed_panel else "Pending / Pending"}"></span>'
             for a in items
         )
         done = sum(1 for a in items if a in completed_panel)
         pct = done / len(items) * 100 if items else 0
-        grass_label = "GREEN — OK" if grass_done else "RED — NOT OK"
+        grass_label = "Completed" if grass_done else "Pending"
         html.append(
             f'<div class="map-zone" style="left:{left}%;top:{top}%;width:{width}%;height:{height}%;border-color:{zone_color}">'
             f'<div class="map-zone-title" style="background:{zone_color};color:#07131f">Zone {z+1} • Grass {grass_label}</div>'
@@ -1489,12 +1494,26 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
     fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        height=360 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
+        height=440 if embedded else 700, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "scrollZoom": True})
-    green_col, red_col, grass_col = st.columns(3)
+    # Show the map toolbar only on hover and keep only the useful export control;
+    # this prevents the dark toolbar from covering the satellite image.
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displayModeBar": "hover",
+            "displaylogo": False,
+            "scrollZoom": True,
+            "modeBarButtonsToRemove": [
+                "zoom2d", "pan2d", "select2d", "lasso2d", "zoomIn2d",
+                "zoomOut2d", "autoScale2d", "resetScale2d"
+            ],
+        },
+    )
+    green_col, red_col, grass_col = st.columns([1, 1, 1.45], gap="small")
     green_col.metric("Panel cleaning completed", len(completed))
     red_col.metric("Panel cleaning pending", pending_count)
     grass_col.metric("Grass-cutting zones completed", len(completed_grass))
@@ -1568,113 +1587,99 @@ def operations_staff_section(db, user, plant):
     c3.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Engineer</div><div class="staff-summary-value staff-summary-text">{profile.engineer_name or "Not set"}</div></div>', unsafe_allow_html=True)
 
 
-def overview_context(db, user, plant, show_notifications=True, show_details=True):
-    """Show notifications and the selected plant's current site details on Overview."""
-    profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
-    if profile is None:
-        # Use the approved operations contacts until an authorised user edits the site profile.
-        code = (plant.code or "").upper().replace("_", "-").strip()
-        defaults = {
-            "HOF": ("HOF In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR-II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-        }
-        supervisor_default, engineer_default, hof_default = defaults.get(
-            code, (f"{code or 'Site'} In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya")
-        )
-        profile = PlantOperationsProfile(
-            plant_id=plant.id, operating_staff_count=0,
-            supervisor_name=supervisor_default, engineer_name=engineer_default,
-            hof_name=hof_default,
-        )
-        db.add(profile)
-        db.commit()
-        db.refresh(profile)
-
-    if show_notifications:
-        unread = db.query(Notification).filter(
-            Notification.user_id == user.id, Notification.is_read == False
-        ).count()
+def overview_context(db, user, plant):
+    """Keep notifications available in a compact dropdown, not as large cards."""
+    unread = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.is_read == False,
+        or_(Notification.plant_id == plant.id, Notification.plant_id == None),
+    ).count()
+    with st.expander(f"🔔 Notifications ({unread} unread) — show / hide", expanded=False):
         notifications = db.query(Notification).filter(
             Notification.user_id == user.id,
             or_(Notification.plant_id == plant.id, Notification.plant_id == None),
-        ).order_by(Notification.created_at.desc()).limit(5).all()
-
-        with st.expander(f"🔔 Notifications ({unread} unread)", expanded=False):
-            if unread:
-                if st.button("Mark all as read", key=f"overview_mark_all_{plant.id}"):
-                    for notification in notifications:
-                        notification.is_read = True
-                    db.commit()
-                    st.rerun()
-            if notifications:
-                for n in notifications:
-                    cls = "bad" if n.severity == "High" else "warn"
-                    icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
-                    c1, c2 = st.columns([6, 1])
-                    with c1:
-                        st.markdown(
-                            f'<div class="overview-notification"><b>{icon} {n.title}</b>'
-                            f'<div class="small-muted">{n.message}</div>'
-                            f'<div class="{cls}">{n.created_at:%d %b %Y %H:%M}</div></div>',
-                            unsafe_allow_html=True,
-                        )
-                    with c2:
-                        if not n.is_read and st.button("Read", key=f"overview_read_{n.id}"):
-                            n.is_read = True
-                            db.commit()
-                            st.rerun()
-            else:
-                st.caption("🟢 No new notifications for this plant.")
-
-
-    if show_details:
-        st.markdown("### 🏭 Power Plant Details & Technical Specifications")
-        staff_count = int(profile.operating_staff_count or 0) if profile else 0
-        supervisor = (profile.supervisor_name or "Not set") if profile else "Not set"
-        engineer = (profile.engineer_name or "Not set") if profile else "Not set"
-        details = [
-            ("Plant", plant.name, "Site identity"),
-            ("Capacity", f"{plant.capacity_mw:g} MW", "Installed capacity"),
-            ("Inverters", str(plant.inverter_count), "Operational units"),
-            ("Tables", str(plant.table_count), "Solar panel tables"),
-            ("Zones", str(plant.zone_count), "Grass-cutting zones"),
-            ("Operating Staff", str(staff_count), "Site headcount"),
-            ("Supervisor / In-charge", supervisor, "Site contact"),
-            ("Relevant Engineer", engineer, "Engineering contact"),
-        ]
-        cols = st.columns(3, gap="medium")
-        for idx, (label, value, hint) in enumerate(details):
-            with cols[idx % 3]:
+        ).order_by(Notification.created_at.desc()).limit(10).all()
+        if not notifications:
+            st.caption("No notifications for this plant.")
+        else:
+            if st.button("Mark all as read", key=f"overview_mark_all_{plant.id}"):
+                db.query(Notification).filter(
+                    Notification.user_id == user.id,
+                    or_(Notification.plant_id == plant.id, Notification.plant_id == None),
+                ).update({Notification.is_read: True}, synchronize_session=False)
+                db.commit()
+                st.rerun()
+            for n in notifications:
+                icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
                 st.markdown(
-                    f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
-                    f'<div class="plant-detail-value">{value}</div><div class="plant-detail-hint">{hint}</div></div>',
+                    f'<div class="overview-notification"><b>{icon} {n.title}</b>'
+                    f'<div class="small-muted">{n.message}</div>'
+                    f'<div class="small-muted">{n.created_at:%d %b %Y %H:%M}</div></div>',
                     unsafe_allow_html=True,
                 )
-        specs = {
-            "ORK": ["ORK (Monaragala)", "0.88 MW", "535 Wp × 1,870", "2279 × 1134 mm", "Mono", "100 kW × 8", "18 panels × 13 strings", "34 panels × 1 table + 36 panels × 51 tables", "1000 kVA 33 kV/400 V", "N/A", "18%", "Orik Corporation (Pvt) Ltd", "87%", "6.67 acres", "Pasindu"],
-            "HS1": ["HRN I (Horana)", "2 MW", "535 Wp × 4,480", "2285 × 1134 mm", "Mono", "200 kW × 10", "28 panels × 28 strings", "56 panels × 80 tables", "2200 kVA 33 kV/800 V", "10 kVA 230 V/800 V", "21%", "Vidulsolar (Pvt) Ltd", "100%", "8.99 acres", "Roshan"],
-            "HS2": ["HRN 2 (Horana)", "2 MW", "615 Wp × 4,060", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 7", "29 panels × 20 strings", "58 panels × 70 tables", "2250 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "20%", "Vidulsolar (Pvt) Ltd", "100%", "6.5 acres", "Roshan"],
-            "MTR-I": ["MTR (Matara)", "3 MW", "615 Wp × 6,160", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 10", "28 panels × 22 strings", "56 panels × 110 tables", "3300 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "21.04%", "Vidul Matara Solar Power (Pvt) Ltd", "100%", "10.5 acres", "Sudheera"],
-            "MDP": ["MDP (Madampe)", "6 MW", "615 Wp × 12,320", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 20", "28 panels × 22 strings", "56 panels × 220 tables", "6000 kVA 33 kV/800 V", "50 kVA 230 V/800 V", "21.00%", "Vidulsolar (Pvt) Ltd", "100%", "20 acres", "Sansala"],
-        }
-        spec = specs.get((plant.code or "").upper())
-        if spec:
-            labels = ["Power Plant", "AC Capacity", "Panels", "Panel Size", "Cell Type", "Inverters", "Panel Connection for Inverter", "Table Arrangement", "Main Transformer", "Auxiliary Transformer", "Plant Factor", "Project Company", "Ownership", "Land Area", "Plant In-Charge"]
-            st.markdown("#### Technical specification")
-            st.dataframe(pd.DataFrame({"Specification": labels, "Details": spec}), use_container_width=True, hide_index=True)
-        else:
-            st.caption("Detailed technical specifications have not been added for this site yet.")
+                if not n.is_read and st.button("Mark as read", key=f"read_notification_{n.id}"):
+                    n.is_read = True
+                    db.commit()
+                    st.rerun()
+
+
+def render_plant_details_and_specs(db, plant):
+    """Render site identity/contact details and the technical-specification table at the bottom."""
+    profile = db.query(PlantOperationsProfile).filter(
+        PlantOperationsProfile.plant_id == plant.id
+    ).first()
+    staff_count = int(profile.operating_staff_count or 0) if profile else 0
+    supervisors = {
+        "ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan",
+        "MTR": "Sudheera", "MTR-I": "Sudheera", "MTR-II": "Sudheera",
+        "MDP": "Sansala", "HOF": "Not provided",
+    }
+    supervisor = (profile.supervisor_name.strip() if profile and profile.supervisor_name else "") or supervisors.get(plant.code, "Not provided")
+    engineers = {
+        "HS1": "Mr. Prasanna Kottege", "HS2": "Mr. Prasanna Kottege",
+        "MTR": "Mr. Mahela Wanigasooriya", "MTR-I": "Mr. Mahela Wanigasooriya",
+        "MTR-II": "Mr. Mahela Wanigasooriya", "MDP": "Mr. Mahela Wanigasooriya",
+        "ORK": "Not provided", "HOF": "Mr. Mahela Wanigasooriya",
+    }
+    engineer = (profile.engineer_name.strip() if profile and profile.engineer_name else "") or engineers.get(plant.code, "Not provided")
+
+    st.markdown("## 🏭 Power Plant Details")
+    detail_rows = [
+        ("Plant", plant.name), ("Site code", plant.code),
+        ("AC Capacity", f"{plant.capacity_mw:g} MW"),
+        ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
+        ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
+        ("Plant In-Charge / Supervisor", supervisor), ("Relevant Engineer", engineer),
+    ]
+    cols = st.columns(3)
+    for i, (label, value) in enumerate(detail_rows):
+        with cols[i % 3]:
+            st.markdown(
+                f'<div class="plant-detail-card"><div class="plant-detail-label">{label}</div>'
+                f'<div class="plant-detail-value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    # Technical values are populated only where supplied in the plant-specification sheet.
+    specs = {
+        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres"},
+        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres"},
+        "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres"},
+        "MTR-I": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres"},
+        "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres"},
+    }
+    spec = specs.get(plant.code) or specs.get("MTR-I" if plant.code == "MTR" else plant.code, {})
+    st.markdown("## ⚙️ Technical Specifications")
+    if spec:
+        st.dataframe(pd.DataFrame([{"Specification": k, "Value": v} for k, v in spec.items()]),
+                     use_container_width=True, hide_index=True)
+    else:
+        st.info("Technical specifications have not yet been provided for this site. Add them to the site specification configuration when available.")
 
 
 def overview_page(db, user, plant):
     header(plant)
-    overview_context(db, user, plant, show_notifications=True, show_details=False)
+    overview_context(db, user, plant)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
@@ -1724,47 +1729,30 @@ def overview_page(db, user, plant):
     for col, (title, val, label, cls) in zip(st.columns(6), cards):
         col.markdown(f'<div class="dashboard-card"><h4>{title}</h4><div class="dashboard-value {cls}">{val}</div><div class="dashboard-label">{label}</div></div>', unsafe_allow_html=True)
 
-    # Compact overview: map on the left, live cleaning/grass/repair status on the right.
-    map_col, status_col = st.columns([1.85, 1.0], gap="medium", vertical_alignment="top")
-    with map_col:
-        st.markdown("### 🛰️ Solar Plant Map")
-        satellite_table_map_page(db, user, plant, embedded=True)
-        st.caption("🟢 Green = completed  •  🔴 Red = pending  •  Hover over a table for its status.")
+    # Keep the real satellite image on Overview, with live table markers and
+    # grass-cutting zone outlines. The image keeps its aspect ratio.
+    st.markdown("### 🛰️ Solar Plant Map")
+    satellite_table_map_page(db, user, plant, embedded=True)
 
-    with status_col:
+    panel_col, grass_col = st.columns(2, gap="large")
+    with panel_col:
         st.markdown('<div class="map-section-title">🧹 Panel Cleaning Status</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="plant-detail-card"><div class="plant-detail-label">Completed tables</div>'
-            f'<div class="plant-detail-value good">{metrics["panel_pct"]:.0f}%</div>'
-            f'<div class="plant-detail-hint">{metrics["panel_done"]} completed / {metrics["panel_total"] - metrics["panel_done"]} pending</div></div>',
-            unsafe_allow_html=True,
-        )
-        st.progress(metrics["panel_pct"] / 100, text=f'{metrics["panel_pct"]:.0f}% complete')
-
+        donut_chart(metrics["panel_pct"], "Completed", "overview_panel_donut")
+        st.progress(metrics["panel_pct"] / 100, text=f"{metrics['panel_pct']:.0f}% completed")
+        st.write(f"🟢 Completed **{metrics['panel_done']} / {metrics['panel_total']}**")
+        st.write(f"🔴 Pending **{metrics['panel_total'] - metrics['panel_done']}**")
+    with grass_col:
         st.markdown('<div class="map-section-title">🌿 Grass Cutting Status</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="plant-detail-card"><div class="plant-detail-label">Completed zones</div>'
-            f'<div class="plant-detail-value good">{metrics["grass_pct"]:.0f}%</div>'
-            f'<div class="plant-detail-hint">{metrics["grass_done"]} completed / {metrics["grass_total"] - metrics["grass_done"]} pending</div></div>',
-            unsafe_allow_html=True,
-        )
-        st.progress(metrics["grass_pct"] / 100, text=f'{metrics["grass_pct"]:.0f}% complete')
-
-        st.markdown('<div class="map-section-title">⚠️ Current Status</div>', unsafe_allow_html=True)
-        repair_class = "bad" if metrics["open_repairs"] else "good"
-        repair_text = "Open repair items" if metrics["open_repairs"] else "No open repair items"
-        st.markdown(
-            f'<div class="plant-detail-card"><div class="plant-detail-label">Loss & Repair</div>'
-            f'<div class="plant-detail-value {repair_class}">{metrics["open_repairs"]}</div>'
-            f'<div class="plant-detail-hint">{repair_text}</div></div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="plant-detail-card"><div class="plant-detail-label">Plant availability</div>'
-            f'<div class="plant-detail-value">{plant.capacity_mw:g} MW</div>'
-            f'<div class="plant-detail-hint">{plant.inverter_count} inverters • {plant.table_count} tables • {plant.zone_count} zones</div></div>',
-            unsafe_allow_html=True,
-        )
+        donut_chart(metrics["grass_pct"], "Completed", "overview_grass_donut")
+        st.progress(metrics["grass_pct"] / 100, text=f"{metrics['grass_pct']:.0f}% completed")
+        st.write(f"🟢 Completed **{metrics['grass_done']} / {metrics['grass_total']}**")
+        st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
+        st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
+        st.markdown('<div class="map-section-title">⚠️ Loss & Repair</div>', unsafe_allow_html=True)
+        if metrics["open_repairs"]:
+            st.error(f"{metrics['open_repairs']} active repair item(s)")
+        else:
+            st.success("No open repair items")
 
     # Bottom panels mirror the reference dashboard and keep all cards equal height.
     st.markdown("### 📋 Current Status Details")
@@ -1812,12 +1800,13 @@ def overview_page(db, user, plant):
     else:
         st.info("No maintenance records match the selected filters.")
 
+    # Keep technical/site information below the operational dashboard, as requested.
+    st.divider()
+    render_plant_details_and_specs(db, plant)
+
 # ============================================================
 # Panel Cleaning
 # ============================================================
-
-    overview_context(db, user, plant, show_notifications=False, show_details=True)
-
 
 def panel_cleaning_page(db, user, plant):
     header(plant)
@@ -1974,7 +1963,7 @@ def inspection_page(db, user, plant):
                 "Status",
                 options,
                 index=default_index,
-                format_func=lambda value: {"Pending": "PENDING", "GREEN": "GREEN — OK", "RED": "RED — NOT OK"}.get(value, value),
+                format_func=lambda value: {"Pending": "PENDING", "GREEN": "Completed", "RED": "Pending"}.get(value, value),
                 key=f"{category}_{asset}_{task_date}_{i}",
                 label_visibility="collapsed",
             )
