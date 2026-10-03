@@ -1970,20 +1970,31 @@ def panel_cleaning_page(db, user, plant):
     for i, asset in enumerate(assets):
         r = panel_records.get(asset)
         done = bool(r and r.status == "Completed")
+        saved_worker_name = (r.remarks or "").strip() if r else ""
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+            worker_name = st.text_input(
+                "Name of person doing the cleaning",
+                value=saved_worker_name,
+                key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
+                placeholder="Enter worker/supervisor name",
+            ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"panel_{asset}_{task_date}",
                 use_container_width=True,
             ):
-                upsert_record(
-                    db, plant.id, "Panel Cleaning", asset, task_date, user.id,
-                    "Pending" if done else "Completed",
-                    {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
-                )
-                st.rerun()
+                if not done and not worker_name:
+                    st.warning(f"Enter the worker's name for {asset} before marking it completed.")
+                else:
+                    upsert_record(
+                        db, plant.id, "Panel Cleaning", asset, task_date, user.id,
+                        "Pending" if done else "Completed",
+                        {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
+                        remarks="" if done else worker_name,
+                    )
+                    st.rerun()
 
 
 # ============================================================
@@ -2007,20 +2018,31 @@ def grass_cutting_page(db, user, plant):
     for i, zone in enumerate(asset_list(plant, "Zone")):
         r = grass_records.get(zone)
         done = bool(r and r.status == "Completed")
+        saved_worker_name = (r.remarks or "").strip() if r else ""
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+            worker_name = st.text_input(
+                "Name of person doing the grass cutting",
+                value=saved_worker_name,
+                key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
+                placeholder="Enter worker/supervisor name",
+            ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"grass_{zone}_{task_date}",
                 use_container_width=True,
             ):
-                upsert_record(
-                    db, plant.id, "Grass Cutting", zone, task_date, user.id,
-                    "Pending" if done else "Completed",
-                    {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
-                )
-                st.rerun()
+                if not done and not worker_name:
+                    st.warning(f"Enter the worker's name for {zone} before marking it completed.")
+                else:
+                    upsert_record(
+                        db, plant.id, "Grass Cutting", zone, task_date, user.id,
+                        "Pending" if done else "Completed",
+                        {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
+                        remarks="" if done else worker_name,
+                    )
+                    st.rerun()
 
 
 # ============================================================
