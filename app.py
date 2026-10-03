@@ -515,7 +515,7 @@ def seed_database():
                 db.delete(old_profile)
             old_hrn.active = False
         if hs1_plant:
-            hs1_plant.name = "HS1 Solar Power Plant"
+            hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
 
@@ -1196,7 +1196,7 @@ def login_page():
 
         with r1:
             registration_form("supervisor", "Supervisor Account", "reg_supervisor")
-            st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
+            st.caption("The MTR, MDP, HRN1, HRN2 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
         with r2:
             registration_form("management", "Engineer / Administrator Account", "reg_management")
             st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
