@@ -1528,7 +1528,7 @@ def operations_staff_section(db, user, plant):
         ("Mr. Sampath Raweendra", "Chief Electrical Engineer"),
         ("Mr. Damitha Bandulawansha", "Assistant Manager – Operations"),
         ("Mr. Prasanna Kottege", "Electrical Engineer"),
-        ("Mr. Mahela Wanigasooriya", "Mechanical Engineer / HOF staff"),
+        ("Mr. Mahela Wanigasooriya", "Mechanical Engineer"),
     ]
     with st.expander("Operations leadership roster", expanded=False):
         st.dataframe(pd.DataFrame(leadership, columns=["Name", "Position"]), use_container_width=True, hide_index=True)
