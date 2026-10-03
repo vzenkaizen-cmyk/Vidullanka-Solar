@@ -1663,7 +1663,15 @@ def overview_context(db, user, plant, show_notifications=True, show_details=True
             "MTR": ["MTR (Matara)", "3 MW", "615 Wp × 6,160", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 10", "28 panels × 22 strings", "56 panels × 110 tables", "3300 kVA 33 kV/800 V", "5 kVA 230 V/800 V", "21.04%", "Vidul Matara Solar Power (Pvt) Ltd", "100%", "10.5 acres", "Sudheera"],
             "MDP": ["MDP (Madampe)", "6 MW", "615 Wp × 12,320", "2382 × 1134 mm", "N-Type TOPCon", "300 kW × 20", "28 panels × 22 strings", "56 panels × 220 tables", "6000 kVA 33 kV/800 V", "50 kVA 230 V/800 V", "21.00%", "Vidulsolar (Pvt) Ltd", "100%", "20 acres", "Sansala"],
         }
-        spec = specs.get((plant.code or "").upper())
+        # Normalize plant codes so values such as "HRN 1", "HRN 2 ",
+        # "HRN1", and "HRN2" resolve to the correct site specification.
+        import re
+        site_code = re.sub(r"[^A-Z0-9]", "", str(plant.code or "").upper())
+        normalized_specs = {
+            re.sub(r"[^A-Z0-9]", "", str(key).upper()): value
+            for key, value in specs.items()
+        }
+        spec = normalized_specs.get(site_code)
         if spec:
             labels = ["Power Plant", "AC Capacity", "Panels", "Panel Size", "Cell Type", "Inverters", "Panel Connection for Inverter", "Table Arrangement", "Main Transformer", "Auxiliary Transformer", "Plant Factor", "Project Company", "Ownership", "Land Area", "Plant In-Charge"]
             st.markdown("#### Technical specification")
@@ -1674,7 +1682,7 @@ def overview_context(db, user, plant, show_notifications=True, show_details=True
 
 def overview_page(db, user, plant):
     header(plant)
-    overview_context(db, user, plant, show_notifications=True, show_details=False)
+    overview_context(db, user, plant, show_notifications=True, show_details=True)
     st.markdown("### 🔎 Dashboard Filters")
     f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
     with f1:
