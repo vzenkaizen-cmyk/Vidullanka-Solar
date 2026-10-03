@@ -1343,7 +1343,7 @@ def top_nav(db, user):
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
         st.divider()
-        notification_center(db, user)
+        # Notifications are intentionally removed from the sidebar navigation.
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
@@ -1422,8 +1422,12 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
-def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True):
-    """Show the real satellite photo with each solar-table row coloured by saved status."""
+def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True, map_mode="both"):
+    """Show the same satellite photo with status overlays limited to the current page.
+
+    map_mode='both' shows panel-cleaning fills and grass-cutting zone borders;
+    'panel' shows only panel-cleaning status; 'grass' shows only grass-cutting status.
+    """
     import plotly.graph_objects as go
     from PIL import Image
 
@@ -1494,8 +1498,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
 
-    # Draw grass-cutting status around each physical array block. Zone status is
-    # selected from the site's configured zones and is saved independently from cleaning.
+    # Zone borders are coloured only on the Overview and Grass Cutting pages.
+    # Panel Cleaning deliberately does not display grass-cutting status.
     zone_count = max(1, len(zone_assets))
     for block_idx, block in enumerate(blocks):
         if not zone_assets:
@@ -1504,11 +1508,16 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
         points = [block[0], block[1], block[3], block[2], block[0]]
+        if map_mode in ("both", "grass"):
+            border_color = "#13c982" if grass_done else "#ff4e59"
+        else:
+            border_color = "#243447"
         fig.add_trace(go.Scatter(
             x=[x * scale_x for x, y in points],
             y=[img_height - y * scale_y for x, y in points],
-            mode="lines", line=dict(color="#13c982" if grass_done else "#ff4e59", width=3),
-            hoverinfo="text", text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
+            mode="lines", line=dict(color=border_color, width=3),
+            hoverinfo="text",
+            text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}" if map_mode in ("both", "grass") else "Solar array"] * len(points),
             showlegend=False,
         ))
 
@@ -1541,21 +1550,31 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets)))) if zone_assets else 0
             zone_name = zone_assets[zone_idx] if zone_assets else f"Zone {zone_idx + 1}"
             grass_done = zone_name in completed_grass
+            if map_mode in ("both", "panel"):
+                fill_color = "#16c982" if is_done else "#ff4e59"
+                hover_text = f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}"
+                if map_mode == "both":
+                    hover_text += f"<br>{zone_name} grass cutting: {'Completed' if grass_done else 'Pending'}"
+            else:
+                # Grass Cutting page: panel rows are only a neutral map reference;
+                # no panel-cleaning status is coloured or shown.
+                fill_color = "rgba(0,0,0,0)"
+                hover_text = f"{zone_name}<br>Grass cutting: {'Completed' if grass_done else 'Pending'}"
             fig.add_trace(go.Scatter(
                 x=[x * scale_x for x, y in polygon],
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
-                fillcolor="#16c982" if is_done else "#ff4e59",
+                fillcolor=fill_color,
                 line=dict(color="#062337", width=1),
                 hoverinfo="text",
-                text=[f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}<br>{zone_name} grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(polygon),
+                text=[hover_text] * len(polygon),
                 showlegend=False,
             ))
 
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
     fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        height=440 if embedded else 700, margin=dict(l=0, r=0, t=0, b=0),
+        height=300 if embedded else 620, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
@@ -1827,7 +1846,7 @@ def overview_page(db, user, plant):
     map_col, status_col = st.columns([1.75, 1.0], gap="large")
     with map_col:
         st.markdown("### 🛰️ Solar Plant Map")
-        satellite_table_map_page(db, user, plant, embedded=True)
+        satellite_table_map_page(db, user, plant, embedded=True, show_metrics=False, map_mode="both")
 
     with status_col:
         st.markdown('<div class="map-section-title">🧹 Panel Cleaning Status</div>', unsafe_allow_html=True)
@@ -1908,7 +1927,7 @@ def panel_cleaning_page(db, user, plant):
 
     task_date = st.date_input("Work date", value=date.today(), key="panel_date")
     # Compact real satellite map at the top; the existing table checklist stays below.
-    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False)
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="panel")
     search = st.text_input("Search table", placeholder="T-01")
 
     assets = asset_list(plant, "Table")
@@ -1951,7 +1970,7 @@ def grass_cutting_page(db, user, plant):
 
     task_date = st.date_input("Work date", value=date.today(), key="grass_date")
     # Compact real satellite map at the top; the existing zone checklist stays below.
-    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False)
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass")
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
     completed = sum(1 for r in grass_records.values() if r.status == "Completed")
     pct = round(completed / plant.zone_count * 100, 1) if plant.zone_count else 0
