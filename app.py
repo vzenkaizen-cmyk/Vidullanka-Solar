@@ -1355,7 +1355,7 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
-def satellite_table_map_page(db, user, plant, embedded=False):
+def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, map_mode="all"):
     """Show the real satellite photo with each solar-table row coloured by saved status."""
     import plotly.graph_objects as go
     from PIL import Image
@@ -1365,7 +1365,8 @@ def satellite_table_map_page(db, user, plant, embedded=False):
         st.markdown("## 🛰️ Solar Plant Map")
         st.caption("Each solar-table strip is coloured by panel-cleaning status. Zone outlines show grass-cutting status.")
 
-    task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
+    if task_date is None:
+        task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     image_candidates = [
         os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
         os.path.join(os.path.dirname(__file__), "assets", "HR1.jpg"),
@@ -1426,10 +1427,11 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
 
-    # Draw grass-cutting status around each physical array block. Zone status is
-    # selected from the site's configured zones and is saved independently from cleaning.
+    # Draw zone borders only on the Grass Cutting page or the combined Overview map.
     zone_count = max(1, len(zone_assets))
     for block_idx, block in enumerate(blocks):
+        if map_mode == "panel":
+            break
         if not zone_assets:
             break
         zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(blocks) - 1)))
@@ -1444,9 +1446,11 @@ def satellite_table_map_page(db, user, plant, embedded=False):
             showlegend=False,
         ))
 
-    # A table is represented by a narrow polygon matching one real panel row.
+    # Panel-row overlays are shown only on Panel Cleaning and the combined Overview map.
     asset_index = 0
     for block_idx, (block, count) in enumerate(zip(blocks, counts)):
+        if map_mode == "grass":
+            break
         if count <= 0:
             continue
         top_left, top_right, bottom_left, bottom_right = block
@@ -1487,16 +1491,20 @@ def satellite_table_map_page(db, user, plant, embedded=False):
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
     fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        height=360 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
+        height=260 if embedded else 780, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "scrollZoom": True})
-    green_col, red_col, grass_col = st.columns(3)
-    green_col.metric("Panel cleaning completed", len(completed))
-    red_col.metric("Panel cleaning pending", pending_count)
-    grass_col.metric("Grass-cutting zones completed", len(completed_grass))
-    if not embedded:
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": not embedded, "scrollZoom": not embedded})
+    if map_mode == "panel":
+        st.caption(f"Panel Cleaning map • {len(completed)} completed / {pending_count} pending")
+    elif map_mode == "grass":
+        st.caption(f"Grass Cutting map • {len(completed_grass)} of {len(zone_assets)} zones completed")
+    elif not embedded:
+        green_col, red_col, grass_col = st.columns(3)
+        green_col.metric("Panel cleaning completed", len(completed))
+        red_col.metric("Panel cleaning pending", pending_count)
+        grass_col.metric("Grass-cutting zones completed", len(completed_grass))
         st.caption("Save progress in Panel Cleaning and Grass Cutting. The satellite table colours and zone borders update from the saved records for the selected date.")
 
 
@@ -1816,6 +1824,8 @@ def panel_cleaning_page(db, user, plant):
     st.markdown("## 🧹 Panel Cleaning")
 
     task_date = st.date_input("Work date", value=date.today(), key="panel_date")
+    # Keep the Overview map and also show the same live satellite map above this checklist.
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, map_mode="panel")
     search = st.text_input("Search table", placeholder="T-01")
 
     assets = asset_list(plant, "Table")
@@ -1825,27 +1835,40 @@ def panel_cleaning_page(db, user, plant):
     panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
     completed = sum(1 for r in panel_records.values() if r.status == "Completed")
     pct = round(completed / plant.table_count * 100, 1) if plant.table_count else 0
-
     st.progress(pct / 100, text=f"Cleaning progress: {pct:.1f}%")
 
     cols = st.columns(5)
     for i, asset in enumerate(assets):
         r = panel_records.get(asset)
         done = bool(r and r.status == "Completed")
+        details = parse_details(r) if r else {}
+        saved_worker = str(details.get("worker_name", "")).strip()
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+            worker_name = st.text_input(
+                "Person doing this task",
+                value=saved_worker or user.full_name,
+                key=f"panel_worker_{plant.id}_{asset}_{task_date}",
+                placeholder="Enter worker's full name",
+            )
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"panel_{asset}_{task_date}",
                 use_container_width=True,
             ):
-                upsert_record(
-                    db, plant.id, "Panel Cleaning", asset, task_date, user.id,
-                    "Pending" if done else "Completed",
-                    {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
-                )
-                st.rerun()
+                if not worker_name.strip():
+                    st.warning(f"Enter the worker's name for {asset} before saving.")
+                else:
+                    upsert_record(
+                        db, plant.id, "Panel Cleaning", asset, task_date, user.id,
+                        "Pending" if done else "Completed",
+                        {
+                            "items": {"Panel/Table Cleaning": "Not Done" if done else "Done"},
+                            "worker_name": worker_name.strip(),
+                        },
+                    )
+                    st.rerun()
 
 
 # ============================================================
@@ -1857,30 +1880,46 @@ def grass_cutting_page(db, user, plant):
     st.markdown("## 🌿 Grass Cutting")
 
     task_date = st.date_input("Work date", value=date.today(), key="grass_date")
+    # Use the same date as the checklist so map colours match saved task statuses.
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, map_mode="grass")
+
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
     completed = sum(1 for r in grass_records.values() if r.status == "Completed")
     pct = round(completed / plant.zone_count * 100, 1) if plant.zone_count else 0
-
     st.progress(pct / 100, text=f"Grass cutting progress: {pct:.1f}%")
 
     cols = st.columns(5)
     for i, zone in enumerate(asset_list(plant, "Zone")):
         r = grass_records.get(zone)
         done = bool(r and r.status == "Completed")
+        details = parse_details(r) if r else {}
+        saved_worker = str(details.get("worker_name", "")).strip()
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+            worker_name = st.text_input(
+                "Person doing this task",
+                value=saved_worker or user.full_name,
+                key=f"grass_worker_{plant.id}_{zone}_{task_date}",
+                placeholder="Enter worker's full name",
+            )
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"grass_{zone}_{task_date}",
                 use_container_width=True,
             ):
-                upsert_record(
-                    db, plant.id, "Grass Cutting", zone, task_date, user.id,
-                    "Pending" if done else "Completed",
-                    {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
-                )
-                st.rerun()
+                if not worker_name.strip():
+                    st.warning(f"Enter the worker's name for {zone} before saving.")
+                else:
+                    upsert_record(
+                        db, plant.id, "Grass Cutting", zone, task_date, user.id,
+                        "Pending" if done else "Completed",
+                        {
+                            "items": {"Grass Cutting": "Not Done" if done else "Done"},
+                            "worker_name": worker_name.strip(),
+                        },
+                    )
+                    st.rerun()
 
 
 # ============================================================
