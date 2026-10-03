@@ -1728,19 +1728,27 @@ def render_plant_details_and_specs(db, plant):
         "MTR-I": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres"},
         "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres"},
     }
-    # Resolve specifications for the currently selected plant only.
-    # HRN 1 and HRN 2 must never show each other's technical details.
-    site_code = str(plant.code or "").strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    # Resolve specifications from the selected plant's code/name only.
+    # HRN 1 must show only HS1 specifications; HRN 2 must show only HS2.
+    def normalize_site_key(value):
+        return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
     spec_aliases = {
+        "HRN": "HS1",
         "HRN1": "HS1",
+        "HRN1HORANA": "HS1",
         "HRN1SOLARPOWERPLANT": "HS1",
         "HS1": "HS1",
         "HRN2": "HS2",
+        "HRN2HORANA": "HS2",
         "HRN2SOLARPOWERPLANT": "HS2",
         "HS2": "HS2",
         "MTR": "MTR-I",
+        "MTRSOLARPOWERPLANT": "MTR-I",
     }
-    spec_key = spec_aliases.get(site_code, plant.code)
+    site_code = normalize_site_key(getattr(plant, "code", ""))
+    site_name = normalize_site_key(getattr(plant, "name", ""))
+    spec_key = spec_aliases.get(site_code) or spec_aliases.get(site_name) or getattr(plant, "code", "")
     spec = specs.get(spec_key, {})
     st.markdown("## ⚙️ Technical Specifications")
     if spec:
