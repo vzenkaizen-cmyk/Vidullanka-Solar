@@ -1732,6 +1732,7 @@ def render_plant_details_and_specs(db, plant):
     # Normalize both the database code and display name to support legacy codes
     # and labels such as "HRN 1 Solar Power Plant" / "HRN 2 Solar Power Plant".
     def normalize_site_key(value):
+        import re
         return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
     site_code = normalize_site_key(getattr(plant, "code", ""))
