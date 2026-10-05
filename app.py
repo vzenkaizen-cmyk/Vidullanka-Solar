@@ -119,8 +119,7 @@ def get_db_engine(database_url: str):
         database_url,
         pool_pre_ping=True,
         pool_recycle=1800,
-        connect_args={"connect_timeout": 5, "options": "-c statement_timeout=12000 -c lock_timeout=4000"},
-        pool_timeout=5,
+        connect_args={"connect_timeout": 10},
     )
 
 
@@ -257,8 +256,6 @@ class PlantOperationsProfile(Base):
 
 @st.cache_resource(show_spinner=False)
 def initialize_database(_engine):
-    with _engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
     Base.metadata.create_all(_engine)
     if _engine.dialect.name == "postgresql":
         with _engine.begin() as conn:
@@ -284,14 +281,7 @@ def initialize_database(_engine):
     return True
 
 
-# Display a useful error instead of leaving the page on a blank loading spinner.
-try:
-    with st.spinner("Connecting to the maintenance database..."):
-        initialize_database(engine)
-except Exception as exc:
-    st.error("Database startup failed. Check the Neon database status and Streamlit DATABASE_URL secret.")
-    st.exception(exc)
-    st.stop()
+initialize_database(engine)
 
 
 # ============================================================
@@ -606,6 +596,7 @@ def seed_database():
             admin.role = "admin"
             admin.approved = True
             admin.active = True
+            admin.password_hash = hash_password(ADMIN_PASSWORD)
 
         # Keep the named Vidullanka accounts on their intended least-privilege role/scope.
         # Passwords are never changed here; each person sets their own during registration.
@@ -628,13 +619,7 @@ def seed_database():
         db.close()
 
 
-try:
-    with st.spinner("Loading plant data..."):
-        seed_database()
-except Exception as exc:
-    st.error("Could not load plant data. Check the database connection and schema in Streamlit logs.")
-    st.exception(exc)
-    st.stop()
+seed_database()
 
 
 # ============================================================
@@ -1138,7 +1123,7 @@ def css():
         .modebar-container{transform:scale(.72);transform-origin:top right}
         div[data-baseweb="select"]>div,div[data-baseweb="input"]>div,div[data-baseweb="textarea"]>div{background:var(--surface)}
         .status-tile{padding:13px 14px;min-height:78px;box-sizing:border-box}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}.status-green{background:var(--green)}.status-red{background:var(--red)}.status-pending{background:var(--yellow)}
-        .group-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:8px 0 20px;width:100%;box-sizing:border-box}.group-title{font-size:16px;font-weight:800;color:var(--text);margin:12px 0 8px}.check-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 13px;margin:4px 0;min-height:46px;width:100%;display:flex;align-items:center;box-sizing:border-box}.group-card [data-testid="stHorizontalBlock"]{gap:.8rem;align-items:center}.group-card [data-testid="stSelectbox"]{min-width:160px}.group-card [data-testid="stTextInput"]{min-width:190px}
+        .group-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:8px 0 20px;width:100%;box-sizing:border-box}.group-title{font-size:16px;font-weight:800;color:var(--text);margin:12px 0 8px}.check-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:6px 0;min-height:58px;width:100%;display:flex;align-items:center;box-sizing:border-box}.group-card [data-testid="stHorizontalBlock"]{gap:1.1rem;align-items:center}.group-card [data-testid="stSelectbox"]{min-width:180px}.group-card [data-testid="stTextInput"]{min-width:220px}
         .layout-wrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px;box-shadow:var(--shadow)}
         .solar-map{position:relative;width:100%;min-height:900px;aspect-ratio:1280/1000;overflow:hidden;border-radius:14px;background:radial-gradient(ellipse at 50% 45%,#173d4b 0%,#09233b 55%,#06162a 100%);border:1px solid #244765;box-shadow:inset 0 0 0 8px rgba(35,93,125,.12)}
         .solar-map-title{position:absolute;left:14px;top:12px;background:rgba(4,24,45,.90);color:#fff;padding:8px 12px;border-radius:8px;font-weight:800;z-index:5}.solar-map-legend{position:absolute;right:12px;bottom:12px;background:rgba(4,24,45,.92);color:#fff;padding:8px 12px;border-radius:8px;z-index:5;font-size:12px}.legend-dot{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:5px}.legend-green{background:#16e879}.legend-red{background:#ff4e59}
@@ -1160,16 +1145,6 @@ def display_plant_name(plant):
     if code == "HS2":
         return "HRN 2 Solar Power Plant"
     return getattr(plant, "name", "") or ""
-
-
-def display_site_code(plant):
-    """Return the approved user-facing site code while preserving internal DB codes."""
-    code = (getattr(plant, "code", "") or "").strip().upper()
-    if code == "HS1":
-        return "HRN1"
-    if code == "HS2":
-        return "HRN2"
-    return code
 
 
 def header(plant):
@@ -1300,7 +1275,22 @@ def login_page():
             registration_form("management", "Engineer / Administrator Account", "reg_management")
             st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
 
-    # Plant overview cards removed; plant selection is handled from the sidebar after sign-in.
+    st.markdown("### Plant overview")
+    cols = st.columns(min(4, max(1, len(plants))))
+    for i, p in enumerate(plants):
+        with cols[i % len(cols)]:
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="section-title">☀️ {display_plant_name(p)}</div>
+                    <div class="small-muted">{p.code}</div>
+                    <hr>
+                    <b>{p.capacity_mw:g} MW</b> capacity<br>
+                    {p.inverter_count} inverters • {p.table_count} tables • {p.zone_count} zones
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     db.close()
 
 
@@ -1361,6 +1351,8 @@ def top_nav(db, user):
         st.divider()
         st.caption("🟢 System Online")
 
+    # Operating Staff & Site Contacts is now kept under the User Management/admin
+    # area and appears as the final navigation item for administrators.
     if user.role == "supervisor":
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
     else:
@@ -1368,7 +1360,7 @@ def top_nav(db, user):
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "✅ Approvals & Sign-off"]
     if user.role == "admin":
-        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin"]
+        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin", "👷 Operating Staff & Site Contacts"]
 
     with st.sidebar:
         st.divider()
@@ -1586,10 +1578,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             ))
 
     fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
-    fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True)
+    fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        # Fixed compact height keeps Panel Cleaning and Grass Cutting maps identical in size.
-        height=245 if embedded else 560, margin=dict(l=0, r=0, t=0, b=0),
+        height=300 if embedded else 620, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False, hovermode="closest",
     )
@@ -1617,7 +1608,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         st.caption("Save progress in Panel Cleaning and Grass Cutting. The satellite table colours and zone borders update from the saved records for the selected date.")
 
 
-def operations_staff_section(db, user, plant, embedded=False):
+def operations_staff_section(db, user, plant):
     """Show/edit per-site operating headcount and contacts; values persist in Neon."""
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
@@ -1635,9 +1626,8 @@ def operations_staff_section(db, user, plant, embedded=False):
         db.commit()
         db.refresh(profile)
 
-    if not embedded:
-        st.markdown("### 👷 Operating Staff & Site Contacts")
-        st.caption("Headcount and contact details are site-specific. This section is maintained from User Management.")
+    st.markdown("### 👷 Operating Staff & Site Contacts")
+    st.caption("Headcount and contact details are site-specific. This section is maintained from User Management.")
 
     leadership = [
         ("Mr. Roshan Siriwardana", "Director – Operations"),
@@ -1738,7 +1728,7 @@ def render_plant_details_and_specs(db, plant):
 
     st.markdown("## 🏭 Power Plant Details")
     detail_rows = [
-        ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
+        ("Plant", display_plant_name(plant)), ("Site code", plant.code),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
         ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
         ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
@@ -1863,18 +1853,6 @@ def overview_page(db, user, plant):
     records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
 
-    # Panel Cleaning and Grass Cutting are live work-status indicators.
-    # Read the saved records for the selected end date so the Overview always
-    # matches the completion status saved from those two maintenance pages.
-    panel_pct, panel_done, panel_total = panel_cleaning_percent(db, plant.id, end_date)
-    grass_pct, grass_done, grass_total = grass_cutting_percent(db, plant.id, end_date)
-    metrics["panel_pct"] = panel_pct
-    metrics["panel_done"] = panel_done
-    metrics["panel_total"] = panel_total
-    metrics["grass_pct"] = grass_pct
-    metrics["grass_done"] = grass_done
-    metrics["grass_total"] = grass_total
-
     repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
         RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
     ).group_by(RepairItem.asset_id).all()
@@ -1923,6 +1901,12 @@ def overview_page(db, user, plant):
         else:
             st.success("No open repair/maintenance items")
 
+    st.markdown("### 📌 Current Status Summary")
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Panel Cleaning", f"{metrics['panel_pct']:.0f}%", f"{metrics['panel_done']} / {metrics['panel_total']} completed")
+    s2.metric("Grass Cutting", f"{metrics['grass_pct']:.0f}%", f"{metrics['grass_done']} / {metrics['grass_total']} completed")
+    s3.metric("Open Repair & Maintenance", metrics["open_repairs"])
+
     # Recent Maintenance Activity intentionally removed from Overview.
     st.divider()
     render_plant_details_and_specs(db, plant)
@@ -1933,7 +1917,7 @@ def panel_cleaning_page(db, user, plant):
     st.markdown("## 🧹 Panel Cleaning")
 
     task_date = st.date_input("Work date", value=date.today(), key="panel_date")
-    # Compact map — same size as the Grass Cutting map.
+    # Compact real satellite map at the top; the existing table checklist stays below.
     satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="panel")
     search = st.text_input("Search table", placeholder="T-01")
 
@@ -1987,7 +1971,7 @@ def grass_cutting_page(db, user, plant):
     st.markdown("## 🌿 Grass Cutting")
 
     task_date = st.date_input("Work date", value=date.today(), key="grass_date")
-    # Compact map — same size as the Panel Cleaning map.
+    # Compact real satellite map at the top; the existing zone checklist stays below.
     satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass")
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
     completed = sum(1 for r in grass_records.values() if r.status == "Completed")
@@ -2051,9 +2035,7 @@ def _render_inspection_category(db, user, plant, category):
         approval_cls = "good" if old.approval_status == "Approved" else "bad"
         st.markdown(f'<div class="dashboard-card"><b>Engineer / Admin Review: <span class="{approval_cls}">{approval_text}</span></b><br><span class="small-muted">Signature: {getattr(old, "approval_signature", "") or "—"} • Reviewed: {getattr(old, "approved_at", None) or "—"}</span></div>', unsafe_allow_html=True)
 
-    # The asset selector remains compact so each inverter/table can still be inspected,
-    # but the large "INV-01 — ..." heading is removed for a cleaner workflow.
-    st.markdown(f"### {category}")
+    st.markdown(f"### {asset} — {category}")
 
     if category == "Daily Inspection":
         group_tabs = st.tabs(["🔌 Inverter Health Checks", "🛡️ Site Safety & Security Checks"])
@@ -2332,54 +2314,43 @@ def activity_page(db, user, plant):
 # Admin: Users
 # ============================================================
 
-def users_page(db, user, selected_plant=None):
+def users_page(db, user):
     st.title("👥 User Management")
-    st.caption("Manage user accounts, site staffing and operating contacts from one place.")
+    st.caption("Assign plants, manage roles, and manage Supervisor, Engineer, Admin and Staff access.")
 
-    user_tab, staff_tab = st.tabs(["👥 User Accounts", "👷 Operating Staff & Site Contacts"])
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
+    plant_map = {p.name: p.id for p in plants}
 
-    with user_tab:
-        users = db.query(User).order_by(User.created_at.desc()).all()
-        plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
-        plant_map = {p.name: p.id for p in plants}
+    for u in users:
+        with st.expander(f"{u.full_name} • {u.email} • {u.role}"):
+            c1, c2, c3 = st.columns(3)
 
-        for u in users:
-            with st.expander(f"{u.full_name} • {u.email} • {u.role}"):
-                c1, c2, c3 = st.columns(3)
+            role = c1.selectbox(
+                "Role", ["staff", "supervisor", "engineer", "admin"],
+                index=["staff", "supervisor", "engineer", "admin"].index(u.role) if u.role in ["staff", "supervisor", "engineer", "admin"] else 0,
+                key=f"role_{u.id}",
+            )
 
-                role = c1.selectbox(
-                    "Role", ["staff", "supervisor", "engineer", "admin"],
-                    index=["staff", "supervisor", "engineer", "admin"].index(u.role) if u.role in ["staff", "supervisor", "engineer", "admin"] else 0,
-                    key=f"role_{u.id}",
-                )
+            names = ["Unassigned"] + list(plant_map.keys())
+            current = next((n for n, pid in plant_map.items() if pid == u.plant_id), "Unassigned")
+            plant_name = c2.selectbox(
+                "Assigned plant", names,
+                index=names.index(current),
+                key=f"plant_{u.id}",
+            )
 
-                names = ["Unassigned"] + list(plant_map.keys())
-                current = next((n for n, pid in plant_map.items() if pid == u.plant_id), "Unassigned")
-                plant_name = c2.selectbox(
-                    "Assigned plant", names,
-                    index=names.index(current),
-                    key=f"plant_{u.id}",
-                )
+            active = c3.checkbox("Active", bool(u.active), key=f"active_{u.id}")
 
-                active = c3.checkbox("Active", bool(u.active), key=f"active_{u.id}")
-
-                if st.button("Save User", key=f"save_user_{u.id}"):
-                    u.role = role
-                    u.plant_id = plant_map.get(plant_name)
-                    u.approved = True
-                    u.active = active
-                    db.commit()
-                    st.success("User updated.")
-                    st.rerun()
-
-    with staff_tab:
-        st.markdown("### 👷 Operating Staff & Site Contacts")
-        st.caption("Manage site headcount, supervisor and immediate reportee details here. This replaces the separate navigation page.")
-        if selected_plant is None:
-            st.info("No plant is selected. Select a plant from the left navigation bar.")
-        else:
-            st.caption(f"Showing site contacts for **{display_plant_name(selected_plant)}**. The site follows the plant selected in the left navigation bar.")
-            operations_staff_section(db, user, selected_plant, embedded=True)
+            if st.button("Save User", key=f"save_user_{u.id}"):
+                u.role = role
+                u.plant_id = plant_map.get(plant_name)
+                # Account approval is no longer used; keep legacy field enabled for existing schemas.
+                u.approved = True
+                u.active = active
+                db.commit()
+                st.success("User updated.")
+                st.rerun()
 
 
 # ============================================================
@@ -2890,6 +2861,9 @@ def main():
 
     if page == "🏠 Overview":
         overview_page(db, user, plant)
+    elif page == "👷 Operating Staff & Site Contacts":
+        header(plant)
+        operations_staff_section(db, user, plant)
     elif page == "🧹 Panel Cleaning":
         panel_cleaning_page(db, user, plant)
     elif page == "🌿 Grass Cutting":
@@ -2901,7 +2875,7 @@ def main():
     elif page == "📋 Activity Log":
         activity_page(db, user, plant)
     elif page == "👥 Users" and user.role == "admin":
-        users_page(db, user, plant)
+        users_page(db, user)
     elif page == "🏭 Plants" and user.role == "admin":
         plants_page(db)
     elif page == "📊 Reports" and user.role in ("admin", "engineer"):
