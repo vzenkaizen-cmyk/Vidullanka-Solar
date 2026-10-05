@@ -323,7 +323,7 @@ PROCESS_CATEGORIES = {
             "Inverter Fan",
             "Inverter AC, DC Parameters",
             "All CCTV Cameras Functioning",
-            "Lightning Arresters OK",
+            "Lightning Arresters ",
             "Plant Fire Extinguisher",
         ],
     },
@@ -354,7 +354,7 @@ PROCESS_CATEGORIES = {
         "frequency": "Monthly",
         "asset_type": "Table",
         "items": [
-            "DC Cable Condition OK",
+            "DC Cable Condition ",
         ],
     },
     "MDB Inspection": {
@@ -371,14 +371,14 @@ PROCESS_CATEGORIES = {
             "CT Clearance Is Available",
             "CT Insulation",
             "Auto Transformer Functionality",
-            "Multi-Function Meter Readings OK",
+            "Multi-Function Meter Readings ",
             "Fans / Ventilation Duct Is Clean",
             "Thermo Works",
-            "Enclosure OK",
+            "Enclosure ",
             "Surge Protection Active",
             "Fuse - All Works",
             "Meter Panel Battery Status Functions",
-            "Protection Module OK",
+            "Protection Module ",
         ],
     },
     "Switch Yard Inspection": {
@@ -393,9 +393,9 @@ PROCESS_CATEGORIES = {
             "OVCB Tripping Works",
             "OVCB Tripping Count Recorded",
             "OVCB Auto / Manual Works",
-            "DDLO OK",
-            "Fence OK",
-            "Warning Signs Visible and OK",
+            "DDLO ",
+            "Fence ",
+            "Warning Signs clear and visible",
         ],
     },
     "AC Inspection": {
@@ -404,7 +404,7 @@ PROCESS_CATEGORIES = {
         "items": [
             "Outdoor - No Noise/Vibration of Compressor",
             "Outdoor - No Noise/Vibration of Condenser Fan",
-            "Outdoor - Gas Tubeline Insulation OK",
+            "Outdoor - Gas Tubeline Insulation ",
             "Outdoor - Isolator Operation",
             "Outdoor - Clean Body of Compressor",
             "Outdoor - Clean Condenser Coil",
@@ -1743,7 +1743,7 @@ def render_plant_details_and_specs(db, plant):
         "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Plant In-Charge": "Roshan"},
         "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
         "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
-        "MTR-I": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
+        "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
         "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres", "Plant In-Charge": "Sansala"},
     }
     # Resolve the specification table from both the database code and display name.
