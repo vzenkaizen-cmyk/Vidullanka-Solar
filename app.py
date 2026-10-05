@@ -1147,6 +1147,16 @@ def display_plant_name(plant):
     return getattr(plant, "name", "") or ""
 
 
+def display_site_code(plant):
+    """Return the approved user-facing site code while preserving internal DB codes."""
+    code = (getattr(plant, "code", "") or "").strip().upper()
+    if code == "HS1":
+        return "HRN1"
+    if code == "HS2":
+        return "HRN2"
+    return code
+
+
 def header(plant):
     st.markdown(
         f"""
@@ -1275,22 +1285,7 @@ def login_page():
             registration_form("management", "Engineer / Administrator Account", "reg_management")
             st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
 
-    st.markdown("### Plant overview")
-    cols = st.columns(min(4, max(1, len(plants))))
-    for i, p in enumerate(plants):
-        with cols[i % len(cols)]:
-            st.markdown(
-                f"""
-                <div class="card">
-                    <div class="section-title">☀️ {display_plant_name(p)}</div>
-                    <div class="small-muted">{p.code}</div>
-                    <hr>
-                    <b>{p.capacity_mw:g} MW</b> capacity<br>
-                    {p.inverter_count} inverters • {p.table_count} tables • {p.zone_count} zones
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    # Plant overview cards removed; plant selection is handled from the sidebar after sign-in.
     db.close()
 
 
@@ -1728,7 +1723,7 @@ def render_plant_details_and_specs(db, plant):
 
     st.markdown("## 🏭 Power Plant Details")
     detail_rows = [
-        ("Plant", display_plant_name(plant)), ("Site code", plant.code),
+        ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
         ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
         ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
@@ -1852,6 +1847,18 @@ def overview_page(db, user, plant):
 
     records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
+
+    # Panel Cleaning and Grass Cutting are live work-status indicators.
+    # Read the saved records for the selected end date so the Overview always
+    # matches the completion status saved from those two maintenance pages.
+    panel_pct, panel_done, panel_total = panel_cleaning_percent(db, plant.id, end_date)
+    grass_pct, grass_done, grass_total = grass_cutting_percent(db, plant.id, end_date)
+    metrics["panel_pct"] = panel_pct
+    metrics["panel_done"] = panel_done
+    metrics["panel_total"] = panel_total
+    metrics["grass_pct"] = grass_pct
+    metrics["grass_done"] = grass_done
+    metrics["grass_total"] = grass_total
 
     repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
         RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
@@ -2310,7 +2317,7 @@ def activity_page(db, user, plant):
 # Admin: Users
 # ============================================================
 
-def users_page(db, user):
+def users_page(db, user, selected_plant=None):
     st.title("👥 User Management")
     st.caption("Manage user accounts, site staffing and operating contacts from one place.")
 
@@ -2353,17 +2360,11 @@ def users_page(db, user):
     with staff_tab:
         st.markdown("### 👷 Operating Staff & Site Contacts")
         st.caption("Manage site headcount, supervisor and immediate reportee details here. This replaces the separate navigation page.")
-        plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
-        if not plants:
-            st.info("No active plants are configured.")
+        if selected_plant is None:
+            st.info("No plant is selected. Select a plant from the left navigation bar.")
         else:
-            selected_staff_plant = st.selectbox(
-                "Select plant",
-                plants,
-                format_func=display_plant_name,
-                key="user_management_staff_plant",
-            )
-            operations_staff_section(db, user, selected_staff_plant, embedded=True)
+            st.caption(f"Showing site contacts for **{display_plant_name(selected_plant)}**. The site follows the plant selected in the left navigation bar.")
+            operations_staff_section(db, user, selected_plant, embedded=True)
 
 
 # ============================================================
@@ -2885,7 +2886,7 @@ def main():
     elif page == "📋 Activity Log":
         activity_page(db, user, plant)
     elif page == "👥 Users" and user.role == "admin":
-        users_page(db, user)
+        users_page(db, user, plant)
     elif page == "🏭 Plants" and user.role == "admin":
         plants_page(db)
     elif page == "📊 Reports" and user.role in ("admin", "engineer"):
