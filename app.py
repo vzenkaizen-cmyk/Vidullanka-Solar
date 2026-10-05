@@ -119,7 +119,8 @@ def get_db_engine(database_url: str):
         database_url,
         pool_pre_ping=True,
         pool_recycle=1800,
-        connect_args={"connect_timeout": 10},
+        connect_args={"connect_timeout": 5, "options": "-c statement_timeout=12000 -c lock_timeout=4000"},
+        pool_timeout=5,
     )
 
 
@@ -256,6 +257,8 @@ class PlantOperationsProfile(Base):
 
 @st.cache_resource(show_spinner=False)
 def initialize_database(_engine):
+    with _engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
     Base.metadata.create_all(_engine)
     if _engine.dialect.name == "postgresql":
         with _engine.begin() as conn:
@@ -281,7 +284,14 @@ def initialize_database(_engine):
     return True
 
 
-initialize_database(engine)
+# Display a useful error instead of leaving the page on a blank loading spinner.
+try:
+    with st.spinner("Connecting to the maintenance database..."):
+        initialize_database(engine)
+except Exception as exc:
+    st.error("Database startup failed. Check the Neon database status and Streamlit DATABASE_URL secret.")
+    st.exception(exc)
+    st.stop()
 
 
 # ============================================================
@@ -596,7 +606,6 @@ def seed_database():
             admin.role = "admin"
             admin.approved = True
             admin.active = True
-            admin.password_hash = hash_password(ADMIN_PASSWORD)
 
         # Keep the named Vidullanka accounts on their intended least-privilege role/scope.
         # Passwords are never changed here; each person sets their own during registration.
@@ -619,7 +628,13 @@ def seed_database():
         db.close()
 
 
-seed_database()
+try:
+    with st.spinner("Loading plant data..."):
+        seed_database()
+except Exception as exc:
+    st.error("Could not load plant data. Check the database connection and schema in Streamlit logs.")
+    st.exception(exc)
+    st.stop()
 
 
 # ============================================================
