@@ -50,6 +50,12 @@ st.set_page_config(
 
 APP_TITLE = "Solar Power Plant Maintenance System"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
+
+# Management target times used on the compact Overview cards.
+# These are deliberately kept in one place so management can change them later.
+PANEL_CLEANING_TARGET_DAYS = 7
+GRASS_CUTTING_TARGET_DAYS = 30
+REPAIR_MAINTENANCE_TARGET_DAYS = 7
 # ============================================================
 # NEON POSTGRESQL CONFIGURATION
 # ============================================================
@@ -800,7 +806,7 @@ def ensure_repair_from_failed_item(db, plant_id, category, asset_id, component, 
             f"Asset: {asset_id}\n"
             f"Component: {component}\n"
             f"Reason: {issue or 'Not specified'}\n\n"
-            "Action required: inspect the Loss & Repair section and update the repair status."
+            "Action required: inspect the Repair & Maintenance section and update the repair status."
         )
         notify_users(
             db,
@@ -847,7 +853,7 @@ def upsert_record(db, plant_id, category, asset_id, task_date, worker_id, status
                 f"Asset: {asset_id}\n"
                 f"Date: {task_date}\n"
                 f"Remarks: {remarks or 'A checklist item was marked Not OK / Red.'}\n\n"
-                "Please review Loss & Repair."
+                "Please review Repair & Maintenance."
             ),
             category,
             asset_id,
@@ -1125,6 +1131,7 @@ def css():
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
         .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:9px 11px;min-height:68px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
+        .overview-work-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:145px;box-shadow:var(--shadow);margin-bottom:8px}.overview-work-title{font-size:17px;font-weight:800;color:var(--text)}.overview-work-percent{font-size:31px;font-weight:900;color:var(--green);line-height:1.05;margin-top:10px}.overview-work-target{font-size:11px;color:var(--muted);margin-top:8px}.overview-inverter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:250px;overflow:auto;padding-right:2px}.overview-inverter{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px;font-size:10px}.overview-inverter-grid .good{color:var(--green)}.overview-inverter-grid .bad{color:var(--red)}
         .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:105px;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:7px}.plant-detail-value{color:var(--text);font-size:19px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:6px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
@@ -1334,7 +1341,6 @@ def top_nav(db, user):
     current_id = st.session_state.get("selected_plant_id") or (user.plant_id if user.role not in ("admin", "engineer") else plants[0].id)
     current_name = next((n for n, pid in plant_options.items() if pid == current_id), plants[0].name)
 
-    # Keep the signed-in identity in the main area; sign-out lives at the bottom of the sidebar navigation.
     st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
@@ -1343,18 +1349,19 @@ def top_nav(db, user):
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
         st.divider()
-        # Notifications are intentionally removed from the sidebar navigation.
         st.caption("🟢 System Online")
 
+    # Operating Staff & Site Contacts is now kept under the User Management/admin
+    # area and appears as the final navigation item for administrators.
     if user.role == "supervisor":
-        pages = ["🏠 Overview", "👷 Operating Staff & Site Contacts", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
+        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
     else:
-        pages = ["🏠 Overview", "👷 Operating Staff & Site Contacts", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Loss & Repair", "📋 Activity Log"]
+        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "✅ Approvals & Sign-off"]
     if user.role == "admin":
-        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin"]
-    # Keep navigation in the left sidebar, as requested.
+        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin", "👷 Operating Staff & Site Contacts"]
+
     with st.sidebar:
         st.divider()
         page = st.radio("Navigation", pages, key="top_navigation_v2")
@@ -1373,7 +1380,6 @@ def top_nav(db, user):
 # ============================================================
 # Dashboard
 # ============================================================
-
 def render_solar_layout(db, plant, task_date):
     """Render a live schematic solar layout; each table is green/red from saved status."""
     assets = asset_list(plant, "Table")
@@ -1607,26 +1613,22 @@ def operations_staff_section(db, user, plant):
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
         defaults = {
-            "HOF": ("", "Mr. Mahela Wanigasooriya", "Mr. Mahela Wanigasooriya"),
             "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR I": ("MTR I In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "MTR II": ("MTR II In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
         }
-        sup, eng, hof = defaults.get(plant.code.upper(), ("", "", "Mr. Mahela Wanigasooriya"))
+        sup, reportee, hof = defaults.get(plant.code.upper(), ("", "", "Mr. Mahela Wanigasooriya"))
         profile = PlantOperationsProfile(plant_id=plant.id, operating_staff_count=0,
-                                         supervisor_name=sup, engineer_name=eng, hof_name=hof)
+                                         supervisor_name=sup, engineer_name=reportee, hof_name=hof)
         db.add(profile)
         db.commit()
         db.refresh(profile)
 
     st.markdown("### 👷 Operating Staff & Site Contacts")
-    st.caption("Headcount and contact details are site-specific. An authorised supervisor, engineer, or administrator can update these values later.")
-    # All sites share the published operations leadership roster; the site profile below is editable.
+    st.caption("Headcount and contact details are site-specific. This section is maintained from User Management.")
+
     leadership = [
         ("Mr. Roshan Siriwardana", "Director – Operations"),
         ("Mr. Manchanayeke Upul", "General Manager – Operations"),
@@ -1640,7 +1642,6 @@ def operations_staff_section(db, user, plant):
 
     editable = user.role in ("admin", "engineer", "supervisor")
     with st.form(f"site_staff_profile_{plant.id}"):
-        # Give the contact fields more room so full engineer/supervisor names remain visible.
         c1, c2 = st.columns([0.9, 1.35], gap="large")
         with c1:
             count = st.number_input("No. of operating staff members", min_value=0, max_value=10000,
@@ -1648,24 +1649,25 @@ def operations_staff_section(db, user, plant):
             supervisor = st.text_input("Site supervisor / in-charge", value=profile.supervisor_name or "",
                                        placeholder="Enter supervisor name", disabled=not editable)
         with c2:
-            engineer = st.text_input("Relevant engineer", value=profile.engineer_name or "",
-                                     placeholder="Enter responsible engineer", disabled=not editable)
+            reportee = st.text_input("Immediate Reportee", value=profile.engineer_name or "",
+                                     placeholder="Enter immediate reportee", disabled=not editable)
             hof = st.text_input("HOF / mechanical contact", value=profile.hof_name or "Mr. Mahela Wanigasooriya",
                                 disabled=not editable)
         submitted = st.form_submit_button("Save site staff details", use_container_width=True, disabled=not editable)
         if submitted:
             profile.operating_staff_count = int(count)
             profile.supervisor_name = supervisor.strip()
-            profile.engineer_name = engineer.strip()
+            profile.engineer_name = reportee.strip()
             profile.hof_name = hof.strip()
             profile.updated_at = datetime.utcnow()
             db.commit()
             st.success(f"Operating staff and contacts saved for {plant.name}.")
             st.rerun()
+
     c1, c2, c3 = st.columns([0.9, 1.15, 1.55], gap="large")
     c1.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Operating staff</div><div class="staff-summary-value">{int(profile.operating_staff_count or 0)}</div></div>', unsafe_allow_html=True)
     c2.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Supervisor / In-charge</div><div class="staff-summary-value staff-summary-text">{profile.supervisor_name or "Not set"}</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Engineer</div><div class="staff-summary-value staff-summary-text">{profile.engineer_name or "Not set"}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="staff-summary-card"><div class="staff-summary-label">Immediate Reportee</div><div class="staff-summary-value staff-summary-text">{profile.engineer_name or "Not set"}</div></div>', unsafe_allow_html=True)
 
 
 def overview_context(db, user, plant):
@@ -1730,7 +1732,7 @@ def render_plant_details_and_specs(db, plant):
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
         ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
         ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
-        ("Plant In-Charge / Supervisor", supervisor), ("Relevant Engineer", engineer),
+        ("Plant In-Charge / Supervisor", supervisor), ("Immediate Reportee", engineer),
     ]
     cols = st.columns(3)
     for i, (label, value) in enumerate(detail_rows):
@@ -1815,137 +1817,100 @@ def render_plant_details_and_specs(db, plant):
         st.info("Technical specifications have not yet been provided for this site. Add them to the site specification configuration when available.")
 
 
+def _overview_target_label(done, total, target_days, unit):
+    remaining = max(0, total - done)
+    if remaining == 0:
+        return "Target complete"
+    return f"Estimated target: {target_days} days / cycle" if unit == "cycle" else f"Estimated target: {target_days} days"
+
+
+def _render_overview_card(title, icon, pct, done, total, target_text, map_renderer=None):
+    st.markdown(
+        f'<div class="overview-work-card"><div class="overview-work-title">{icon} {title}</div>'
+        f'<div class="overview-work-percent">{pct:.0f}%</div>'
+        f'<div class="small-muted">{done} / {total} completed</div>'
+        f'<div class="overview-work-target">⏱️ {target_text}</div></div>',
+        unsafe_allow_html=True,
+    )
+    if map_renderer:
+        map_renderer()
+
+
 def overview_page(db, user, plant):
     header(plant)
     overview_context(db, user, plant)
-    st.markdown("### 🔎 Dashboard Filters")
-    f1, f2, f3, f4 = st.columns([1.1, 1.1, 1.4, 1.3])
+
+    # Keep the existing date filters, but make the operational area the focus.
+    f1, f2 = st.columns([1, 1])
     with f1:
         start_date = st.date_input("From", date.today() - timedelta(days=30), key="dash_start")
     with f2:
         end_date = st.date_input("To", date.today(), key="dash_end")
-
-    workers = db.query(User).filter(
-        User.active == True,
-        or_(User.plant_id == plant.id, User.role.in_(["admin", "engineer"]))
-    ).order_by(User.full_name).all()
-    worker_options = {"All": None, "Supervisor": "__role_supervisor__", "Engineer and Admin": "__role_management__"}
-    with f3:
-        worker_label = st.selectbox("All / Supervisor / Engineer and Admin", list(worker_options.keys()), key="dash_worker")
-    with f4:
-        category = st.selectbox("Category", DASHBOARD_CATEGORIES, key="dash_category")
-
     if start_date > end_date:
         st.error("The start date cannot be after the end date.")
         return
 
-    worker_id = worker_options[worker_label]
-    records = filtered_records(db, plant.id, start_date, end_date, None if isinstance(worker_id, str) else worker_id, category)
-    if worker_id == "__role_supervisor__":
-        role_ids = {u.id for u in workers if u.role == "supervisor"}
-        records = [r for r in records if r.worker_id in role_ids]
-    elif worker_id == "__role_management__":
-        role_ids = {u.id for u in workers if u.role in ("engineer", "admin")}
-        records = [r for r in records if r.worker_id in role_ids]
+    records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
+
     repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
         RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
     ).group_by(RepairItem.asset_id).all()
     repair_counts = {a: int(c) for a, c in repair_rows}
-    worker_map = {u.id: u.full_name for u in workers}
 
-    st.caption(f"Live dashboard • {start_date:%d %b %Y} → {end_date:%d %b %Y} • {len(records)} filtered records • Updated {datetime.now():%d %b %Y • %H:%M}")
+    st.markdown("## ⚡ Maintenance Productivity")
+    st.caption("Compact operational view — cleaning, grass cutting and repair/maintenance status.")
 
-    cards = [
-        ("Plant Capacity", f"{plant.capacity_mw:g} MW", "Installed capacity", ""),
-        ("Total Inverters", str(plant.inverter_count), "Operational units", ""),
-        ("Total Tables", str(plant.table_count), "Panel tables", ""),
-        ("Panel Cleaning", f"{metrics['panel_pct']:.0f}%", f"{metrics['panel_done']} completed<br><span class='pending-inline'>{metrics['panel_total']-metrics['panel_done']} pending</span>", "good"),
-        ("Grass Cutting", f"{metrics['grass_pct']:.0f}%", f"{metrics['grass_done']} completed<br><span class='pending-inline'>{metrics['grass_total']-metrics['grass_done']} pending</span>", "good"),
-        ("Open Loss & Repair", str(metrics['open_repairs']), "Active repair items", "bad" if metrics['open_repairs'] else "good"),
-    ]
-    for col, (title, val, label, cls) in zip(st.columns(6), cards):
-        col.markdown(f'<div class="dashboard-card"><h4>{title}</h4><div class="dashboard-value {cls}">{val}</div><div class="dashboard-label">{label}</div></div>', unsafe_allow_html=True)
+    panel_col, grass_col, repair_col = st.columns(3, gap="medium")
 
-    # Keep the Overview layout from the earlier version: a compact satellite
-    # map on the left and the live cleaning / grass-cutting status on the right.
-    map_col, status_col = st.columns([1.75, 1.0], gap="large")
-    with map_col:
-        st.markdown("### 🛰️ Solar Plant Map")
-        satellite_table_map_page(db, user, plant, embedded=True, show_metrics=False, map_mode="both")
+    with panel_col:
+        _render_overview_card(
+            "Panel Cleaning", "🧹", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
+            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
+        )
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
+        st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
-    with status_col:
-        st.markdown('<div class="map-section-title">🧹 Panel Cleaning Status</div>', unsafe_allow_html=True)
-        donut_chart(metrics["panel_pct"], "Completed", "overview_panel_donut")
-        st.progress(metrics["panel_pct"] / 100, text=f"{metrics['panel_pct']:.0f}% completed")
-        st.write(f"🟢 Completed **{metrics['panel_done']} / {metrics['panel_total']}**")
-        st.write(f"🔴 Pending **{metrics['panel_total'] - metrics['panel_done']}**")
+    with grass_col:
+        _render_overview_card(
+            "Grass Cutting", "🌿", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
+            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
+        )
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
+        st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
-        st.markdown('<div class="map-section-title">🌿 Grass Cutting Status</div>', unsafe_allow_html=True)
-        donut_chart(metrics["grass_pct"], "Completed", "overview_grass_donut")
-        st.progress(metrics["grass_pct"] / 100, text=f"{metrics['grass_pct']:.0f}% completed")
-        st.write(f"🟢 Completed **{metrics['grass_done']} / {metrics['grass_total']}**")
-        st.write(f"🔴 Pending **{metrics['grass_total'] - metrics['grass_done']}**")
-
-        st.markdown('<div class="map-section-title">⚠️ Loss & Repair</div>', unsafe_allow_html=True)
+    with repair_col:
+        _render_overview_card(
+            "Repair & Maintenance", "🔧",
+            100 if metrics["open_repairs"] == 0 else 0,
+            plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
+            plant.inverter_count,
+            _overview_target_label(0 if metrics["open_repairs"] else 1, 1, REPAIR_MAINTENANCE_TARGET_DAYS, "days")
+        )
+        st.markdown("**Inverter status**")
+        inverter_items = []
+        for inverter in asset_list(plant, "Inverter"):
+            count = repair_counts.get(inverter, 0)
+            if count:
+                inverter_items.append(f'<div class="overview-inverter bad">🔴 <b>{inverter}</b> — {count} open issue(s)</div>')
+            else:
+                inverter_items.append(f'<div class="overview-inverter good">🟢 <b>{inverter}</b> — No open issue</div>')
+        st.markdown('<div class="overview-inverter-grid">' + ''.join(inverter_items) + '</div>', unsafe_allow_html=True)
         if metrics["open_repairs"]:
-            st.error(f"{metrics['open_repairs']} active repair item(s)")
+            st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
         else:
-            st.success("No open repair items")
+            st.success("No open repair/maintenance items")
 
-    # Bottom panels mirror the reference dashboard and keep all cards equal height.
-    st.markdown("### 📋 Current Status Details")
-    panel_records = status_map(db, plant.id, "Panel Cleaning", end_date)
-    grass_records = status_map(db, plant.id, "Grass Cutting", end_date)
-    c_panel, c_grass, c_loss = st.columns([1.15, 1.0, 1.15], gap="medium")
+    st.markdown("### 📌 Current Status Summary")
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Panel Cleaning", f"{metrics['panel_pct']:.0f}%", f"{metrics['panel_done']} / {metrics['panel_total']} completed")
+    s2.metric("Grass Cutting", f"{metrics['grass_pct']:.0f}%", f"{metrics['grass_done']} / {metrics['grass_total']} completed")
+    s3.metric("Open Repair & Maintenance", metrics["open_repairs"])
 
-    with c_panel:
-        st.markdown('<div class="map-section-title">🧹 Panel Cleaning Details</div>', unsafe_allow_html=True)
-        shown = asset_list(plant, "Table")[:15]
-        items = []
-        for a in shown:
-            done = panel_records.get(a) and panel_records[a].status == "Completed"
-            items.append(f'<div class="mini-item"><div class="name">{a}</div><div class="state {"good" if done else "bad"}">● {"Completed" if done else "Pending"}</div></div>')
-        st.markdown('<div class="mini-grid">'+''.join(items)+'</div>', unsafe_allow_html=True)
-        st.progress(metrics["panel_pct"] / 100, text=f"Cleaning progress • {metrics['panel_pct']:.0f}%")
-        st.caption(f"Showing first {min(15, plant.table_count)} tables • {metrics['panel_done']} of {metrics['panel_total']} completed")
-
-    with c_grass:
-        st.markdown('<div class="map-section-title">🌿 Grass Cutting Details</div>', unsafe_allow_html=True)
-        items = []
-        for z in asset_list(plant, "Zone"):
-            done = grass_records.get(z) and grass_records[z].status == "Completed"
-            items.append(f'<div class="mini-item"><div class="name">{z}</div><div class="state {"good" if done else "bad"}">● {"Completed" if done else "Pending"}</div></div>')
-        st.markdown('<div class="mini-grid">'+''.join(items)+'</div>', unsafe_allow_html=True)
-        st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting progress • {metrics['grass_pct']:.0f}%")
-        st.caption(f"{metrics['grass_done']} of {metrics['grass_total']} zones completed")
-
-    with c_loss:
-        st.markdown('<div class="map-section-title">🔧 Loss & Repair (Inverter-wise)</div>', unsafe_allow_html=True)
-        items = []
-        for a in asset_list(plant, "Inverter"):
-            count = repair_counts.get(a, 0)
-            cls = "bad" if count else "good"
-            text_state = f"{count} open" if count else "No issue"
-            items.append(f'<div class="loss-tile"><b>{a}</b><br><span class="{cls}">● {text_state}</span></div>')
-        st.markdown('<div class="loss-grid">'+''.join(items)+'</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="dashboard-card" style="height:auto;min-height:78px;margin-top:8px"><div class="dashboard-value {"bad" if metrics["open_repairs"] else "good"}">{metrics["open_repairs"]}</div><div class="dashboard-label">Total active repair items</div></div>', unsafe_allow_html=True)
-
-    st.markdown("### 🕒 Recent Maintenance Activity")
-    if records:
-        for r in records[:8]:
-            cls, label = ("good", "GREEN") if r.status == "Completed" else (("bad", "RED") if r.status == "Failed" else ("warn", "PENDING"))
-            st.markdown(f'<div class="status-tile"><div style="display:flex;justify-content:space-between;gap:12px"><div><b>{r.category}</b> • {r.asset_id}<br><span class="small-muted">{r.task_date:%d %b %Y} • {worker_map.get(r.worker_id,"Unassigned")}</span></div><div class="{cls}">● {label}</div></div></div>', unsafe_allow_html=True)
-    else:
-        st.info("No maintenance records match the selected filters.")
-
-    # Keep technical/site information below the operational dashboard, as requested.
+    # Recent Maintenance Activity intentionally removed from Overview.
     st.divider()
     render_plant_details_and_specs(db, plant)
 
-# ============================================================
-# Panel Cleaning
-# ============================================================
 
 def panel_cleaning_page(db, user, plant):
     header(plant)
@@ -2049,37 +2014,17 @@ def grass_cutting_page(db, user, plant):
 # Maintenance inspections
 # ============================================================
 
-def inspection_page(db, user, plant):
-    header(plant)
-    st.markdown("## 🔧 Maintenance Inspections")
-    st.caption(
-        "Daily Inspection → Inverter Inspection → Panel Inspection → "
-        "DC Cable Inspection → MDB Inspection → Switch Yard Inspection → AC Inspection"
-    )
-
-    category = st.selectbox("Select maintenance process", list(PROCESS_CATEGORIES.keys()))
+def _render_inspection_category(db, user, plant, category):
     cfg = PROCESS_CATEGORIES[category]
 
     c1, c2, c3 = st.columns(3)
-    c1.markdown(
-        f'<div class="dashboard-card"><h4>Frequency</h4>'
-        f'<div style="font-size:20px;font-weight:800;color:#14213d;">{cfg["frequency"]}</div></div>',
-        unsafe_allow_html=True,
-    )
-    c2.markdown(
-        f'<div class="dashboard-card"><h4>Asset Type</h4>'
-        f'<div style="font-size:20px;font-weight:800;color:#14213d;">{cfg["asset_type"]}</div></div>',
-        unsafe_allow_html=True,
-    )
-    c3.markdown(
-        f'<div class="dashboard-card"><h4>Checklist Items</h4>'
-        f'<div style="font-size:20px;font-weight:800;color:#14213d;">{len(cfg["items"])}</div></div>',
-        unsafe_allow_html=True,
-    )
+    c1.markdown(f'<div class="dashboard-card"><h4>Frequency</h4><div class="dashboard-value">{cfg["frequency"]}</div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{cfg["asset_type"]}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="dashboard-card"><h4>Checklist Items</h4><div class="dashboard-value">{len(cfg["items"])}</div></div>', unsafe_allow_html=True)
 
-    task_date = st.date_input("Inspection date", value=date.today())
+    task_date = st.date_input("Inspection date", value=date.today(), key=f"inspection_date_{category}")
     assets = asset_list(plant, cfg["asset_type"])
-    asset = st.selectbox(f"Select {cfg['asset_type']}", assets)
+    asset = st.selectbox(f"Select {cfg['asset_type']}", assets, key=f"inspection_asset_{category}")
 
     old = record_status(db, plant.id, category, asset, task_date)
     old_details = parse_details(old) if old else {}
@@ -2092,93 +2037,70 @@ def inspection_page(db, user, plant):
 
     st.markdown(f"### {asset} — {category}")
 
-    # Daily Inspection is intentionally split into the two groups requested:
-    # 1-3 = inverter checks, 4-6 = site safety/security checks.
     if category == "Daily Inspection":
+        group_tabs = st.tabs(["🔌 Inverter Health Checks", "🛡️ Site Safety & Security Checks"])
         groups = [
-            ("Inverter Health Checks", cfg["items"][:3], 0),
-            ("Site Safety & Security Checks", cfg["items"][3:6], 3),
+            (group_tabs[0], cfg["items"][:3], 0),
+            (group_tabs[1], cfg["items"][3:6], 3),
         ]
     else:
-        groups = [("Inspection Checklist", cfg["items"], 0)]
+        checklist_tab = st.tabs(["✅ Checklist"])[0]
+        groups = [(checklist_tab, cfg["items"], 0)]
 
     values = {}
+    reason_widgets = []
 
-    for group_title, items, offset in groups:
-        st.markdown(f'<div class="group-title">{group_title}</div>', unsafe_allow_html=True)
-        st.markdown('<div class="group-card">', unsafe_allow_html=True)
-
-        for local_index, item in enumerate(items):
-            i = offset + local_index
-            current = old_items.get(item, "Pending")
-            # Support records created by the previous version.
-            if current == "OK / Green":
-                current = "GREEN"
-            elif current == "Not OK / Red":
-                current = "RED"
-            options = ["Pending", "GREEN", "RED"]
-            default_index = options.index(current) if current in options else 0
-
-            cols = st.columns([4.0, 2.2, 3.8])
-            cols[0].markdown(
-                f'<div class="check-item"><b>{i + 1}. {item}</b></div>',
-                unsafe_allow_html=True,
-            )
-            values[item] = cols[1].selectbox(
-                "Status",
-                options,
-                index=default_index,
-                format_func=lambda value: {"Pending": "PENDING", "GREEN": "Completed", "RED": "Pending"}.get(value, value),
-                key=f"{category}_{asset}_{task_date}_{i}",
-                label_visibility="collapsed",
-            )
-
-            if values[item] == "RED":
-                values[f"{item}__reason"] = cols[2].text_input(
-                    "Reason / issue",
-                    value=old_items.get(f"{item}__reason", ""),
-                    key=f"reason_{category}_{asset}_{task_date}_{i}",
-                    placeholder="Reason / issue found",
+    for tab, items, offset in groups:
+        with tab:
+            st.caption("✓ = Done    ✗ = Not Done — a reason is required for every item marked Not Done.")
+            for local_index, item in enumerate(items):
+                i = offset + local_index
+                current = old_items.get(item, "RED")
+                if current in ("OK / Green", "GREEN", "Completed", "DONE"):
+                    current = "GREEN"
+                else:
+                    current = "RED"
+                cols = st.columns([4.6, 1.7, 3.7])
+                cols[0].markdown(f'<div class="check-item"><b>{i + 1}. {item}</b></div>', unsafe_allow_html=True)
+                status = cols[1].radio(
+                    "Status", ["GREEN", "RED"], index=0 if current == "GREEN" else 1,
+                    format_func=lambda v: "✓ Done" if v == "GREEN" else "✗ Not Done",
+                    key=f"inspection_status_{category}_{asset}_{task_date}_{i}",
+                    horizontal=True, label_visibility="collapsed",
                 )
-            else:
-                values[f"{item}__reason"] = ""
+                values[item] = status
+                if status == "RED":
+                    reason = cols[2].text_input(
+                        "Issue identified / reason",
+                        value=old_items.get(f"{item}__reason", ""),
+                        key=f"inspection_reason_{category}_{asset}_{task_date}_{i}",
+                        placeholder="Describe why this item is not done / the issue identified",
+                    ).strip()
+                    values[f"{item}__reason"] = reason
+                    reason_widgets.append((item, reason))
+                else:
+                    values[f"{item}__reason"] = ""
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    if st.button("💾 Save Inspection", type="primary", use_container_width=True, key=f"save_inspection_{category}"):
+        missing_reasons = [item for item, reason in reason_widgets if not reason]
+        if missing_reasons:
+            st.error("Please enter the issue/reason for every item marked ✗ Not Done before saving.")
+            st.write("Missing reason for: " + ", ".join(missing_reasons))
+            return
 
-    remarks = st.text_area(
-        "Overall remarks",
-        value=old.remarks if old else "",
-        placeholder="Additional maintenance remarks...",
-    )
-
-    if st.button("💾 Save Inspection", type="primary", use_container_width=True):
         statuses = [v for k, v in values.items() if not k.endswith("__reason")]
-
-        if all(v == "GREEN" for v in statuses):
-            overall = "Completed"
-        elif any(v == "RED" for v in statuses):
-            overall = "Failed"
-        else:
-            overall = "Pending"
+        overall = "Completed" if all(v == "GREEN" for v in statuses) else "Failed"
 
         upsert_record(
-            db,
-            plant.id,
-            category,
-            asset,
-            task_date,
-            user.id,
-            overall,
+            db, plant.id, category, asset, task_date, user.id, overall,
             {"items": values},
-            remarks,
+            remarks="",
         )
 
         for item in cfg["items"]:
             if values[item] == "RED":
                 reason = values.get(f"{item}__reason", "").strip()
-                ensure_repair_from_failed_item(
-                    db, plant.id, category, asset, item, reason, user.id
-                )
+                ensure_repair_from_failed_item(db, plant.id, category, asset, item, reason, user.id)
 
         st.success(f"{category} for {asset} saved as {overall}.")
         if overall == "Failed":
@@ -2186,13 +2108,21 @@ def inspection_page(db, user, plant):
         st.rerun()
 
 
-# ============================================================
-# Loss & Repair
-# ============================================================
+def inspection_page(db, user, plant):
+    header(plant)
+    st.markdown("## 🔧 Maintenance Inspections")
+    st.caption("Select a maintenance process tab. The relevant inspection parts appear inside the selected tab.")
+
+    categories = list(PROCESS_CATEGORIES.keys())
+    tabs = st.tabs(categories)
+    for tab, category in zip(tabs, categories):
+        with tab:
+            _render_inspection_category(db, user, plant, category)
+
 
 def loss_repair_page(db, user, plant):
     header(plant)
-    st.markdown("## ⚠️ Loss & Repair / Maintenance")
+    st.markdown("## 🔧 Repair & Maintenance")
 
     tab1, tab2 = st.tabs(["Open Repair Items", "Create Repair Item"])
 
@@ -2940,7 +2870,7 @@ def main():
         grass_cutting_page(db, user, plant)
     elif page == "🔧 Maintenance Inspections":
         inspection_page(db, user, plant)
-    elif page == "⚠️ Loss & Repair":
+    elif page == "⚠️ Repair & Maintenance":
         loss_repair_page(db, user, plant)
     elif page == "📋 Activity Log":
         activity_page(db, user, plant)
