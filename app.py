@@ -1131,8 +1131,29 @@ def css():
         .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 7px;min-height:50px;box-sizing:border-box}.mini-item .name{font-weight:800;font-size:12px}.mini-item .state{font-size:10px;margin-top:3px}.loss-tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:76px;box-sizing:border-box}.loss-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
         .map-section-title{font-size:18px;font-weight:800;color:var(--text);margin:2px 0 10px}.top-user{font-size:12px;color:var(--muted);text-align:right;padding-top:4px}
         .overview-notification{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:12px;padding:9px 11px;min-height:68px;box-shadow:var(--shadow);box-sizing:border-box}.overview-notification .small-muted{display:block;margin:6px 0;overflow-wrap:anywhere}.overview-empty{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--muted);box-shadow:var(--shadow)}
-        .overview-work-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:145px;box-shadow:var(--shadow);margin-bottom:8px}.overview-work-title{font-size:17px;font-weight:800;color:var(--text)}.overview-work-percent{font-size:31px;font-weight:900;color:var(--green);line-height:1.05;margin-top:10px}.overview-work-target{font-size:11px;color:var(--muted);margin-top:8px}.overview-inverter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:250px;overflow:auto;padding-right:2px}.overview-inverter{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px;font-size:10px}.overview-inverter-grid .good{color:var(--green)}.overview-inverter-grid .bad{color:var(--red)}
+        .overview-work-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:145px;box-shadow:var(--shadow);margin-bottom:8px}.overview-work-title{font-size:17px;font-weight:800;color:var(--text)}.overview-work-percent{font-size:31px;font-weight:900;color:var(--green);line-height:1.05;margin-top:10px}.overview-work-target{font-size:11px;color:var(--muted);margin-top:8px}.overview-inverter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px 3px 4px 2px;box-sizing:border-box;width:100%;min-width:0}.overview-inverter{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 8px;font-size:10px;line-height:1.25;min-width:0;width:100%;box-sizing:border-box;overflow:hidden;overflow-wrap:anywhere;word-break:normal}.overview-inverter b{white-space:nowrap}.overview-inverter-grid .good{color:var(--green)}.overview-inverter-grid .bad{color:var(--red)}
         .plant-detail-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;min-height:105px;margin-bottom:12px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.plant-detail-label{color:var(--muted);font-size:12px;margin-bottom:7px}.plant-detail-value{color:var(--text);font-size:19px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}.plant-detail-hint{color:var(--muted);font-size:10px;margin-top:6px}.staff-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:122px;box-shadow:var(--shadow);box-sizing:border-box;overflow:hidden}.staff-summary-label{color:var(--muted);font-size:12px;margin-bottom:10px}.staff-summary-value{color:var(--text);font-size:29px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;white-space:normal}.staff-summary-text{font-size:22px}
+        /* Sidebar navigation: remove Streamlit radio circles and keep the existing labels clickable. */
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"]{gap:3px!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"]>label{display:flex!important;align-items:center!important;border:1px solid transparent!important;border-radius:9px!important;padding:8px 9px!important;margin:0!important;min-height:38px!important;cursor:pointer!important;transition:background .15s,border-color .15s!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"]>label:hover{background:var(--surface2)!important;border-color:var(--border)!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"]>label>div:first-child{display:none!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] input{display:none!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked){background:#edf4ff!important;border-color:#d6e5fb!important;font-weight:700!important}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) p{color:#2563eb!important}
+        /* Inspection status controls: no circles; selected Done is green and Not Done is red. */
+        .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
+        .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
+        .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:800}.inspection-status-legend .notdone{color:var(--red);font-weight:800}
+        .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:5px!important;flex-wrap:nowrap!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:8px!important;padding:5px 8px!important;min-height:32px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label>div:first-child{display:none!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] input{display:none!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.08)!important;font-weight:800!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:var(--red)!important;border-color:var(--red)!important;background:rgba(229,72,77,.08)!important;font-weight:800!important}
+        [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
+
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
         </style>""",unsafe_allow_html=True)
@@ -1901,12 +1922,12 @@ def overview_page(db, user, plant):
             if count:
                 inverter_items.append(f'<div class="overview-inverter bad">🔴 <b>{inverter}</b> — {count} open issue(s)</div>')
             else:
-                inverter_items.append(f'<div class="overview-inverter good">🟢 <b>{inverter}</b> — No open issue</div>')
+                inverter_items.append(f'<div class="overview-inverter good">🟢 <b>{inverter}</b> — No issue</div>')
         st.markdown('<div class="overview-inverter-grid">' + ''.join(inverter_items) + '</div>', unsafe_allow_html=True)
         if metrics["open_repairs"]:
             st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
         else:
-            st.success("No open repair/maintenance items")
+            st.success("No repair maintenance items")
 
     # Recent Maintenance Activity intentionally removed from Overview.
     st.divider()
@@ -2016,16 +2037,44 @@ def grass_cutting_page(db, user, plant):
 # ============================================================
 
 def _render_inspection_category(db, user, plant, category):
+    """Render one inspection process with persistent Done / Not Done status."""
     cfg = PROCESS_CATEGORIES[category]
 
     c1, c2, c3 = st.columns(3)
-    c1.markdown(f'<div class="dashboard-card"><h4>Frequency</h4><div class="dashboard-value">{cfg["frequency"]}</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{cfg["asset_type"]}</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="dashboard-card"><h4>Checklist Items</h4><div class="dashboard-value">{len(cfg["items"])}</div></div>', unsafe_allow_html=True)
+    c1.markdown(
+        f'<div class="dashboard-card"><h4>Frequency</h4><div class="dashboard-value">{cfg["frequency"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+    c2.markdown(
+        f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{cfg["asset_type"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+    c3.markdown(
+        f'<div class="dashboard-card"><h4>Checklist Items</h4><div class="dashboard-value">{len(cfg["items"])}</div></div>',
+        unsafe_allow_html=True,
+    )
 
-    task_date = st.date_input("Inspection date", value=date.today(), key=f"inspection_date_{category}")
+    task_date = st.date_input(
+        "Inspection date", value=date.today(), key=f"inspection_date_{category}"
+    )
+
     assets = asset_list(plant, cfg["asset_type"])
-    asset = st.selectbox(f"Select {cfg['asset_type']}", assets, key=f"inspection_asset_{category}")
+    asset_label = "Inverter" if cfg["asset_type"] == "Inverter" else "Table" if cfg["asset_type"] == "Table" else cfg["asset_type"]
+    asset = st.selectbox(
+        f"Select {asset_label}",
+        assets,
+        key=f"inspection_asset_{category}",
+    )
+
+    # Keep the selected inverter/table clearly visible above the checklist.
+    st.markdown(
+        f'<div class="inspection-asset-strip">'
+        f'<span class="inspection-asset-name">{asset}</span>'
+        f'<span class="inspection-status-legend"><span class="done">✓ Done</span>&nbsp;&nbsp;'
+        f'<span class="notdone">✗ Not Done</span></span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     old = record_status(db, plant.id, category, asset, task_date)
     old_details = parse_details(old) if old else {}
@@ -2034,10 +2083,14 @@ def _render_inspection_category(db, user, plant, category):
     if old and getattr(old, "approval_status", None) in ("Approved", "Declined"):
         approval_text = "APPROVED" if old.approval_status == "Approved" else "DECLINED"
         approval_cls = "good" if old.approval_status == "Approved" else "bad"
-        st.markdown(f'<div class="dashboard-card"><b>Engineer / Admin Review: <span class="{approval_cls}">{approval_text}</span></b><br><span class="small-muted">Signature: {getattr(old, "approval_signature", "") or "—"} • Reviewed: {getattr(old, "approved_at", None) or "—"}</span></div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="dashboard-card"><b>Engineer / Admin Review: '
+            f'<span class="{approval_cls}">{approval_text}</span></b><br>'
+            f'<span class="small-muted">Signature: {getattr(old, "approval_signature", "") or "—"} '
+            f'• Reviewed: {getattr(old, "approved_at", None) or "—"}</span></div>',
+            unsafe_allow_html=True,
+        )
 
-    # The asset selector remains compact so each inverter/table can still be inspected,
-    # but the large "INV-01 — ..." heading is removed for a cleaner workflow.
     st.markdown(f"### {category}")
 
     if category == "Daily Inspection":
@@ -2055,47 +2108,74 @@ def _render_inspection_category(db, user, plant, category):
 
     for tab, items, offset in groups:
         with tab:
-            st.caption("✓ = Done    ✗ = Not Done — a reason is required for every item marked Not Done.")
+            st.caption("✓ Done = green    ✗ Not Done = red. A reason is required for every item marked ✗ Not Done.")
             for local_index, item in enumerate(items):
                 i = offset + local_index
-                current = old_items.get(item, "RED")
-                if current in ("OK / Green", "GREEN", "Completed", "DONE"):
+
+                # Preserve the saved state for this exact inverter/table/date/item.
+                saved = old_items.get(item)
+                if saved in ("OK / Green", "GREEN", "Completed", "DONE"):
                     current = "GREEN"
-                else:
+                elif saved in ("RED", "Not Done", "Failed"):
                     current = "RED"
-                cols = st.columns([4.6, 1.7, 3.7])
-                cols[0].markdown(f'<div class="check-item"><b>{i + 1}. {item}</b></div>', unsafe_allow_html=True)
+                else:
+                    # New items start as Not Done so they cannot silently be treated as complete.
+                    current = "RED"
+
+                cols = st.columns([4.5, 1.8, 3.7], gap="small")
+                cols[0].markdown(
+                    f'<div class="check-item"><b>{i + 1}. {item}</b></div>',
+                    unsafe_allow_html=True,
+                )
+
                 status = cols[1].radio(
-                    "Status", ["GREEN", "RED"], index=0 if current == "GREEN" else 1,
+                    "Status",
+                    ["GREEN", "RED"],
+                    index=0 if current == "GREEN" else 1,
                     format_func=lambda v: "✓ Done" if v == "GREEN" else "✗ Not Done",
                     key=f"inspection_status_{category}_{asset}_{task_date}_{i}",
-                    horizontal=True, label_visibility="collapsed",
+                    horizontal=True,
+                    label_visibility="collapsed",
                 )
                 values[item] = status
+
                 if status == "RED":
                     reason = cols[2].text_input(
                         "Issue identified / reason",
                         value=old_items.get(f"{item}__reason", ""),
                         key=f"inspection_reason_{category}_{asset}_{task_date}_{i}",
-                        placeholder="Describe why this item is not done / the issue identified",
+                        placeholder="Enter the reason / issue identified",
+                        label_visibility="collapsed",
                     ).strip()
                     values[f"{item}__reason"] = reason
                     reason_widgets.append((item, reason))
                 else:
                     values[f"{item}__reason"] = ""
 
-    if st.button("💾 Save Inspection", type="primary", use_container_width=True, key=f"save_inspection_{category}"):
+
+    if st.button(
+        "💾 Save Inspection",
+        type="primary",
+        use_container_width=True,
+        key=f"save_inspection_{category}",
+    ):
         missing_reasons = [item for item, reason in reason_widgets if not reason]
         if missing_reasons:
-            st.error("Please enter the issue/reason for every item marked ✗ Not Done before saving.")
+            st.error("Please enter the reason/issue for every item marked ✗ Not Done before saving.")
             st.write("Missing reason for: " + ", ".join(missing_reasons))
             return
 
         statuses = [v for k, v in values.items() if not k.endswith("__reason")]
-        overall = "Completed" if all(v == "GREEN" for v in statuses) else "Failed"
+        overall = "Completed" if statuses and all(v == "GREEN" for v in statuses) else "Failed"
 
         upsert_record(
-            db, plant.id, category, asset, task_date, user.id, overall,
+            db,
+            plant.id,
+            category,
+            asset,
+            task_date,
+            user.id,
+            overall,
             {"items": values},
             remarks="",
         )
@@ -2103,7 +2183,9 @@ def _render_inspection_category(db, user, plant, category):
         for item in cfg["items"]:
             if values[item] == "RED":
                 reason = values.get(f"{item}__reason", "").strip()
-                ensure_repair_from_failed_item(db, plant.id, category, asset, item, reason, user.id)
+                ensure_repair_from_failed_item(
+                    db, plant.id, category, asset, item, reason, user.id
+                )
 
         st.success(f"{category} for {asset} saved as {overall}.")
         if overall == "Failed":
