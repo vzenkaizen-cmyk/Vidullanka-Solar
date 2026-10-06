@@ -2048,8 +2048,9 @@ def panel_cleaning_page(db, user, plant):
             worker_name = st.text_input(
                 "Worker / Supervisor",
                 value=saved_worker_name,
+                label_visibility="collapsed",
                 key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
-                placeholder="Enter worker/supervisor name",
+                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
@@ -2096,8 +2097,9 @@ def grass_cutting_page(db, user, plant):
             worker_name = st.text_input(
                 "Worker / Supervisor",
                 value=saved_worker_name,
+                label_visibility="collapsed",
                 key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
-                placeholder="Enter worker/supervisor name",
+                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
