@@ -1141,25 +1141,25 @@ def css():
         [data-testid="stSidebar"] .stButton>button:hover{border-color:#cdd9e8!important;background:#f5f8fc!important}
         [data-testid="stSidebar"] .stButton>button[kind="primary"]{background:#edf4ff!important;border-color:#d5e5fb!important;color:#2563eb!important;font-weight:700!important}
         [data-testid="stSidebar"] .stButton>button[kind="primary"] p{color:#2563eb!important}
-        /* Inspection status controls: no circles; selected Done is green and Not Done is red. */
+        /* Inspection status controls: compact circular ✓ / ✗ controls. */
         .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
         .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
-        .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:800}.inspection-status-legend .notdone{color:var(--red);font-weight:800}
+        .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}
         .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:5px!important;flex-wrap:nowrap!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:8px!important;padding:5px 8px!important;min-height:32px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:7px!important;flex-wrap:nowrap!important;justify-content:center!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:50%!important;padding:0!important;width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label>div:first-child{display:none!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] input{display:none!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.08)!important;font-weight:800!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:var(--red)!important;border-color:var(--red)!important;background:rgba(229,72,77,.08)!important;font-weight:800!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.10)!important;font-weight:900!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:#fff!important;border-color:var(--red)!important;background:var(--red)!important;font-weight:900!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked) p{color:#fff!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] p{margin:0!important;font-size:17px!important;line-height:1!important;font-weight:900!important}
         [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
 
-        /* Maintenance process tabs: clean horizontal tabs like the reference sketch. */
-        [data-testid="stMain"] [data-baseweb="tab-list"]{display:flex!important;gap:0!important;overflow-x:auto!important;overflow-y:hidden!important;border-bottom:1px solid var(--border)!important;scrollbar-width:thin!important;white-space:nowrap!important}
-        [data-testid="stMain"] [data-baseweb="tab"]{flex:0 0 auto!important;padding:9px 13px!important;border:0!important;border-bottom:2px solid transparent!important;background:transparent!important;color:var(--text)!important;font-size:13px!important;min-width:max-content!important}
-        [data-testid="stMain"] [data-baseweb="tab"]:hover{color:#16a66a!important;background:transparent!important}
-        [data-testid="stMain"] [data-baseweb="tab"][aria-selected="true"]{color:#16a66a!important;border-bottom:3px solid #16a66a!important;font-weight:700!important;background:transparent!important}
-        [data-testid="stMain"] [data-baseweb="tab-highlight"]{background:#16a66a!important;height:3px!important}
+        /* Compact maintenance process navigation. Full names stay on one line. */
+        [data-testid="stMain"] [data-testid="stButton"]>button{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:11px!important;padding:6px 4px!important;min-width:max-content!important}
+        [data-testid="stMain"] [data-testid="stButton"]>button p{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:11px!important}
+        .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
 
         .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin:10px 0 7px;font-weight:800;color:var(--text);box-sizing:border-box}
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
@@ -1171,13 +1171,6 @@ def css():
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{border-color:#16a66a!important;background:rgba(22,166,106,.08)!important;color:#16a66a!important;font-weight:800!important}
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]{background:transparent!important;border-color:transparent!important;color:var(--text)!important;font-weight:600!important}
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]:hover{border-bottom:2px solid #16a66a!important;color:#16a66a!important;background:transparent!important}
-        [data-testid="stMain"] .inspection-asset-box + div [data-testid="stRadio"]{margin-top:1px!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{justify-content:center!important;gap:5px!important;flex-wrap:nowrap!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:7px!important;padding:2px 10px!important;min-height:27px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;justify-content:center!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label>div:first-child{display:none!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] input{display:none!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.08)!important;font-weight:900!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:var(--red)!important;border-color:var(--red)!important;background:rgba(229,72,77,.08)!important;font-weight:900!important}
         .inspection-status-legend .small-muted{font-weight:500}
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
@@ -2004,7 +1997,7 @@ def panel_cleaning_page(db, user, plant):
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
             worker_name = st.text_input(
-                "Name of person doing the cleaning",
+                "Worker / Supervisor",
                 value=saved_worker_name,
                 key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
                 placeholder="Enter worker/supervisor name",
@@ -2052,7 +2045,7 @@ def grass_cutting_page(db, user, plant):
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
             worker_name = st.text_input(
-                "Name of person doing the grass cutting",
+                "Worker / Supervisor",
                 value=saved_worker_name,
                 key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
                 placeholder="Enter worker/supervisor name",
@@ -2095,9 +2088,7 @@ def _inspection_saved_item(old_record, item):
 
 
 def _render_inspection_category(db, user, plant, category):
-    """Render one inspection process. Inverter/Table processes are asset-by-asset.
-    MDB/Switch Yard/AC are single-site inspections and therefore use one status box.
-    """
+    """Render one inspection process quickly with compact ✓ / ✗ controls."""
     cfg = PROCESS_CATEGORIES[category]
 
     c1, c2, c3 = st.columns(3)
@@ -2118,47 +2109,43 @@ def _render_inspection_category(db, user, plant, category):
         "Inspection date", value=date.today(), key=f"inspection_date_{category}"
     )
 
-    # Only MDB, Switch Yard and AC are single-site assets. Keep their database
-    # asset IDs unchanged, but do not expose MDB-01 / SY-01 / AC-01 to the user.
     single_asset = cfg["asset_type"] in ("MDB", "Switch Yard", "AC Unit")
     assets = asset_list(plant, cfg["asset_type"])
     asset_label = {
         "Inverter": "Inverters",
         "Table": "Tables",
-        "MDB": "MDB Inspection",
-        "Switch Yard": "Switch Yard Inspection",
-        "AC Unit": "AC Inspection",
+        "MDB": "MDB",
+        "Switch Yard": "Switch Yard",
+        "AC Unit": "AC Unit",
     }.get(cfg["asset_type"], cfg["asset_type"])
 
     if single_asset:
-        # One record is used internally for the whole inspection.
         db_asset = assets[0] if assets else "SITE-01"
         old_records = {db_asset: record_status(db, plant.id, category, db_asset, task_date)}
         st.markdown(
-            f'<div class="inspection-single-box">'
-            f'<div class="inspection-single-title">{asset_label}</div>'
-            f'<div class="inspection-status-legend"><span class="done">✓ Done</span>'
-            f'&nbsp;&nbsp;<span class="notdone">✗ Not Done</span>'
-            f'&nbsp;&nbsp;<span class="small-muted">Reason appears only when ✗ is selected</span></div>'
-            f'</div>',
+            '<div class="inspection-single-box">'
+            f'<div class="inspection-single-title">{asset_label} Inspection</div>'
+            '<div class="inspection-status-legend"><span class="done">✓</span>&nbsp;&nbsp;'
+            '<span class="notdone">✗</span>&nbsp;&nbsp;'
+            '<span class="small-muted">✗ requires a reason</span></div>'
+            '</div>',
             unsafe_allow_html=True,
         )
     else:
-        # One query for all assets instead of one DB query per asset.
+        # One query for all inverter/table assets.
         old_records = status_map(db, plant.id, category, task_date)
-
         st.markdown(
-            f'<div class="inspection-asset-strip">'
+            '<div class="inspection-asset-strip">'
             f'<span class="inspection-asset-name">{asset_label} • {len(assets)} assets</span>'
-            f'<span class="inspection-status-legend"><span class="done">✓ Done</span>&nbsp;&nbsp;'
-            f'<span class="notdone">✗ Not Done</span>&nbsp;&nbsp;'
-            f'<span class="small-muted">Reason appears only when ✗ is selected</span></span></div>',
+            '<span class="inspection-status-legend"><span class="done">✓</span>&nbsp;&nbsp;'
+            '<span class="notdone">✗</span>&nbsp;&nbsp;'
+            '<span class="small-muted">✗ requires a reason</span></span>'
+            '</div>',
             unsafe_allow_html=True,
         )
 
-    # Daily Inspection keeps its two logical groups. The other categories use
-    # one checklist area. Only the selected maintenance category is rendered by
-    # inspection_page, which substantially reduces Streamlit rerun time.
+    # Daily Inspection keeps its two logical groups. No st.tabs are used here so
+    # only the selected maintenance process is rendered and the page stays fast.
     if category == "Daily Inspection":
         group_tabs = st.tabs(["🔌 Inverter Health Checks", "🛡️ Site Safety & Security Checks"])
         groups = [
@@ -2176,8 +2163,10 @@ def _render_inspection_category(db, user, plant, category):
         with context:
             if category != "Daily Inspection":
                 st.markdown(
-                    '<div class="inspection-check-title"><span>✅ Checklist</span>'
-                    '<span class="inspection-check-hint">✓ Done &nbsp; ✗ Not Done</span></div>',
+                    '<div class="inspection-check-title">'
+                    '<span>Checklist</span>'
+                    '<span class="inspection-check-hint">✓ / ✗</span>'
+                    '</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -2199,7 +2188,7 @@ def _render_inspection_category(db, user, plant, category):
                         "Status",
                         ["GREEN", "RED"],
                         index=0 if saved_status == "GREEN" else 1,
-                        format_func=lambda v: "✓ Done" if v == "GREEN" else "✗ Not Done",
+                        format_func=lambda v: "✓" if v == "GREEN" else "✗",
                         key=f"inspection_status_{category}_{task_date}_{item_index}",
                         horizontal=True,
                         label_visibility="collapsed",
@@ -2221,18 +2210,16 @@ def _render_inspection_category(db, user, plant, category):
 
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
             else:
-                st.caption(
-                    "Each checklist item is checked asset-by-asset. "
-                    "✓ = Done (green), ✗ = Not Done (red)."
-                )
-
+                st.caption("Each checklist item is checked asset-by-asset. ✓ = OK, ✗ = Not OK.")
                 grid_cols = 5 if cfg["asset_type"] in ("Inverter", "Table") else min(4, max(1, len(assets)))
 
                 for local_index, item in enumerate(items):
                     item_index = offset + local_index
                     st.markdown(
-                        f'<div class="inspection-check-title"><span>{item_index + 1}. {item}</span>'
-                        f'<span class="inspection-check-hint">{asset_label}</span></div>',
+                        f'<div class="inspection-check-title">'
+                        f'<span>{item_index + 1}. {item}</span>'
+                        f'<span class="inspection-check-hint">{asset_label}</span>'
+                        f'</div>',
                         unsafe_allow_html=True,
                     )
 
@@ -2249,7 +2236,6 @@ def _render_inspection_category(db, user, plant, category):
                                     f'<div class="inspection-asset-box">{asset}</div>',
                                     unsafe_allow_html=True,
                                 )
-
                                 status = st.radio(
                                     "Status",
                                     ["GREEN", "RED"],
@@ -2283,30 +2269,21 @@ def _render_inspection_category(db, user, plant, category):
         key=f"save_inspection_{category}",
     ):
         missing = [item for item, reason in reason_widgets if not reason.strip()]
-
         if missing:
-            st.error("Please enter the reason / issue for every item marked ✗ Not Done.")
+            st.error("Please enter the reason / issue for every item marked ✗ Not OK.")
             st.write("Missing reason for: " + ", ".join(missing[:30]) + (" …" if len(missing) > 30 else ""))
             return
 
         failed_assets = []
         saved_count = 0
-
         for asset in assets:
             asset_values = values[asset]
             statuses = [asset_values[item] for item in cfg["items"]]
             overall = "Completed" if statuses and all(v == "GREEN" for v in statuses) else "Failed"
 
             upsert_record(
-                db,
-                plant.id,
-                category,
-                asset,
-                task_date,
-                user.id,
-                overall,
-                {"items": asset_values},
-                remarks="",
+                db, plant.id, category, asset, task_date, user.id, overall,
+                {"items": asset_values}, remarks="",
             )
             saved_count += 1
 
@@ -2323,8 +2300,7 @@ def _render_inspection_category(db, user, plant, category):
         st.success(f"{category} saved successfully for {label}.")
         if failed_assets:
             st.warning(
-                "🔴 Not Done: "
-                + ", ".join(failed_assets)
+                "🔴 Not OK: " + ", ".join(failed_assets)
                 + ". Staff/supervisors/admins assigned to this plant have been notified."
             )
         st.rerun()
@@ -2338,19 +2314,27 @@ def inspection_page(db, user, plant):
         "are checked asset-by-asset."
     )
 
-    # Streamlit st.tabs renders the contents of every tab during each rerun.
-    # That becomes slow with 10 inverters × many checklist items. Use lightweight
-    # button-tabs so only the selected inspection is rendered.
     categories = list(PROCESS_CATEGORIES.keys())
     selected = st.session_state.get("inspection_category", categories[0])
     if selected not in categories:
         selected = categories[0]
 
-    tab_cols = st.columns(len(categories), gap="small")
+    # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
+    # complete tab names visible and allows horizontal scrolling on narrow screens.
+    tab_labels = {
+        "Daily Inspection": "Daily Inspection",
+        "Inverter Inspection": "Inverter Inspection",
+        "Panel Inspection": "Panel Inspection",
+        "DC Cable Inspection": "DC Cable Inspection",
+        "MDB Inspection": "MDB Inspection",
+        "Switch Yard Inspection": "Switch Yard Inspection",
+        "AC Inspection": "AC Inspection",
+    }
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
     for col, category in zip(tab_cols, categories):
         with col:
             if st.button(
-                category,
+                tab_labels[category],
                 key=f"inspection_tab_{category}",
                 use_container_width=True,
                 type="primary" if category == selected else "secondary",
@@ -2358,13 +2342,8 @@ def inspection_page(db, user, plant):
                 st.session_state.inspection_category = category
                 st.rerun()
 
-    st.markdown(
-        '<div class="inspection-tabs-line"></div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
-
 
 def loss_repair_page(db, user, plant):
     header(plant)
