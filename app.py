@@ -1157,9 +1157,41 @@ def css():
         [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
 
         /* Compact maintenance process navigation. Full names stay on one line. */
-        [data-testid="stMain"] [data-testid="stButton"]>button{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:13px!important;padding:7px 8px!important;min-width:max-content!important}
-        [data-testid="stMain"] [data-testid="stButton"]>button p{white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:13px!important}
-        .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
+        /* Main action buttons: the entire box is clickable; never show an underline/focus line. */
+        [data-testid="stMain"] [data-testid="stButton"]>button{
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+            font-size:13px!important;
+            padding:8px 10px!important;
+            min-width:max-content!important;
+            min-height:38px!important;
+            width:100%!important;
+            border:1px solid var(--border)!important;
+            border-radius:9px!important;
+            background:var(--surface)!important;
+            box-shadow:none!important;
+            text-decoration:none!important;
+            outline:none!important;
+            transition:none!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button p{
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+            font-size:13px!important;
+            text-decoration:none!important;
+            margin:0!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button:hover,
+        [data-testid="stMain"] [data-testid="stButton"]>button:focus,
+        [data-testid="stMain"] [data-testid="stButton"]>button:focus-visible,
+        [data-testid="stMain"] [data-testid="stButton"]>button:active{
+            text-decoration:none!important;
+            box-shadow:none!important;
+            outline:none!important;
+            border-bottom:1px solid var(--border)!important;
+        }
 
         .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin:10px 0 7px;font-weight:800;color:var(--text);box-sizing:border-box}
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
@@ -1168,9 +1200,25 @@ def css():
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:8px 0 14px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:15px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
-        [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{border-color:#16a66a!important;background:rgba(22,166,106,.08)!important;color:#16a66a!important;font-weight:800!important}
-        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]{background:transparent!important;border-color:transparent!important;color:var(--text)!important;font-weight:600!important}
-        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]:hover{border-bottom:2px solid #16a66a!important;color:#16a66a!important;background:transparent!important}
+        /* Selected inspection tab. */
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
+            border:1px solid #16a66a!important;
+            background:rgba(22,166,106,.08)!important;
+            color:#16a66a!important;
+            font-weight:800!important;
+        }
+        /* Unselected tabs and action buttons are full clickable boxes, not underlined text. */
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]{
+            background:var(--surface)!important;
+            border:1px solid var(--border)!important;
+            color:var(--text)!important;
+            font-weight:600!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]:hover{
+            border:1px solid #b8c7d9!important;
+            color:var(--text)!important;
+            background:var(--surface2)!important;
+        }
         .inspection-status-legend .small-muted{font-weight:500}
 
         @media(max-width:900px){.top-title{font-size:23px}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.loss-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.solar-map{min-height:980px;aspect-ratio:1/1.15}.map-zone-title{font-size:10px;padding:4px 5px}.map-controls{width:92px;font-size:8px;max-width:24%}}
