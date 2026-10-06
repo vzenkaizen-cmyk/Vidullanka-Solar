@@ -1165,6 +1165,12 @@ def css():
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
         .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:11px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px}
         .inspection-item-divider{height:1px;background:var(--border);margin:10px 0 5px}
+        .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:8px 0 14px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:15px;font-weight:850;color:var(--text)}
+        .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
+        .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{border-color:#16a66a!important;background:rgba(22,166,106,.08)!important;color:#16a66a!important;font-weight:800!important}
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]{background:transparent!important;border-color:transparent!important;color:var(--text)!important;font-weight:600!important}
+        [data-testid="stMain"] [data-testid="stButton"]>button[kind="secondary"]:hover{border-bottom:2px solid #16a66a!important;color:#16a66a!important;background:transparent!important}
         [data-testid="stMain"] .inspection-asset-box + div [data-testid="stRadio"]{margin-top:1px!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{justify-content:center!important;gap:5px!important;flex-wrap:nowrap!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:7px!important;padding:2px 10px!important;min-height:27px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;justify-content:center!important}
@@ -1665,8 +1671,8 @@ def operations_staff_section(db, user, plant, embedded=False):
     profile = db.query(PlantOperationsProfile).filter(PlantOperationsProfile.plant_id == plant.id).first()
     if profile is None:
         defaults = {
-            "HS1": ("HS1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
-            "HS2": ("HS2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN1": ("HRN1 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
+            "HRN2": ("HRN2 In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MTR": ("MTR In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "MDP": ("MDP In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
             "ORK": ("ORK In-Charge", "Mr. Prasanna Kottege", "Mr. Mahela Wanigasooriya"),
@@ -1688,7 +1694,7 @@ def operations_staff_section(db, user, plant, embedded=False):
         ("Mr. Sampath Raweendra", "Chief Electrical Engineer"),
         ("Mr. Damitha Bandulawansha", "Assistant Manager – Operations"),
         ("Mr. Prasanna Kottege", "Electrical Engineer"),
-        ("Mr. Mahela Wanigasooriya", "Mechanical Engineer / HOF staff"),
+        ("Mr. Mahela Wanigasooriya", "Mechanical Engineer"),
     ]
     with st.expander("Operations leadership roster", expanded=False):
         st.dataframe(pd.DataFrame(leadership, columns=["Name", "Position"]), use_container_width=True, hide_index=True)
@@ -1766,16 +1772,15 @@ def render_plant_details_and_specs(db, plant):
     ).first()
     staff_count = int(profile.operating_staff_count or 0) if profile else 0
     supervisors = {
-        "ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan",
-        "MTR": "Sudheera", "MTR-I": "Sudheera", "MTR-II": "Sudheera",
-        "MDP": "Sansala", "HOF": "Not provided",
+        "ORK": "Pasindu", "HRN1": "Roshan", "HRN2": "Roshan",
+        "MTR": "Sudheera",
+        "MDP": "Sansala",
     }
     supervisor = (profile.supervisor_name.strip() if profile and profile.supervisor_name else "") or supervisors.get(plant.code, "Not provided")
     engineers = {
-        "HS1": "Mr. Prasanna Kottege", "HS2": "Mr. Prasanna Kottege",
-        "MTR": "Mr. Mahela Wanigasooriya", "MTR-I": "Mr. Mahela Wanigasooriya",
-        "MTR-II": "Mr. Mahela Wanigasooriya", "MDP": "Mr. Mahela Wanigasooriya",
-        "ORK": "Not provided", "HOF": "Mr. Mahela Wanigasooriya",
+        "HRN1": "Mr. Prasanna Kottege", "HRN2": "Mr. Prasanna Kottege",
+        "MTR": "Mr. Mahela Wanigasooriya", "MDP": "Mr. Mahela Wanigasooriya",
+        "ORK": "Not provided",
     }
     engineer = (profile.engineer_name.strip() if profile and profile.engineer_name else "") or engineers.get(plant.code, "Not provided")
 
@@ -2090,7 +2095,9 @@ def _inspection_saved_item(old_record, item):
 
 
 def _render_inspection_category(db, user, plant, category):
-    """Render the inspection in the plant-process layout: every checklist item is followed by its assets."""
+    """Render one inspection process. Inverter/Table processes are asset-by-asset.
+    MDB/Switch Yard/AC are single-site inspections and therefore use one status box.
+    """
     cfg = PROCESS_CATEGORIES[category]
 
     c1, c2, c3 = st.columns(3)
@@ -2111,30 +2118,47 @@ def _render_inspection_category(db, user, plant, category):
         "Inspection date", value=date.today(), key=f"inspection_date_{category}"
     )
 
+    # Only MDB, Switch Yard and AC are single-site assets. Keep their database
+    # asset IDs unchanged, but do not expose MDB-01 / SY-01 / AC-01 to the user.
+    single_asset = cfg["asset_type"] in ("MDB", "Switch Yard", "AC Unit")
     assets = asset_list(plant, cfg["asset_type"])
     asset_label = {
         "Inverter": "Inverters",
         "Table": "Tables",
-        "MDB": "MDB",
-        "Switch Yard": "Switch Yard",
-        "AC Unit": "AC Units",
+        "MDB": "MDB Inspection",
+        "Switch Yard": "Switch Yard Inspection",
+        "AC Unit": "AC Inspection",
     }.get(cfg["asset_type"], cfg["asset_type"])
 
-    st.markdown(
-        f'<div class="inspection-asset-strip">'
-        f'<span class="inspection-asset-name">{asset_label} • {len(assets)} assets</span>'
-        f'<span class="inspection-status-legend"><span class="done">✓ Done</span>&nbsp;&nbsp;'
-        f'<span class="notdone">✗ Not Done</span>&nbsp;&nbsp;'
-        f'<span class="small-muted">Reason required for ✗</span></span></div>',
-        unsafe_allow_html=True,
-    )
+    if single_asset:
+        # One record is used internally for the whole inspection.
+        db_asset = assets[0] if assets else "SITE-01"
+        old_records = {db_asset: record_status(db, plant.id, category, db_asset, task_date)}
+        st.markdown(
+            f'<div class="inspection-single-box">'
+            f'<div class="inspection-single-title">{asset_label}</div>'
+            f'<div class="inspection-status-legend"><span class="done">✓ Done</span>'
+            f'&nbsp;&nbsp;<span class="notdone">✗ Not Done</span>'
+            f'&nbsp;&nbsp;<span class="small-muted">Reason appears only when ✗ is selected</span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        # One query for all assets instead of one DB query per asset.
+        old_records = status_map(db, plant.id, category, task_date)
 
-    old_records = {
-        asset: record_status(db, plant.id, category, asset, task_date)
-        for asset in assets
-    }
+        st.markdown(
+            f'<div class="inspection-asset-strip">'
+            f'<span class="inspection-asset-name">{asset_label} • {len(assets)} assets</span>'
+            f'<span class="inspection-status-legend"><span class="done">✓ Done</span>&nbsp;&nbsp;'
+            f'<span class="notdone">✗ Not Done</span>&nbsp;&nbsp;'
+            f'<span class="small-muted">Reason appears only when ✗ is selected</span></span></div>',
+            unsafe_allow_html=True,
+        )
 
-    # Keep the existing two Daily Inspection groups. All other processes use one checklist group.
+    # Daily Inspection keeps its two logical groups. The other categories use
+    # one checklist area. Only the selected maintenance category is rendered by
+    # inspection_page, which substantially reduces Streamlit rerun time.
     if category == "Daily Inspection":
         group_tabs = st.tabs(["🔌 Inverter Health Checks", "🛡️ Site Safety & Security Checks"])
         groups = [
@@ -2142,67 +2166,115 @@ def _render_inspection_category(db, user, plant, category):
             (group_tabs[1], cfg["items"][3:6], 3),
         ]
     else:
-        checklist_tab = st.tabs(["✅ Checklist"])[0]
-        groups = [(checklist_tab, cfg["items"], 0)]
+        groups = [(None, cfg["items"], 0)]
 
-    # values[asset][item] = GREEN/RED and values[asset][item__reason] = text
     values = {asset: {} for asset in assets}
-
-    # Five columns match the physical checklist concept in the reference image and
-    # keep INV-01 ... INV-10 compact on normal desktop screens.
-    grid_cols = 5 if cfg["asset_type"] in ("Inverter", "Table") else min(4, max(1, len(assets)))
+    reason_widgets = []
 
     for tab, items, offset in groups:
-        with tab:
-            st.caption("Each checklist item is checked asset-by-asset. ✓ = Done (green), ✗ = Not Done (red). A reason is required for every ✗.")
-
-            for local_index, item in enumerate(items):
-                item_index = offset + local_index
+        context = tab if tab is not None else st.container()
+        with context:
+            if category != "Daily Inspection":
                 st.markdown(
-                    f'<div class="inspection-check-title"><span>{item_index + 1}. {item}</span>'
-                    f'<span class="inspection-check-hint">{asset_label}</span></div>',
+                    '<div class="inspection-check-title"><span>✅ Checklist</span>'
+                    '<span class="inspection-check-hint">✓ Done &nbsp; ✗ Not Done</span></div>',
                     unsafe_allow_html=True,
                 )
 
-                # Asset boxes: INV-01 ... INV-10 or T-01 ... T-n.
-                for row_start in range(0, len(assets), grid_cols):
-                    row_assets = assets[row_start:row_start + grid_cols]
-                    cols = st.columns(grid_cols, gap="small")
-                    for col, asset in zip(cols, row_assets):
-                        old_record = old_records.get(asset)
-                        saved_status, saved_reason = _inspection_saved_item(old_record, item)
-                        status_key = f"inspection_status_{category}_{task_date}_{asset}_{item_index}"
-                        reason_key = f"inspection_reason_{category}_{task_date}_{asset}_{item_index}"
+            if single_asset:
+                asset = assets[0] if assets else "SITE-01"
+                old_record = old_records.get(asset)
+                for local_index, item in enumerate(items):
+                    item_index = offset + local_index
+                    saved_status, saved_reason = _inspection_saved_item(old_record, item)
 
-                        with col:
-                            st.markdown(
-                                f'<div class="inspection-asset-box">{asset}</div>',
-                                unsafe_allow_html=True,
-                            )
-                            status = st.radio(
-                                "Status",
-                                ["GREEN", "RED"],
-                                index=0 if saved_status == "GREEN" else 1,
-                                format_func=lambda v: "✓" if v == "GREEN" else "✗",
-                                key=status_key,
-                                horizontal=True,
-                                label_visibility="collapsed",
-                            )
-                            values[asset][item] = status
+                    st.markdown(
+                        f'<div class="inspection-single-item">'
+                        f'<span class="inspection-item-name">{item_index + 1}. {item}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
-                            if status == "RED":
-                                reason = st.text_input(
-                                    "Reason",
-                                    value=saved_reason,
-                                    key=reason_key,
-                                    placeholder="Reason / issue",
+                    status = st.radio(
+                        "Status",
+                        ["GREEN", "RED"],
+                        index=0 if saved_status == "GREEN" else 1,
+                        format_func=lambda v: "✓ Done" if v == "GREEN" else "✗ Not Done",
+                        key=f"inspection_status_{category}_{task_date}_{item_index}",
+                        horizontal=True,
+                        label_visibility="collapsed",
+                    )
+                    values[asset][item] = status
+
+                    if status == "RED":
+                        reason = st.text_input(
+                            "Reason / issue",
+                            value=saved_reason,
+                            key=f"inspection_reason_{category}_{task_date}_{item_index}",
+                            placeholder="Enter reason / issue",
+                            label_visibility="collapsed",
+                        ).strip()
+                        values[asset][f"{item}__reason"] = reason
+                        reason_widgets.append((item, reason))
+                    else:
+                        values[asset][f"{item}__reason"] = ""
+
+                    st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+            else:
+                st.caption(
+                    "Each checklist item is checked asset-by-asset. "
+                    "✓ = Done (green), ✗ = Not Done (red)."
+                )
+
+                grid_cols = 5 if cfg["asset_type"] in ("Inverter", "Table") else min(4, max(1, len(assets)))
+
+                for local_index, item in enumerate(items):
+                    item_index = offset + local_index
+                    st.markdown(
+                        f'<div class="inspection-check-title"><span>{item_index + 1}. {item}</span>'
+                        f'<span class="inspection-check-hint">{asset_label}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    for row_start in range(0, len(assets), grid_cols):
+                        row_assets = assets[row_start:row_start + grid_cols]
+                        cols = st.columns(grid_cols, gap="small")
+
+                        for col, asset in zip(cols, row_assets):
+                            old_record = old_records.get(asset)
+                            saved_status, saved_reason = _inspection_saved_item(old_record, item)
+
+                            with col:
+                                st.markdown(
+                                    f'<div class="inspection-asset-box">{asset}</div>',
+                                    unsafe_allow_html=True,
+                                )
+
+                                status = st.radio(
+                                    "Status",
+                                    ["GREEN", "RED"],
+                                    index=0 if saved_status == "GREEN" else 1,
+                                    format_func=lambda v: "✓" if v == "GREEN" else "✗",
+                                    key=f"inspection_status_{category}_{task_date}_{asset}_{item_index}",
+                                    horizontal=True,
                                     label_visibility="collapsed",
-                                ).strip()
-                                values[asset][f"{item}__reason"] = reason
-                            else:
-                                values[asset][f"{item}__reason"] = ""
+                                )
+                                values[asset][item] = status
 
-                st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+                                if status == "RED":
+                                    reason = st.text_input(
+                                        "Reason / issue",
+                                        value=saved_reason,
+                                        key=f"inspection_reason_{category}_{task_date}_{asset}_{item_index}",
+                                        placeholder="Reason / issue",
+                                        label_visibility="collapsed",
+                                    ).strip()
+                                    values[asset][f"{item}__reason"] = reason
+                                    reason_widgets.append((f"{asset} – {item}", reason))
+                                else:
+                                    values[asset][f"{item}__reason"] = ""
+
+                    st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
 
     if st.button(
         "💾 Save Inspection",
@@ -2210,19 +2282,16 @@ def _render_inspection_category(db, user, plant, category):
         use_container_width=True,
         key=f"save_inspection_{category}",
     ):
-        missing = []
-        for asset in assets:
-            for item in cfg["items"]:
-                if values[asset].get(item) == "RED" and not values[asset].get(f"{item}__reason", "").strip():
-                    missing.append(f"{asset} – {item}")
+        missing = [item for item, reason in reason_widgets if not reason.strip()]
 
         if missing:
-            st.error("Please enter the reason/issue for every item marked ✗ Not Done before saving.")
+            st.error("Please enter the reason / issue for every item marked ✗ Not Done.")
             st.write("Missing reason for: " + ", ".join(missing[:30]) + (" …" if len(missing) > 30 else ""))
             return
 
-        saved_count = 0
         failed_assets = []
+        saved_count = 0
+
         for asset in assets:
             asset_values = values[asset]
             statuses = [asset_values[item] for item in cfg["items"]]
@@ -2250,22 +2319,51 @@ def _render_inspection_category(db, user, plant, category):
                             db, plant.id, category, asset, item, reason, user.id
                         )
 
-        st.success(f"{category} saved for {saved_count} {asset_label.lower()}.")
+        label = "inspection" if single_asset else asset_label.lower()
+        st.success(f"{category} saved successfully for {label}.")
         if failed_assets:
-            st.warning("🔴 Not Done: " + ", ".join(failed_assets) + ". Staff/supervisors/admins assigned to this plant have been notified.")
+            st.warning(
+                "🔴 Not Done: "
+                + ", ".join(failed_assets)
+                + ". Staff/supervisors/admins assigned to this plant have been notified."
+            )
         st.rerun()
 
 
 def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
-    st.caption("Select a maintenance process tab. Daily, inverter, panel and DC cable inspections are checked asset-by-asset.")
+    st.caption(
+        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
+        "are checked asset-by-asset."
+    )
 
+    # Streamlit st.tabs renders the contents of every tab during each rerun.
+    # That becomes slow with 10 inverters × many checklist items. Use lightweight
+    # button-tabs so only the selected inspection is rendered.
     categories = list(PROCESS_CATEGORIES.keys())
-    tabs = st.tabs(categories)
-    for tab, category in zip(tabs, categories):
-        with tab:
-            _render_inspection_category(db, user, plant, category)
+    selected = st.session_state.get("inspection_category", categories[0])
+    if selected not in categories:
+        selected = categories[0]
+
+    tab_cols = st.columns(len(categories), gap="small")
+    for col, category in zip(tab_cols, categories):
+        with col:
+            if st.button(
+                category,
+                key=f"inspection_tab_{category}",
+                use_container_width=True,
+                type="primary" if category == selected else "secondary",
+            ):
+                st.session_state.inspection_category = category
+                st.rerun()
+
+    st.markdown(
+        '<div class="inspection-tabs-line"></div>',
+        unsafe_allow_html=True,
+    )
+
+    _render_inspection_category(db, user, plant, selected)
 
 
 def loss_repair_page(db, user, plant):
@@ -2527,24 +2625,110 @@ def plants_page(db):
             c1, c2 = st.columns(2)
             name = c1.text_input("Plant name", p.name, key=f"pname_{p.id}")
             code = c1.text_input("Plant code", p.code, key=f"pcode_{p.id}")
-            capacity = c1.number_input("Capacity MW", 0.0, 1000.0, float(p.capacity_mw), 0.1, key=f"pcap_{p.id}")
+            capacity = c1.number_input(
+                "Capacity MW", 0.0, 1000.0, float(p.capacity_mw), 0.1,
+                key=f"pcap_{p.id}"
+            )
 
-            inv = c2.number_input("Inverters", 1, 1000, int(p.inverter_count), key=f"pinv_{p.id}")
-            tables = c2.number_input("Tables", 1, 10000, int(p.table_count), key=f"ptab_{p.id}")
-            zones = c2.number_input("Zones", 1, 1000, int(p.zone_count), key=f"pzone_{p.id}")
+            inv = c2.number_input(
+                "Inverters", 1, 1000, int(p.inverter_count), key=f"pinv_{p.id}"
+            )
+            tables = c2.number_input(
+                "Tables", 1, 10000, int(p.table_count), key=f"ptab_{p.id}"
+            )
+            zones = c2.number_input(
+                "Zones", 1, 1000, int(p.zone_count), key=f"pzone_{p.id}"
+            )
             active = c2.checkbox("Active", p.active, key=f"pactive_{p.id}")
 
-            if st.button("Save Plant", key=f"save_plant_{p.id}"):
-                p.name = name.strip()
-                p.code = code.strip().upper()
-                p.capacity_mw = capacity
-                p.inverter_count = inv
-                p.table_count = tables
-                p.zone_count = zones
-                p.active = active
-                db.commit()
-                st.success("Plant updated.")
-                st.rerun()
+            save_col, delete_col = st.columns([1, 1])
+
+            with save_col:
+                if st.button("💾 Save Plant", key=f"save_plant_{p.id}"):
+                    new_code_value = code.strip().upper()
+
+                    duplicate = (
+                        db.query(Plant)
+                        .filter(Plant.code == new_code_value, Plant.id != p.id)
+                        .first()
+                    )
+                    if not new_code_value or not name.strip():
+                        st.error("Plant code and plant name are required.")
+                    elif duplicate:
+                        st.error("Another plant already uses this plant code.")
+                    else:
+                        p.name = name.strip()
+                        p.code = new_code_value
+                        p.capacity_mw = capacity
+                        p.inverter_count = inv
+                        p.table_count = tables
+                        p.zone_count = zones
+                        p.active = active
+                        db.commit()
+                        st.success("Plant updated.")
+                        st.rerun()
+
+            with delete_col:
+                if st.button(
+                    "🗑️ Delete Plant",
+                    key=f"delete_plant_{p.id}",
+                    type="secondary",
+                ):
+                    # Prevent accidental deletion with a second confirmation step.
+                    st.session_state[f"confirm_delete_plant_{p.id}"] = True
+                    st.rerun()
+
+            if st.session_state.get(f"confirm_delete_plant_{p.id}", False):
+                st.warning(
+                    f"Delete **{p.name} ({p.code})**? "
+                    "This permanently removes the plant and its linked maintenance data."
+                )
+                confirm_col, cancel_col = st.columns(2)
+
+                with confirm_col:
+                    if st.button(
+                        "⚠️ Yes, permanently delete",
+                        key=f"confirm_delete_plant_yes_{p.id}",
+                        type="primary",
+                    ):
+                        # Delete dependent rows first because several relationships
+                        # are not configured with database-level cascade rules.
+                        db.query(MaintenanceRecord).filter(
+                            MaintenanceRecord.plant_id == p.id
+                        ).delete(synchronize_session=False)
+                        db.query(RepairItem).filter(
+                            RepairItem.plant_id == p.id
+                        ).delete(synchronize_session=False)
+                        db.query(Notification).filter(
+                            Notification.plant_id == p.id
+                        ).delete(synchronize_session=False)
+                        db.query(MaintenanceReminder).filter(
+                            MaintenanceReminder.plant_id == p.id
+                        ).delete(synchronize_session=False)
+                        db.query(PlantOperationsProfile).filter(
+                            PlantOperationsProfile.plant_id == p.id
+                        ).delete(synchronize_session=False)
+                        db.query(User).filter(
+                            User.plant_id == p.id
+                        ).update(
+                            {User.plant_id: None},
+                            synchronize_session=False,
+                        )
+
+                        db.delete(p)
+                        db.commit()
+                        st.session_state.pop(f"confirm_delete_plant_{p.id}", None)
+                        st.session_state.pop("selected_plant_id", None)
+                        st.success("Plant deleted successfully.")
+                        st.rerun()
+
+                with cancel_col:
+                    if st.button(
+                        "Cancel",
+                        key=f"cancel_delete_plant_{p.id}",
+                    ):
+                        st.session_state.pop(f"confirm_delete_plant_{p.id}", None)
+                        st.rerun()
 
     st.markdown("---")
     st.subheader("Add new solar plant")
@@ -2561,7 +2745,9 @@ def plants_page(db):
     if st.button("Add Plant", type="primary"):
         if not new_code.strip() or not new_name.strip():
             st.error("Plant code and name are required.")
-        elif db.query(Plant).filter(Plant.code == new_code.strip().upper()).first():
+        elif db.query(Plant).filter(
+            Plant.code == new_code.strip().upper()
+        ).first():
             st.error("Plant code already exists.")
         else:
             db.add(
@@ -2578,6 +2764,10 @@ def plants_page(db):
             st.success("Plant added.")
             st.rerun()
 
+
+# ============================================================
+# Admin: Reminders
+# ============================================================
 
 # ============================================================
 # Admin: Reminders
