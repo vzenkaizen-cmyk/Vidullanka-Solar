@@ -1145,7 +1145,7 @@ def css():
         .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
         .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
         .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}.inspection-status-legend .unrecorded{color:var(--muted);font-weight:900}
-        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px;margin:4px 0;min-height:110px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:12px;font-weight:800;color:var(--text);line-height:1.25;min-height:38px;display:flex;align-items:flex-start}.inspection-group-item [data-testid="stRadio"]{margin-top:4px}
+        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 8px;margin:3px 0;min-height:70px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:11px;font-weight:800;color:var(--text);line-height:1.2;min-height:28px;display:flex;align-items:flex-start}.inspection-group-item [data-testid="stRadio"]{margin-top:2px}
         .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:7px!important;flex-wrap:nowrap!important;justify-content:center!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:50%!important;padding:0!important;width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
@@ -1195,11 +1195,11 @@ def css():
             border-bottom:1px solid var(--border)!important;
         }
 
-        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin:10px 0 7px;font-weight:800;color:var(--text);box-sizing:border-box}
+        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 10px;margin:7px 0 5px;font-weight:800;color:var(--text);box-sizing:border-box}
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
         .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:11px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px}
-        .inspection-item-divider{height:1px;background:var(--border);margin:10px 0 5px}
-        .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:8px 0 14px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:15px;font-weight:850;color:var(--text)}
+        .inspection-item-divider{height:1px;background:var(--border);margin:6px 0 3px}
+        .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
         /* Selected inspection tab. */
@@ -1290,6 +1290,23 @@ def donut_chart(percent, label, key):
 # ============================================================
 
 LOGIN_BACKGROUND_FILE = "Solar Sunrise Over a Green Energy Farm.png"
+LOGIN_LOGO_FILE = "vidullanka-logo.svg"
+
+def _login_asset_uri(filename, mime_type):
+    """Load a login-page asset from the same folder as app.py."""
+    image_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    try:
+        with open(image_path, "rb") as asset_file:
+            encoded = base64.b64encode(asset_file.read()).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+    except Exception:
+        return ""
+
+def _login_background_uri():
+    return _login_asset_uri(LOGIN_BACKGROUND_FILE, "image/png")
+
+def _login_logo_uri():
+    return _login_asset_uri(LOGIN_LOGO_FILE, "image/svg+xml")
 
 def _login_background_uri():
     """Load the supplied solar image from the same folder as app.py for deployment."""
@@ -1304,11 +1321,12 @@ def _login_background_uri():
 def login_page():
     css()
     bg_uri = _login_background_uri()
+    logo_uri = _login_logo_uri()
     if bg_uri:
         st.markdown(
             f"""<style>
             .stApp{{
-                background-image:linear-gradient(90deg,rgba(255,255,255,.08) 0%,rgba(255,255,255,.03) 45%,rgba(247,250,253,.78) 72%,rgba(247,250,253,.98) 100%),url('{bg_uri}');
+                background-image:linear-gradient(90deg,rgba(255,255,255,.78) 0%,rgba(255,255,255,.62) 38%,rgba(247,250,253,.28) 65%,rgba(247,250,253,.92) 100%),url('{bg_uri}');
                 background-size:cover;
                 background-position:center center;
                 background-attachment:fixed;
@@ -1317,18 +1335,18 @@ def login_page():
             [data-testid="stAppViewContainer"]{{background:transparent!important}}
             [data-testid="stMainBlockContainer"]{{max-width:1420px!important;padding-top:1.8rem!important;padding-bottom:2rem!important}}
             [data-testid="stColumn"]:has(.login-card-anchor){{background:rgba(255,255,255,.94);border:1px solid rgba(214,226,240,.95);border-radius:22px;padding:28px 30px 24px;box-shadow:0 18px 50px rgba(24,58,100,.16);backdrop-filter:blur(7px);align-self:flex-start}}
-            .login-brand{{font-size:19px;font-weight:850;letter-spacing:.6px;color:#102f5b;margin-top:4px}}
-            .login-brand-sub{{font-size:13px;color:#41668e;margin-top:2px}}
-            .login-hero-title{{font-size:clamp(38px,4.2vw,62px);font-weight:850;line-height:1.02;color:#102e57;margin-top:9rem;max-width:720px}}
-            .login-hero-sub{{font-size:19px;color:#41668e;margin-top:18px;max-width:620px}}
+            .login-logo{{width:225px;max-width:72%;height:auto;display:block;margin:2px 0 4px}}
+            .login-brand-sub{{font-size:13px;color:#315b83;margin-top:2px;font-weight:600;text-shadow:0 1px 2px rgba(255,255,255,.75)}}
+            .login-hero-title{{font-size:clamp(38px,4.2vw,62px);font-weight:850;line-height:1.02;color:#102e57;margin-top:4.2rem;max-width:720px;text-shadow:0 2px 7px rgba(255,255,255,.8)}}
+            .login-hero-sub{{font-size:19px;color:#315b83;font-weight:700;margin-top:16px;max-width:620px;text-shadow:0 1px 4px rgba(255,255,255,.85)}}
             .login-hero-points{{display:flex;gap:30px;margin-top:44px;max-width:720px}}
-            .login-hero-point{{font-size:13px;color:#31557d;line-height:1.35;max-width:175px}}
-            .login-hero-point b{{display:block;color:#102e57;font-size:16px;margin-bottom:6px}}
+            .login-hero-point{{font-size:13px;color:#244c73;line-height:1.35;max-width:175px;font-weight:600;text-shadow:0 1px 3px rgba(255,255,255,.85)}}
+            .login-hero-point b{{display:block;color:#102e57;font-size:16px;margin-bottom:5px;font-weight:850}}
             .login-form-title{{font-size:34px;font-weight:850;color:#102e57;margin-top:2px}}
             .login-form-sub{{font-size:13px;color:#67809b;margin-top:3px}}
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
-            @media(max-width:900px){{.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
+            @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
         )
@@ -1340,8 +1358,8 @@ def login_page():
 
     with left:
         st.markdown(
-            """
-            <div class="login-brand">☀️ VIDULLANKA</div>
+            f"""
+            <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
             <div class="login-brand-sub">Building on renewable energy sources</div>
             <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
@@ -2212,11 +2230,12 @@ def _inspection_groups(category, assets):
     if category == "Daily Inspection":
         primary_assets = list(assets)
         one_inverter = [assets[0]] if assets else ["INV-01"]
+        # Keep the original two high-level Daily Inspection tabs.
+        # CCTV, Lightning Arresters and Fire Extinguisher remain separate
+        # checks inside Site Safety & Security Checks, using only INV-01.
         return [
             ("🔌 Inverter Health Checks", cfg["items"][:3], primary_assets),
-            ("📹 CCTV Camera Check", [cfg["items"][3]], one_inverter),
-            ("⚡ Lightning Arresters Check", [cfg["items"][4]], one_inverter),
-            ("🧯 Fire Extinguisher Check", [cfg["items"][5]], one_inverter),
+            ("🛡️ Site Safety & Security Checks", cfg["items"][3:], one_inverter),
         ]
 
     if category == "MDB Inspection":
@@ -2395,7 +2414,12 @@ def _render_inspection_category(db, user, plant, category):
 
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                grid_cols = 5
+                # Site Safety & Security Checks uses one inverter only and keeps
+                # CCTV / Lightning / Fire as three compact, separate boxes.
+                if category == "Daily Inspection" and group_title.startswith("🛡️"):
+                    grid_cols = 3
+                else:
+                    grid_cols = 5
                 for item in group_items:
                     item_index = item_number_map[item] - 1
                     st.markdown(
