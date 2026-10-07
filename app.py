@@ -390,9 +390,9 @@ PROCESS_CATEGORIES = {
             "Transformer - No Visible Corrosion",
             "Transformer Insulators Are Good",
             "Transformer Surge Protectors Are Good",
-            "OVCB Tripping Works",
-            "OVCB Tripping Count Recorded",
-            "OVCB Auto / Manual Works",
+            "OCB Tripping Works",
+            "OCB Tripping Count Recorded",
+            "OCB Auto / Manual Works",
             "DDLO ",
             "Fence ",
             "Warning Signs clear and visible",
@@ -1144,15 +1144,17 @@ def css():
         /* Inspection status controls: compact circular ✓ / ✗ controls. */
         .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
         .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
-        .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}
+        .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}.inspection-status-legend .unrecorded{color:var(--muted);font-weight:900}
+        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px;margin:4px 0;min-height:110px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:12px;font-weight:800;color:var(--text);line-height:1.25;min-height:38px;display:flex;align-items:flex-start}.inspection-group-item [data-testid="stRadio"]{margin-top:4px}
         .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:7px!important;flex-wrap:nowrap!important;justify-content:center!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:50%!important;padding:0!important;width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label>div:first-child{display:none!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] input{display:none!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.10)!important;font-weight:900!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:#fff!important;border-color:var(--red)!important;background:var(--red)!important;font-weight:900!important}
-        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked) p{color:#fff!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(1):has(input:checked){color:var(--muted)!important;border-color:var(--border)!important;background:var(--surface2)!important;font-weight:900!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(2):has(input:checked){color:var(--green)!important;border-color:var(--green)!important;background:rgba(22,166,106,.10)!important;font-weight:900!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(3):has(input:checked){color:#fff!important;border-color:var(--red)!important;background:var(--red)!important;font-weight:900!important}
+        [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(3):has(input:checked) p{color:#fff!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] p{margin:0!important;font-size:17px!important;line-height:1!important;font-weight:900!important}
         [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
 
@@ -1287,92 +1289,149 @@ def donut_chart(percent, label, key):
 # Login
 # ============================================================
 
+LOGIN_BACKGROUND_FILE = "Solar Sunrise Over a Green Energy Farm.png"
+
+def _login_background_uri():
+    """Load the supplied solar image from the same folder as app.py for deployment."""
+    image_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOGIN_BACKGROUND_FILE)
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded = base64.b64encode(image_file.read()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception:
+        return ""
+
 def login_page():
     css()
-
-    st.markdown(
-        """
-        <div style="text-align:center; margin-top:20px;">
-            <div style="font-size:55px;">☀️</div>
-            <div class="top-subtitle">Maintenance automation • inspections • repair tracking • notifications</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    bg_uri = _login_background_uri()
+    if bg_uri:
+        st.markdown(
+            f"""<style>
+            .stApp{{
+                background-image:linear-gradient(90deg,rgba(255,255,255,.08) 0%,rgba(255,255,255,.03) 45%,rgba(247,250,253,.78) 72%,rgba(247,250,253,.98) 100%),url('{bg_uri}');
+                background-size:cover;
+                background-position:center center;
+                background-attachment:fixed;
+            }}
+            [data-testid="stHeader"]{{background:transparent!important}}
+            [data-testid="stAppViewContainer"]{{background:transparent!important}}
+            [data-testid="stMainBlockContainer"]{{max-width:1420px!important;padding-top:1.8rem!important;padding-bottom:2rem!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor){{background:rgba(255,255,255,.94);border:1px solid rgba(214,226,240,.95);border-radius:22px;padding:28px 30px 24px;box-shadow:0 18px 50px rgba(24,58,100,.16);backdrop-filter:blur(7px);align-self:flex-start}}
+            .login-brand{{font-size:19px;font-weight:850;letter-spacing:.6px;color:#102f5b;margin-top:4px}}
+            .login-brand-sub{{font-size:13px;color:#41668e;margin-top:2px}}
+            .login-hero-title{{font-size:clamp(38px,4.2vw,62px);font-weight:850;line-height:1.02;color:#102e57;margin-top:9rem;max-width:720px}}
+            .login-hero-sub{{font-size:19px;color:#41668e;margin-top:18px;max-width:620px}}
+            .login-hero-points{{display:flex;gap:30px;margin-top:44px;max-width:720px}}
+            .login-hero-point{{font-size:13px;color:#31557d;line-height:1.35;max-width:175px}}
+            .login-hero-point b{{display:block;color:#102e57;font-size:16px;margin-bottom:6px}}
+            .login-form-title{{font-size:34px;font-weight:850;color:#102e57;margin-top:2px}}
+            .login-form-sub{{font-size:13px;color:#67809b;margin-top:3px}}
+            .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
+            @media(max-width:900px){{.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
+            </style>""",
+            unsafe_allow_html=True,
+        )
 
     db = db_session()
     plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
 
-    tab1, tab2 = st.tabs(["🔐 Sign In", "📝 Create Account"])
+    left, right = st.columns([1.18, 0.82], gap="large")
 
-    with tab1:
-        st.subheader("Sign in")
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
+    with left:
+        st.markdown(
+            """
+            <div class="login-brand">☀️ VIDULLANKA</div>
+            <div class="login-brand-sub">Building on renewable energy sources</div>
+            <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
+            <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
+            <div class="login-hero-points">
+                <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
+                <div class="login-hero-point"><b>🔧 Maintain</b>Ensure reliability and uptime</div>
+                <div class="login-hero-point"><b>🌿 Sustain</b>A cleaner tomorrow with renewable energy</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        if st.button("Sign In", type="primary", use_container_width=True):
-            user = db.query(User).filter(User.email == email.strip().lower()).first()
-            if not user or not user.active:
-                st.error("Account not found or inactive.")
-            elif not verify_password(password, user.password_hash):
-                st.error("Incorrect email or password.")
-            else:
-                st.session_state.user = user
-                st.session_state.selected_plant_id = user.plant_id
-                st.rerun()
+    with right:
+        st.markdown(
+            """
+            <div class="login-card-anchor"></div>
+            <div class="login-form-title">☀️ Sign In</div>
+            <div class="login-form-sub">Access your solar plant management system</div>
+            <div class="login-accent"></div>
+            """,
+            unsafe_allow_html=True,
+        )
+        tab1, tab2 = st.tabs(["🔐 Sign In", "📝 Create Account"])
 
+        with tab1:
+            st.subheader("Sign in")
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
 
-    with tab2:
-        st.subheader("Create an account")
-        st.caption("Use your Vidullanka work email. Access level and plant scope are assigned from the registered email address.")
-        r1, r2 = st.tabs(["👷 Supervisor Account", "🧑‍💻 Engineer / Administrator Account"])
-
-        def registration_form(account_kind, title, prefix):
-            st.markdown(f"### {title}")
-            name = st.text_input("Full name", key=f"{prefix}_name")
-            reg_email = st.text_input("Vidullanka work email", key=f"{prefix}_email")
-            reg_password = st.text_input("Create password", type="password", key=f"{prefix}_password")
-            confirm = st.text_input("Confirm password", type="password", key=f"{prefix}_confirm")
-            if st.button(f"Create {title}", key=f"{prefix}_create", use_container_width=True):
-                email_value = reg_email.strip().lower()
-                if not name.strip() or not email_value or not reg_password:
-                    st.error("Complete all required fields.")
-                elif reg_password != confirm:
-                    st.error("Passwords do not match.")
-                elif len(reg_password) < 10:
-                    st.error("Use at least 10 characters for a stronger password.")
-                elif db.query(User).filter(User.email == email_value).first():
-                    st.error("An account with this email already exists. Please sign in or contact an administrator.")
+            if st.button("Sign In", type="primary", use_container_width=True):
+                user = db.query(User).filter(User.email == email.strip().lower()).first()
+                if not user or not user.active:
+                    st.error("Account not found or inactive.")
+                elif not verify_password(password, user.password_hash):
+                    st.error("Incorrect email or password.")
                 else:
-                    if account_kind == "supervisor":
-                        role = "supervisor"
-                        plant_code = PLANT_SUPERVISOR_EMAILS.get(email_value)
-                        if email_value in PLANT_SUPERVISOR_EMAILS:
-                            plant_id = _plant_id_for_code(db, plant_code)
-                            if not plant_id:
-                                st.error(f"The {plant_code} plant is not configured yet. Ask an administrator to add it before registering this account.")
-                                return
-                        else:
-                            plant_id = None
+                    st.session_state.user = user
+                    st.session_state.selected_plant_id = user.plant_id
+                    st.rerun()
+
+        with tab2:
+            st.subheader("Create an account")
+            st.caption("Use your Vidullanka work email. Access level and plant scope are assigned from the registered email address.")
+            r1, r2 = st.tabs(["👷 Supervisor Account", "🧑‍💻 Engineer / Administrator Account"])
+
+            def registration_form(account_kind, title, prefix):
+                st.markdown(f"### {title}")
+                name = st.text_input("Full name", key=f"{prefix}_name")
+                reg_email = st.text_input("Vidullanka work email", key=f"{prefix}_email")
+                reg_password = st.text_input("Create password", type="password", key=f"{prefix}_password")
+                confirm = st.text_input("Confirm password", type="password", key=f"{prefix}_confirm")
+                if st.button(f"Create {title}", key=f"{prefix}_create", use_container_width=True):
+                    email_value = reg_email.strip().lower()
+                    if not name.strip() or not email_value or not reg_password:
+                        st.error("Complete all required fields.")
+                    elif reg_password != confirm:
+                        st.error("Passwords do not match.")
+                    elif len(reg_password) < 10:
+                        st.error("Use at least 10 characters for a stronger password.")
+                    elif db.query(User).filter(User.email == email_value).first():
+                        st.error("An account with this email already exists. Please sign in or contact an administrator.")
                     else:
-                        role = MANAGEMENT_ROLE_BY_EMAIL.get(email_value)
-                        if not role:
-                            st.error("This email is not on the Engineer / Administrator access list. Use your registered Vidullanka work email or contact the system administrator.")
-                            return
-                        plant_id = None
-                    db.add(User(full_name=name.strip(), email=email_value, password_hash=hash_password(reg_password), role=role, plant_id=plant_id, active=True, approved=True))
-                    db.commit()
-                    scope = f" Assigned plant: {plant_code}." if account_kind == "supervisor" and email_value in PLANT_SUPERVISOR_EMAILS else (" Access: all active plants." if role in ("admin", "engineer") else " Plant assignment is required before using plant features.")
-                    st.success(f"{title} created successfully as {role.title()}. You can sign in immediately.{scope}")
+                        if account_kind == "supervisor":
+                            role = "supervisor"
+                            plant_code = PLANT_SUPERVISOR_EMAILS.get(email_value)
+                            if email_value in PLANT_SUPERVISOR_EMAILS:
+                                plant_id = _plant_id_for_code(db, plant_code)
+                                if not plant_id:
+                                    st.error(f"The {plant_code} plant is not configured yet. Ask an administrator to add it before registering this account.")
+                                    return
+                            else:
+                                plant_id = None
+                        else:
+                            role = MANAGEMENT_ROLE_BY_EMAIL.get(email_value)
+                            if not role:
+                                st.error("This email is not on the Engineer / Administrator access list. Use your registered Vidullanka work email or contact the system administrator.")
+                                return
+                            plant_id = None
+                        db.add(User(full_name=name.strip(), email=email_value, password_hash=hash_password(reg_password), role=role, plant_id=plant_id, active=True, approved=True))
+                        db.commit()
+                        scope = f" Assigned plant: {plant_code}." if account_kind == "supervisor" and email_value in PLANT_SUPERVISOR_EMAILS else (" Access: all active plants." if role in ("admin", "engineer") else " Plant assignment is required before using plant features.")
+                        st.success(f"{title} created successfully as {role.title()}. You can sign in immediately.{scope}")
 
-        with r1:
-            registration_form("supervisor", "Supervisor Account", "reg_supervisor")
-            st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
-        with r2:
-            registration_form("management", "Engineer / Administrator Account", "reg_management")
-            st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
+            with r1:
+                registration_form("supervisor", "Supervisor Account", "reg_supervisor")
+                st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
+            with r2:
+                registration_form("management", "Engineer / Administrator Account", "reg_management")
+                st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
 
-    # Plant overview cards removed; plant selection is handled from the sidebar after sign-in.
     db.close()
 
 
@@ -2123,23 +2182,113 @@ def grass_cutting_page(db, user, plant):
 # ============================================================
 
 def _inspection_saved_item(old_record, item):
-    """Return saved UI status and reason for one checklist item."""
+    """Return saved UI status and reason for one checklist item.
+
+    A checklist item that has never been saved is deliberately kept as
+    UNRECORDED.  It must not silently become RED/Not OK just because the
+    inspection page was opened or saved.
+    """
     if not old_record:
-        return "RED", ""
+        return "UNRECORDED", ""
     details = parse_details(old_record)
     items = details.get("items", {}) if isinstance(details, dict) else {}
+    if item not in items:
+        return "UNRECORDED", ""
+
     saved = items.get(item)
     if saved in ("OK / Green", "GREEN", "Completed", "DONE"):
         status = "GREEN"
     elif saved in ("RED", "Not Done", "Failed"):
         status = "RED"
     else:
-        status = "RED"
+        status = "UNRECORDED"
     return status, str(items.get(f"{item}__reason", "") or "")
 
 
+def _inspection_groups(category, assets):
+    """Return the intended visual groups without changing the underlying checklist."""
+    cfg = PROCESS_CATEGORIES[category]
+
+    if category == "Daily Inspection":
+        primary_assets = list(assets)
+        one_inverter = [assets[0]] if assets else ["INV-01"]
+        return [
+            ("🔌 Inverter Health Checks", cfg["items"][:3], primary_assets),
+            ("📹 CCTV Camera Check", [cfg["items"][3]], one_inverter),
+            ("⚡ Lightning Arresters Check", [cfg["items"][4]], one_inverter),
+            ("🧯 Fire Extinguisher Check", [cfg["items"][5]], one_inverter),
+        ]
+
+    if category == "MDB Inspection":
+        item_map = {item: i for i, item in enumerate(cfg["items"])}
+        groups = [
+            ("ACB", cfg["items"][0:2]),
+            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
+            ("MCCB", cfg["items"][5:7]),
+            ("CT", cfg["items"][7:9]),
+            ("Auto Transformer", cfg["items"][9:10]),
+            ("Multi-Function Meter", cfg["items"][10:11]),
+            ("Fans / Ventilation", cfg["items"][11:12]),
+            ("Thermo", cfg["items"][12:13]),
+            ("Enclosure", cfg["items"][13:14]),
+            ("Surge Protection", cfg["items"][14:15]),
+            ("Fuse", cfg["items"][15:16]),
+            ("Meter Panel Battery", cfg["items"][16:17]),
+            ("Protection Module", cfg["items"][17:18]),
+        ]
+        return [(title, items, assets) for title, items in groups]
+
+    if category == "Switch Yard Inspection":
+        return [
+            ("🔌 Transformers", cfg["items"][0:5], assets),
+            ("⚡ OCB", cfg["items"][5:8], assets),
+            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
+        ]
+
+    if category == "AC Inspection":
+        outdoor = [item for item in cfg["items"] if item.strip().startswith("Outdoor -")]
+        indoor = [item for item in cfg["items"] if item.strip().startswith("Indoor -")]
+        return [
+            ("🌤️ Outdoor Unit Checks", outdoor, assets),
+            ("❄️ Indoor Unit Checks", indoor, assets),
+        ]
+
+    return [("Checklist", cfg["items"], assets)]
+
+
+def _render_inspection_status(db, user, plant, category, task_date, item, item_index,
+                              asset, old_record, values, reason_widgets):
+    """Render one checklist status control and keep the three-state behaviour."""
+    saved_status, saved_reason = _inspection_saved_item(old_record, item)
+    status_options = ["UNRECORDED", "GREEN", "RED"]
+
+    status = st.radio(
+        "Status",
+        status_options,
+        index=status_options.index(saved_status),
+        format_func=lambda v: "○" if v == "UNRECORDED" else ("✓" if v == "GREEN" else "✗"),
+        key=f"inspection_status_{category}_{task_date}_{asset}_{item_index}",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    values.setdefault(asset, {})[item] = status
+
+    if status == "RED":
+        reason = st.text_input(
+            "Reason / issue",
+            value=saved_reason,
+            key=f"inspection_reason_{category}_{task_date}_{asset}_{item_index}",
+            placeholder="Reason / issue",
+            label_visibility="collapsed",
+        ).strip()
+        values[asset][f"{item}__reason"] = reason
+        reason_widgets.append((f"{asset} – {item}", reason))
+    else:
+        values[asset][f"{item}__reason"] = ""
+
+
 def _render_inspection_category(db, user, plant, category):
-    """Render one inspection process quickly with compact ✓ / ✗ controls."""
+    """Render one inspection process with grouped checks and an explicit Unrecorded state."""
     cfg = PROCESS_CATEGORIES[category]
 
     c1, c2, c3 = st.columns(3)
@@ -2160,7 +2309,6 @@ def _render_inspection_category(db, user, plant, category):
         "Inspection date", value=date.today(), key=f"inspection_date_{category}"
     )
 
-    single_asset = cfg["asset_type"] in ("MDB", "Switch Yard", "AC Unit")
     assets = asset_list(plant, cfg["asset_type"])
     asset_label = {
         "Inverter": "Inverters",
@@ -2170,147 +2318,109 @@ def _render_inspection_category(db, user, plant, category):
         "AC Unit": "AC Unit",
     }.get(cfg["asset_type"], cfg["asset_type"])
 
+    old_records = status_map(db, plant.id, category, task_date)
+    single_asset = cfg["asset_type"] in ("MDB", "Switch Yard", "AC Unit")
+
     if single_asset:
-        db_asset = assets[0] if assets else "SITE-01"
-        old_records = {db_asset: record_status(db, plant.id, category, db_asset, task_date)}
         st.markdown(
             '<div class="inspection-single-box">'
             f'<div class="inspection-single-title">{asset_label} Inspection</div>'
-            '<div class="inspection-status-legend"><span class="done">✓</span>&nbsp;&nbsp;'
+            '<div class="inspection-status-legend"><span class="unrecorded">○</span>&nbsp;&nbsp;'
+            '<span class="done">✓</span>&nbsp;&nbsp;'
             '<span class="notdone">✗</span>&nbsp;&nbsp;'
-            '<span class="small-muted">✗ requires a reason</span></div>'
+            '<span class="small-muted">○ not recorded &nbsp; ✗ requires a reason</span></div>'
             '</div>',
             unsafe_allow_html=True,
         )
     else:
-        # One query for all inverter/table assets.
-        old_records = status_map(db, plant.id, category, task_date)
         st.markdown(
             '<div class="inspection-asset-strip">'
             f'<span class="inspection-asset-name">{asset_label} • {len(assets)} assets</span>'
-            '<span class="inspection-status-legend"><span class="done">✓</span>&nbsp;&nbsp;'
+            '<span class="inspection-status-legend"><span class="unrecorded">○</span>&nbsp;&nbsp;'
+            '<span class="done">✓</span>&nbsp;&nbsp;'
             '<span class="notdone">✗</span>&nbsp;&nbsp;'
-            '<span class="small-muted">✗ requires a reason</span></span>'
+            '<span class="small-muted">○ not recorded &nbsp; ✗ requires a reason</span></span>'
             '</div>',
             unsafe_allow_html=True,
         )
 
-    # Daily Inspection keeps its two logical groups. No st.tabs are used here so
-    # only the selected maintenance process is rendered and the page stays fast.
-    if category == "Daily Inspection":
-        group_tabs = st.tabs(["🔌 Inverter Health Checks", "🛡️ Site Safety & Security Checks"])
-        groups = [
-            (group_tabs[0], cfg["items"][:3], 0),
-            (group_tabs[1], cfg["items"][3:6], 3),
-        ]
-    else:
-        groups = [(None, cfg["items"], 0)]
-
-    values = {asset: {} for asset in assets}
+    groups = _inspection_groups(category, assets)
+    values = {}
     reason_widgets = []
 
-    for tab, items, offset in groups:
-        context = tab if tab is not None else st.container()
+    # Daily inspection gets separate tabs so CCTV, Lightning Arresters and Fire
+    # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
+    if category == "Daily Inspection":
+        tabs = st.tabs([title for title, _, _ in groups])
+        group_contexts = list(zip(tabs, groups))
+    else:
+        group_contexts = [(st.container(), group) for group in groups]
+
+    item_number_map = {item: i + 1 for i, item in enumerate(cfg["items"])}
+
+    for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
             if category != "Daily Inspection":
                 st.markdown(
-                    '<div class="inspection-check-title">'
-                    '<span>Checklist</span>'
-                    '<span class="inspection-check-hint">✓ / ✗</span>'
-                    '</div>',
+                    f'<div class="inspection-check-title">'
+                    f'<span>{group_title}</span>'
+                    f'<span class="inspection-check-hint">✓ / ✗</span>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
 
+            # For grouped single-asset inspections (MDB, Switch Yard, AC), place
+            # related checklist items beside one another rather than vertically.
             if single_asset:
-                asset = assets[0] if assets else "SITE-01"
-                old_record = old_records.get(asset)
-                for local_index, item in enumerate(items):
-                    item_index = offset + local_index
-                    saved_status, saved_reason = _inspection_saved_item(old_record, item)
-
-                    st.markdown(
-                        f'<div class="inspection-single-item">'
-                        f'<span class="inspection-item-name">{item_index + 1}. {item}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                    status = st.radio(
-                        "Status",
-                        ["GREEN", "RED"],
-                        index=0 if saved_status == "GREEN" else 1,
-                        format_func=lambda v: "✓" if v == "GREEN" else "✗",
-                        key=f"inspection_status_{category}_{task_date}_{item_index}",
-                        horizontal=True,
-                        label_visibility="collapsed",
-                    )
-                    values[asset][item] = status
-
-                    if status == "RED":
-                        reason = st.text_input(
-                            "Reason / issue",
-                            value=saved_reason,
-                            key=f"inspection_reason_{category}_{task_date}_{item_index}",
-                            placeholder="Enter reason / issue",
-                            label_visibility="collapsed",
-                        ).strip()
-                        values[asset][f"{item}__reason"] = reason
-                        reason_widgets.append((item, reason))
-                    else:
-                        values[asset][f"{item}__reason"] = ""
-
+                row_size = 4
+                for row_start in range(0, len(group_items), row_size):
+                    row_items = group_items[row_start:row_start + row_size]
+                    cols = st.columns(len(row_items), gap="small")
+                    for col, item in zip(cols, row_items):
+                        with col:
+                            old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
+                            st.markdown(
+                                f'<div class="inspection-group-item">'
+                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _render_inspection_status(
+                                db, user, plant, category, task_date, item,
+                                item_number_map[item] - 1,
+                                group_assets[0] if group_assets else "SITE-01",
+                                old_record, values, reason_widgets,
+                            )
+                            st.markdown('</div>', unsafe_allow_html=True)
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
-            else:
-                st.caption("Each checklist item is checked asset-by-asset. ✓ = OK, ✗ = Not OK.")
-                grid_cols = 5 if cfg["asset_type"] in ("Inverter", "Table") else min(4, max(1, len(assets)))
 
-                for local_index, item in enumerate(items):
-                    item_index = offset + local_index
+            else:
+                st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
+                grid_cols = 5
+                for item in group_items:
+                    item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_index + 1}. {item}</span>'
+                        f'<span>{item_number_map[item]}. {item}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
-
-                    for row_start in range(0, len(assets), grid_cols):
-                        row_assets = assets[row_start:row_start + grid_cols]
-                        cols = st.columns(grid_cols, gap="small")
-
+                    for row_start in range(0, len(group_assets), grid_cols):
+                        row_assets = group_assets[row_start:row_start + grid_cols]
+                        cols = st.columns(len(row_assets), gap="small")
                         for col, asset in zip(cols, row_assets):
-                            old_record = old_records.get(asset)
-                            saved_status, saved_reason = _inspection_saved_item(old_record, item)
-
                             with col:
+                                old_record = old_records.get(asset)
                                 st.markdown(
                                     f'<div class="inspection-asset-box">{asset}</div>',
                                     unsafe_allow_html=True,
                                 )
-                                status = st.radio(
-                                    "Status",
-                                    ["GREEN", "RED"],
-                                    index=0 if saved_status == "GREEN" else 1,
-                                    format_func=lambda v: "✓" if v == "GREEN" else "✗",
-                                    key=f"inspection_status_{category}_{task_date}_{asset}_{item_index}",
-                                    horizontal=True,
-                                    label_visibility="collapsed",
+                                _render_inspection_status(
+                                    db, user, plant, category, task_date, item,
+                                    item_index, asset, old_record, values, reason_widgets,
                                 )
-                                values[asset][item] = status
-
-                                if status == "RED":
-                                    reason = st.text_input(
-                                        "Reason / issue",
-                                        value=saved_reason,
-                                        key=f"inspection_reason_{category}_{task_date}_{asset}_{item_index}",
-                                        placeholder="Reason / issue",
-                                        label_visibility="collapsed",
-                                    ).strip()
-                                    values[asset][f"{item}__reason"] = reason
-                                    reason_widgets.append((f"{asset} – {item}", reason))
-                                else:
-                                    values[asset][f"{item}__reason"] = ""
-
+                                if values[asset].get(f"{item}__reason", ""):
+                                    pass
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
 
     if st.button(
@@ -2325,33 +2435,76 @@ def _render_inspection_category(db, user, plant, category):
             st.write("Missing reason for: " + ", ".join(missing[:30]) + (" …" if len(missing) > 30 else ""))
             return
 
+        # Only assets/items that were actually displayed are allowed to change.
+        # This is important for the Daily Inspection one-inverter checks.
+        touched_assets = set(values.keys())
         failed_assets = []
         saved_count = 0
-        for asset in assets:
-            asset_values = values[asset]
-            statuses = [asset_values[item] for item in cfg["items"]]
-            overall = "Completed" if statuses and all(v == "GREEN" for v in statuses) else "Failed"
+        removed_count = 0
+
+        for asset in touched_assets:
+            asset_values = values.get(asset, {})
+            if not asset_values:
+                continue
+
+            rec = old_records.get(asset)
+            existing_details = parse_details(rec) if rec else {}
+            merged_items = dict(existing_details.get("items", {}) if isinstance(existing_details, dict) else {})
+
+            for item, selected_status in asset_values.items():
+                if item.endswith("__reason"):
+                    continue
+                if selected_status == "UNRECORDED":
+                    # Do not create a record for a never-recorded item. If the user
+                    # deliberately reset an existing item, remove only that item.
+                    merged_items.pop(item, None)
+                    merged_items.pop(f"{item}__reason", None)
+                elif selected_status == "GREEN":
+                    merged_items[item] = "GREEN"
+                    merged_items[f"{item}__reason"] = ""
+                elif selected_status == "RED":
+                    merged_items[item] = "RED"
+                    merged_items[f"{item}__reason"] = asset_values.get(f"{item}__reason", "").strip()
+
+            recorded_items = [
+                item for item in cfg["items"]
+                if merged_items.get(item) in ("GREEN", "RED", "OK / Green", "Completed", "DONE", "Not Done", "Failed")
+            ]
+
+            if not recorded_items:
+                # Leave a completely untouched asset unrecorded. If an old record
+                # was explicitly cleared, remove that date-specific record only.
+                if rec:
+                    db.delete(rec)
+                    db.commit()
+                    removed_count += 1
+                continue
+
+            all_recorded = len(recorded_items) == len(cfg["items"])
+            any_red = any(merged_items.get(item) in ("RED", "Not Done", "Failed") for item in cfg["items"])
+            overall = "Failed" if any_red else ("Completed" if all_recorded else "Pending")
 
             upsert_record(
                 db, plant.id, category, asset, task_date, user.id, overall,
-                {"items": asset_values}, remarks="",
+                {"items": merged_items}, remarks="",
             )
             saved_count += 1
-
             if overall == "Failed":
                 failed_assets.append(asset)
                 for item in cfg["items"]:
-                    if asset_values[item] == "RED":
-                        reason = asset_values.get(f"{item}__reason", "").strip()
+                    if merged_items.get(item) == "RED":
+                        reason = str(merged_items.get(f"{item}__reason", "") or "").strip()
                         ensure_repair_from_failed_item(
                             db, plant.id, category, asset, item, reason, user.id
                         )
 
-        label = "inspection" if single_asset else asset_label.lower()
-        st.success(f"{category} saved successfully for {label}.")
+        if saved_count or removed_count:
+            st.success(f"{category} saved successfully.")
+        else:
+            st.info("No checklist items were recorded. Unselected items remain Not recorded.")
         if failed_assets:
             st.warning(
-                "🔴 Not OK: " + ", ".join(failed_assets)
+                "🔴 Not OK: " + ", ".join(sorted(set(failed_assets)))
                 + ". Staff/supervisors/admins assigned to this plant have been notified."
             )
         st.rerun()
