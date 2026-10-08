@@ -1,4 +1,3 @@
-
 import os
 import io
 import json
@@ -1186,7 +1185,7 @@ def css():
             text-overflow:clip!important;
             font-size:13px!important;
             padding:8px 10px!important;
-            min-width:0!important;
+            min-width:max-content!important;
             min-height:38px!important;
             width:100%!important;
             border:1px solid var(--border)!important;
@@ -1222,10 +1221,6 @@ def css():
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}.inspection-item-name{font-size:13px;line-height:1.25;overflow-wrap:anywhere;word-break:break-word}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
-        /* Keep maintenance tabs visually separated on all screen sizes. */
-        [data-testid="stMain"] [data-testid="stHorizontalBlock"]{
-            column-gap:1rem!important;
-        }
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
             border:1px solid #16a66a!important;
@@ -2679,7 +2674,7 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    # Give each tab enough width and use a clear, consistent gap so adjacent\n    # buttons never touch or overlap, especially the longer first tab label.\n    tab_cols = st.columns([1.45, 1.20, 1.00, 1.10, .90, 1.35, .85], gap="medium")
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
     for col, category in zip(tab_cols, categories):
         with col:
             if st.button(
