@@ -2679,7 +2679,9 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    # Give each tab enough width and use a clear, consistent gap so adjacent\n    # buttons never touch or overlap, especially the longer first tab label.\n    tab_cols = st.columns([1.45, 1.20, 1.00, 1.10, .90, 1.35, .85], gap="medium")
+    # Give each tab enough width and use a clear, consistent gap so adjacent
+    # buttons never touch or overlap, especially the longer first tab label.
+    tab_cols = st.columns([1.45, 1.20, 1.00, 1.10, .90, 1.35, .85], gap="medium")
     for col, category in zip(tab_cols, categories):
         with col:
             if st.button(
