@@ -451,6 +451,27 @@ PLANT_SUPERVISOR_EMAILS = {
     "ork.ops@vidullanka.com": "ORK",
 }
 
+# Worker lists used by Panel Cleaning and Grass Cutting. The lists are plant-specific
+# and can be extended later without changing the maintenance records structure.
+WORKERS_BY_PLANT = {
+    "HS1": ["Roshan", "Worker 1", "Worker 2", "Worker 3"],
+    "HS2": ["Worker 1", "Worker 2", "Worker 3"],
+    "MDP": ["Worker 1", "Worker 2", "Worker 3"],
+    "MTR": [
+        "Sudheera Athukorala",
+        "VIraj Samarasinghe",
+        "Alaththuge Gunarathne",
+        "Saman Kumara",
+        "Chiwantha Dahanayake",
+        "Minidu Gawesh",
+    ],
+    "ORK": ["Worker 1", "Worker 2", "Worker 3"],
+}
+
+def worker_options_for_plant(plant):
+    code = (getattr(plant, "code", "") or "").strip().upper()
+    return list(WORKERS_BY_PLANT.get(code, ["Worker 1", "Worker 2", "Worker 3"]))
+
 def _plant_id_for_code(db, code):
     if not code:
         return None
@@ -1360,7 +1381,7 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
+            <div class="login-hero-title">Solar Operation &amp; Maintenance Platform</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
                 <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
@@ -1408,6 +1429,17 @@ def login_page():
                 st.markdown(f"### {title}")
                 name = st.text_input("Full name", key=f"{prefix}_name")
                 reg_email = st.text_input("Vidullanka work email", key=f"{prefix}_email")
+                selected_registration_plant = None
+                if account_kind == "supervisor":
+                    supervisor_plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
+                    supervisor_plant_options = {display_plant_name(p): p.id for p in supervisor_plants}
+                    if supervisor_plant_options:
+                        selected_registration_name = st.selectbox(
+                            "Assigned plant",
+                            list(supervisor_plant_options.keys()),
+                            key=f"{prefix}_plant",
+                        )
+                        selected_registration_plant = supervisor_plant_options[selected_registration_name]
                 reg_password = st.text_input("Create password", type="password", key=f"{prefix}_password")
                 confirm = st.text_input("Confirm password", type="password", key=f"{prefix}_confirm")
                 if st.button(f"Create {title}", key=f"{prefix}_create", use_container_width=True):
@@ -1423,14 +1455,12 @@ def login_page():
                     else:
                         if account_kind == "supervisor":
                             role = "supervisor"
-                            plant_code = PLANT_SUPERVISOR_EMAILS.get(email_value)
-                            if email_value in PLANT_SUPERVISOR_EMAILS:
-                                plant_id = _plant_id_for_code(db, plant_code)
-                                if not plant_id:
-                                    st.error(f"The {plant_code} plant is not configured yet. Ask an administrator to add it before registering this account.")
-                                    return
-                            else:
-                                plant_id = None
+                            plant_id = selected_registration_plant
+                            if not plant_id:
+                                st.error("Select the supervisor's assigned plant before creating the account.")
+                                return
+                            selected_plant = db.query(Plant).filter(Plant.id == plant_id).first()
+                            plant_code = selected_plant.code if selected_plant else ""
                         else:
                             role = MANAGEMENT_ROLE_BY_EMAIL.get(email_value)
                             if not role:
@@ -1439,12 +1469,12 @@ def login_page():
                             plant_id = None
                         db.add(User(full_name=name.strip(), email=email_value, password_hash=hash_password(reg_password), role=role, plant_id=plant_id, active=True, approved=True))
                         db.commit()
-                        scope = f" Assigned plant: {plant_code}." if account_kind == "supervisor" and email_value in PLANT_SUPERVISOR_EMAILS else (" Access: all active plants." if role in ("admin", "engineer") else " Plant assignment is required before using plant features.")
+                        scope = f" Assigned plant: {display_plant_name(selected_plant)}." if account_kind == "supervisor" else (" Access: all active plants." if role in ("admin", "engineer") else "")
                         st.success(f"{title} created successfully as {role.title()}. You can sign in immediately.{scope}")
 
             with r1:
                 registration_form("supervisor", "Supervisor Account", "reg_supervisor")
-                st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
+                st.caption("Select the supervisor's plant during registration. After sign-in, supervisors can only access that assigned plant.")
             with r2:
                 registration_form("management", "Engineer / Administrator Account", "reg_management")
                 st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
@@ -1503,8 +1533,22 @@ def top_nav(db, user):
     with st.sidebar:
         st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sidebar-sub">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
-        selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
-        st.session_state.selected_plant_id = plant_options[selected_name]
+        if user.role in ("admin", "engineer"):
+            selected_name = st.selectbox(
+                "Plant",
+                list(plant_options.keys()),
+                index=list(plant_options.keys()).index(current_name),
+                key="top_plant",
+            )
+            st.session_state.selected_plant_id = plant_options[selected_name]
+        else:
+            # Supervisors are permanently scoped to their assigned plant and do not
+            # receive a plant selector in the navigation bar.
+            st.markdown(
+                f'<div class="sidebar-sub" style="margin:8px 0 0;"><b>Plant</b><br>{display_plant_name(plants[0])}</div>',
+                unsafe_allow_html=True,
+            )
+            st.session_state.selected_plant_id = plants[0].id
         st.divider()
         st.caption("🟢 System Online")
 
@@ -2161,26 +2205,29 @@ def panel_cleaning_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
-                label_visibility="collapsed",
-                key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
-                placeholder="Enter name",
-            ).strip()
+            worker_options = worker_options_for_plant(plant)
+            saved_workers = [w.strip() for w in saved_worker_name.split(",") if w.strip()]
+            worker_name = st.multiselect(
+                "Workers",
+                worker_options,
+                default=[w for w in saved_workers if w in worker_options],
+                key=f"panel_workers_{plant.id}_{asset}_{task_date}",
+                placeholder="Select workers",
+            )
+            worker_name_value = ", ".join(worker_name)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"panel_{asset}_{task_date}",
                 use_container_width=True,
             ):
                 if not done and not worker_name:
-                    st.warning(f"Enter the worker's name for {asset} before marking it completed.")
+                    st.warning(f"Select at least one worker for {asset} before marking it completed.")
                 else:
                     upsert_record(
                         db, plant.id, "Panel Cleaning", asset, task_date, user.id,
                         "Pending" if done else "Completed",
                         {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_name,
+                        remarks="" if done else worker_name_value,
                     )
                     st.rerun()
 
@@ -2210,26 +2257,29 @@ def grass_cutting_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
-                label_visibility="collapsed",
-                key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
-                placeholder="Enter name",
-            ).strip()
+            worker_options = worker_options_for_plant(plant)
+            saved_workers = [w.strip() for w in saved_worker_name.split(",") if w.strip()]
+            worker_name = st.multiselect(
+                "Workers",
+                worker_options,
+                default=[w for w in saved_workers if w in worker_options],
+                key=f"grass_workers_{plant.id}_{zone}_{task_date}",
+                placeholder="Select workers",
+            )
+            worker_name_value = ", ".join(worker_name)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"grass_{zone}_{task_date}",
                 use_container_width=True,
             ):
                 if not done and not worker_name:
-                    st.warning(f"Enter the worker's name for {zone} before marking it completed.")
+                    st.warning(f"Select at least one worker for {zone} before marking it completed.")
                 else:
                     upsert_record(
                         db, plant.id, "Grass Cutting", zone, task_date, user.id,
                         "Pending" if done else "Completed",
                         {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_name,
+                        remarks="" if done else worker_name_value,
                     )
                     st.rerun()
 
@@ -2369,8 +2419,9 @@ def _render_inspection_category(db, user, plant, category):
         f'<div class="dashboard-card"><h4>Frequency</h4><div class="dashboard-value">{cfg["frequency"]}</div></div>',
         unsafe_allow_html=True,
     )
+    asset_type_display = "Inverter & Safety Checks" if category == "Daily Inspection" else cfg["asset_type"]
     c2.markdown(
-        f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{cfg["asset_type"]}</div></div>',
+        f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{asset_type_display}</div></div>',
         unsafe_allow_html=True,
     )
     c3.markdown(
@@ -2604,7 +2655,7 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
+        "Select a maintenance process tab. Inverter & Safety Checks, panel and DC cable inspections "
         "are checked asset-by-asset."
     )
 
@@ -2616,7 +2667,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Daily Inspection",
+        "Daily Inspection": "Inverter & Safety Checks",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
