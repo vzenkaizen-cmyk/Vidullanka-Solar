@@ -1222,9 +1222,20 @@ def css():
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}.inspection-item-name{font-size:13px;line-height:1.25;overflow-wrap:anywhere;word-break:break-word}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
-        /* Keep maintenance tabs visually separated on all screen sizes. */
+        /* Maintenance process tabs: wide readable boxes with no ellipsis. */
         [data-testid="stMain"] [data-testid="stHorizontalBlock"]{
             column-gap:1rem!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button{
+            min-width:0!important;
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button p{
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
         }
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
@@ -2679,19 +2690,29 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    # Give each tab enough width and use a clear, consistent gap so adjacent
-    # buttons never touch or overlap, especially the longer first tab label.
-    tab_cols = st.columns([1.45, 1.20, 1.00, 1.10, .90, 1.35, .85], gap="medium")
-    for col, category in zip(tab_cols, categories):
-        with col:
-            if st.button(
-                tab_labels[category],
-                key=f"inspection_tab_{category}",
-                use_container_width=True,
-                type="primary" if category == selected else "secondary",
-            ):
-                st.session_state.inspection_category = category
-                st.rerun()
+    # Use two rows so every maintenance process name has enough horizontal space.
+    # This prevents Streamlit from shortening labels with an ellipsis (...).
+    tab_rows = [
+        categories[:4],
+        categories[4:],
+    ]
+    tab_ratios = [
+        [1.55, 1.45, 1.35, 1.50],
+        [1.45, 1.80, 1.30],
+    ]
+
+    for row_index, row_categories in enumerate(tab_rows):
+        row_cols = st.columns(tab_ratios[row_index], gap="medium")
+        for col, category in zip(row_cols, row_categories):
+            with col:
+                if st.button(
+                    tab_labels[category],
+                    key=f"inspection_tab_{category}",
+                    use_container_width=True,
+                    type="primary" if category == selected else "secondary",
+                ):
+                    st.session_state.inspection_category = category
+                    st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
