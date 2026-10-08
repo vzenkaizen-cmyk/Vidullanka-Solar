@@ -1144,7 +1144,7 @@ def css():
         .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
         .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
         .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}.inspection-status-legend .unrecorded{color:var(--muted);font-weight:900}
-        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 8px;margin:3px 0;min-height:70px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:11px;font-weight:800;color:var(--text);line-height:1.2;min-height:28px;display:flex;align-items:flex-start}.inspection-group-item [data-testid="stRadio"]{margin-top:2px}
+        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 9px;margin:3px 0;min-height:78px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:13px;font-weight:800;color:var(--text);line-height:1.25;min-height:40px;height:auto;display:flex;align-items:flex-start;overflow-wrap:anywhere;word-break:break-word}.inspection-group-item [data-testid="stRadio"]{margin-top:3px}
         .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:7px!important;flex-wrap:nowrap!important;justify-content:center!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:50%!important;padding:0!important;width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
@@ -1194,12 +1194,12 @@ def css():
             border-bottom:1px solid var(--border)!important;
         }
 
-        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 10px;margin:7px 0 5px;font-weight:800;color:var(--text);box-sizing:border-box}
+        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin:7px 0 5px;font-weight:800;font-size:13px;line-height:1.25;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
-        .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:11px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px}
+        .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:12px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px;overflow-wrap:anywhere;word-break:break-word}
         .inspection-item-divider{height:1px;background:var(--border);margin:6px 0 3px}
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
-        .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
+        .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}.inspection-item-name{font-size:13px;line-height:1.25;overflow-wrap:anywhere;word-break:break-word}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
@@ -2038,10 +2038,45 @@ def overview_page(db, user, plant):
     metrics["grass_done"] = grass_done
     metrics["grass_total"] = grass_total
 
-    repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
-        RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
-    ).group_by(RepairItem.asset_id).all()
-    repair_counts = {a: int(c) for a, c in repair_rows}
+    # Repair & Maintenance must remain 0% until repair records are actually
+    # entered. A plant with no repair records is "not updated", not "100% complete".
+    # Once records exist, an inverter is counted as completed only when it has
+    # repair/maintenance records and none of its records are still open.
+    repair_rows = db.query(
+        RepairItem.asset_id, RepairItem.status
+    ).filter(
+        RepairItem.plant_id == plant.id
+    ).all()
+
+    repair_asset_status = {}
+    for asset_id, status in repair_rows:
+        current = repair_asset_status.setdefault(asset_id, {"has_record": False, "open": False})
+        current["has_record"] = True
+        if status != "Completed":
+            current["open"] = True
+
+    repair_assets = asset_list(plant, "Inverter")
+    repair_done = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("has_record")
+        and not repair_asset_status.get(asset, {}).get("open")
+    )
+    repair_updated = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("has_record")
+    )
+    repair_open_assets = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("open")
+    )
+    repair_total = len(repair_assets)
+    repair_pct = round(repair_done / repair_total * 100, 1) if repair_total else 0
+
+    # Keep the detailed inverter status display below the card.
+    repair_counts = {
+        asset: 1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("open")
+    }
 
     st.markdown("## ⚡ Maintenance Productivity")
     st.caption("Compact operational view — cleaning, grass cutting and repair/maintenance status.")
@@ -2067,9 +2102,9 @@ def overview_page(db, user, plant):
     with repair_col:
         _render_overview_card(
             "Repair & Maintenance", "🔧",
-            100 if metrics["open_repairs"] == 0 else 0,
-            plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
-            plant.inverter_count,
+            repair_pct,
+            repair_done,
+            repair_total,
             "0% losses"
         )
         st.markdown("**Inverter status**")
@@ -2081,8 +2116,10 @@ def overview_page(db, user, plant):
             else:
                 inverter_items.append(f'<div class="overview-inverter good">🟢 <b>{inverter}</b> — No issue</div>')
         st.markdown('<div class="overview-inverter-grid">' + ''.join(inverter_items) + '</div>', unsafe_allow_html=True)
-        if metrics["open_repairs"]:
-            st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
+        if repair_open_assets:
+            st.error(f"{repair_open_assets} inverter(s) have active repair/maintenance issues")
+        elif repair_updated == 0:
+            st.caption("Not updated yet")
         else:
             st.success("No repair maintenance items")
 
@@ -2429,8 +2466,8 @@ def _render_inspection_category(db, user, plant, category):
 
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                # Site Safety & Security Checks uses one inverter only and keeps
-                # CCTV / Lightning / Fire as three compact, separate boxes.
+                # Site Safety & Security Checks uses one inverter only internally, but the
+                # INV-01 asset label is hidden so each safety check stays compact.
                 if category == "Daily Inspection" and group_title.startswith("🛡️"):
                     grid_cols = 3
                 else:
@@ -2450,10 +2487,14 @@ def _render_inspection_category(db, user, plant, category):
                         for col, asset in zip(cols, row_assets):
                             with col:
                                 old_record = old_records.get(asset)
-                                st.markdown(
-                                    f'<div class="inspection-asset-box">{asset}</div>',
-                                    unsafe_allow_html=True,
-                                )
+                                if not (
+                                    category == "Daily Inspection"
+                                    and group_title.startswith("🛡️")
+                                ):
+                                    st.markdown(
+                                        f'<div class="inspection-asset-box">{asset}</div>',
+                                        unsafe_allow_html=True,
+                                    )
                                 _render_inspection_status(
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
