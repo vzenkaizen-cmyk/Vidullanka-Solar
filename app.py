@@ -2100,12 +2100,18 @@ def overview_page(db, user, plant):
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
+        # Repair & Maintenance is a plant health indicator.
+        # When there are no active repair issues, all configured inverters
+        # are treated as healthy/completed: 100% and 10/10 (or the
+        # configured inverter count). Active issues reduce the percentage.
+        repair_health_pct = 100 if repair_open_assets == 0 else max(0, 100 - min(100, repair_open_assets / max(1, plant.inverter_count) * 100))
+        repair_health_done = plant.inverter_count - repair_open_assets
         _render_overview_card(
             "Repair & Maintenance", "🔧",
-            repair_pct,
-            repair_done,
-            repair_total,
-            "0% losses"
+            repair_health_pct,
+            repair_health_done,
+            plant.inverter_count,
+            f"{max(0, 100 - repair_health_pct):.0f}% losses"
         )
         st.markdown("**Inverter status**")
         inverter_items = []
