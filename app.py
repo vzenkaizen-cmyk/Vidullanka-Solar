@@ -53,9 +53,8 @@ DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
 # These are deliberately kept in one place so management can change them later.
-PANEL_CLEANING_TARGET_DAYS = 7
-GRASS_CUTTING_TARGET_DAYS = 30
-REPAIR_MAINTENANCE_TARGET_DAYS = 7
+PANEL_CLEANING_TARGET_MONTHS = 4
+GRASS_CUTTING_TARGET_MONTHS = 3
 # ============================================================
 # NEON POSTGRESQL CONFIGURATION
 # ============================================================
@@ -1992,11 +1991,10 @@ def render_plant_details_and_specs(db, plant):
         st.info("Technical specifications have not yet been provided for this site. Add them to the site specification configuration when available.")
 
 
-def _overview_target_label(done, total, target_days, unit):
-    remaining = max(0, total - done)
-    if remaining == 0:
-        return "Target complete"
-    return f"Estimated target: {target_days} days / cycle" if unit == "cycle" else f"Estimated target: {target_days} days"
+def _overview_target_label(done, total, target_months):
+    # Management maintenance cycle shown on the Overview cards.
+    # Keep this independent from the current completion percentage.
+    return f"Estimated target: {target_months} months / cycle"
 
 
 def _render_overview_card(title, icon, pct, done, total, target_text, map_renderer=None):
@@ -2053,7 +2051,7 @@ def overview_page(db, user, plant):
     with panel_col:
         _render_overview_card(
             "Panel Cleaning", "🧹", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
-            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_MONTHS)
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
@@ -2061,7 +2059,7 @@ def overview_page(db, user, plant):
     with grass_col:
         _render_overview_card(
             "Grass Cutting", "🌿", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
-            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_MONTHS)
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
@@ -2072,7 +2070,7 @@ def overview_page(db, user, plant):
             100 if metrics["open_repairs"] == 0 else 0,
             plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
             plant.inverter_count,
-            _overview_target_label(0 if metrics["open_repairs"] else 1, 1, REPAIR_MAINTENANCE_TARGET_DAYS, "days")
+            "0% losses"
         )
         st.markdown("**Inverter status**")
         inverter_items = []
