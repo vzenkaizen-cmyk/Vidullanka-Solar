@@ -1332,6 +1332,7 @@ def login_page():
                 background-attachment:fixed;
             }}
             [data-testid="stHeader"]{{background:transparent!important}}
+            [data-testid="stSidebar"]{{display:none!important}}
             [data-testid="stAppViewContainer"]{{background:transparent!important}}
             [data-testid="stMainBlockContainer"]{{max-width:1420px!important;padding-top:1.8rem!important;padding-bottom:2rem!important}}
             [data-testid="stColumn"]:has(.login-card-anchor){{background:rgba(255,255,255,.94);border:1px solid rgba(214,226,240,.95);border-radius:22px;padding:28px 30px 24px;box-shadow:0 18px 50px rgba(24,58,100,.16);backdrop-filter:blur(7px);align-self:flex-start}}
@@ -1360,7 +1361,6 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-brand-sub">Building on renewable energy sources</div>
             <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
@@ -1500,8 +1500,6 @@ def top_nav(db, user):
     plant_options = {display_plant_name(p): p.id for p in plants}
     current_id = st.session_state.get("selected_plant_id") or (user.plant_id if user.role not in ("admin", "engineer") else plants[0].id)
     current_name = next((n for n, pid in plant_options.items() if pid == current_id), plants[0].name)
-
-    st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
@@ -2199,19 +2197,30 @@ def grass_cutting_page(db, user, plant):
 # Maintenance inspections
 # ============================================================
 
-def _inspection_saved_item(old_record, item):
-    """Return saved UI status and reason for one checklist item.
+def _inspection_display_item(item):
+    """Return a clean user-facing checklist label without changing stored keys."""
+    label = str(item or "").strip()
+    if label.startswith("Outdoor -"):
+        label = label[len("Outdoor -"):].strip()
+    elif label.startswith("Indoor -"):
+        label = label[len("Indoor -"):].strip()
 
-    A checklist item that has never been saved is deliberately kept as
-    UNRECORDED.  It must not silently become RED/Not OK just because the
-    inspection page was opened or saved.
-    """
+    # Expand CT to the requested full terminology in the UI.
+    if label.startswith("CT "):
+        label = "Current Transformer " + label[3:]
+    elif label == "CT":
+        label = "Current Transformer"
+    return label
+
+
+def _inspection_saved_item(old_record, item):
+    """Return saved UI status, reason and optional tripping count."""
     if not old_record:
-        return "UNRECORDED", ""
+        return "UNRECORDED", "", 0
     details = parse_details(old_record)
     items = details.get("items", {}) if isinstance(details, dict) else {}
     if item not in items:
-        return "UNRECORDED", ""
+        return "UNRECORDED", "", 0
 
     saved = items.get(item)
     if saved in ("OK / Green", "GREEN", "Completed", "DONE"):
@@ -2220,7 +2229,14 @@ def _inspection_saved_item(old_record, item):
         status = "RED"
     else:
         status = "UNRECORDED"
-    return status, str(items.get(f"{item}__reason", "") or "")
+
+    raw_count = items.get(f"{item}__count", 0)
+    try:
+        count = max(0, int(raw_count or 0))
+    except (TypeError, ValueError):
+        count = 0
+    return status, str(items.get(f"{item}__reason", "") or ""), count
+
 
 
 def _inspection_groups(category, assets):
@@ -2239,30 +2255,14 @@ def _inspection_groups(category, assets):
         ]
 
     if category == "MDB Inspection":
-        item_map = {item: i for i, item in enumerate(cfg["items"])}
-        groups = [
-            ("ACB", cfg["items"][0:2]),
-            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
-            ("MCCB", cfg["items"][5:7]),
-            ("CT", cfg["items"][7:9]),
-            ("Auto Transformer", cfg["items"][9:10]),
-            ("Multi-Function Meter", cfg["items"][10:11]),
-            ("Fans / Ventilation", cfg["items"][11:12]),
-            ("Thermo", cfg["items"][12:13]),
-            ("Enclosure", cfg["items"][13:14]),
-            ("Surge Protection", cfg["items"][14:15]),
-            ("Fuse", cfg["items"][15:16]),
-            ("Meter Panel Battery", cfg["items"][16:17]),
-            ("Protection Module", cfg["items"][17:18]),
-        ]
-        return [(title, items, assets) for title, items in groups]
+        # One continuous MDB checklist; the old ACB / Bus Bar / MCCB / CT
+        # category boxes are intentionally removed from the UI.
+        return [("Checklist", cfg["items"], assets)]
 
     if category == "Switch Yard Inspection":
-        return [
-            ("🔌 Transformers", cfg["items"][0:5], assets),
-            ("⚡ OCB", cfg["items"][5:8], assets),
-            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
-        ]
+        # One continuous Switch Yard checklist; no Transformer / OCB / Other
+        # category boxes are shown.
+        return [("Checklist", cfg["items"], assets)]
 
     if category == "AC Inspection":
         outdoor = [item for item in cfg["items"] if item.strip().startswith("Outdoor -")]
@@ -2277,8 +2277,8 @@ def _inspection_groups(category, assets):
 
 def _render_inspection_status(db, user, plant, category, task_date, item, item_index,
                               asset, old_record, values, reason_widgets):
-    """Render one checklist status control and keep the three-state behaviour."""
-    saved_status, saved_reason = _inspection_saved_item(old_record, item)
+    """Render one checklist status control, plus the OCB tripping-count field when needed."""
+    saved_status, saved_reason, saved_count = _inspection_saved_item(old_record, item)
     status_options = ["UNRECORDED", "GREEN", "RED"]
 
     status = st.radio(
@@ -2292,6 +2292,19 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     )
     values.setdefault(asset, {})[item] = status
 
+    if item == "OCB Tripping Count Recorded" and status == "GREEN":
+        tripping_count = st.number_input(
+            "Tripping count",
+            min_value=0,
+            value=saved_count,
+            step=1,
+            key=f"inspection_count_{category}_{task_date}_{asset}_{item_index}",
+            help="Enter the recorded OCB tripping count.",
+        )
+        values[asset][f"{item}__count"] = int(tripping_count)
+    else:
+        values[asset][f"{item}__count"] = 0
+
     if status == "RED":
         reason = st.text_input(
             "Reason / issue",
@@ -2301,7 +2314,7 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
             label_visibility="collapsed",
         ).strip()
         values[asset][f"{item}__reason"] = reason
-        reason_widgets.append((f"{asset} – {item}", reason))
+        reason_widgets.append((f"{asset} – {_inspection_display_item(item)}", reason))
     else:
         values[asset][f"{item}__reason"] = ""
 
@@ -2379,7 +2392,11 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
-            if category != "Daily Inspection":
+            show_group_header = (
+                category != "Daily Inspection"
+                and not (category in ("MDB Inspection", "Switch Yard Inspection") and group_title == "Checklist")
+            )
+            if show_group_header:
                 st.markdown(
                     f'<div class="inspection-check-title">'
                     f'<span>{group_title}</span>'
@@ -2400,7 +2417,7 @@ def _render_inspection_category(db, user, plant, category):
                             old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
                             st.markdown(
                                 f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
+                                f'<div class="inspection-item-name">{item_number_map[item]}. {_inspection_display_item(item)}</div>',
                                 unsafe_allow_html=True,
                             )
                             _render_inspection_status(
@@ -2424,7 +2441,7 @@ def _render_inspection_category(db, user, plant, category):
                     item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_number_map[item]}. {item}</span>'
+                        f'<span>{item_number_map[item]}. {_inspection_display_item(item)}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -2476,19 +2493,23 @@ def _render_inspection_category(db, user, plant, category):
             merged_items = dict(existing_details.get("items", {}) if isinstance(existing_details, dict) else {})
 
             for item, selected_status in asset_values.items():
-                if item.endswith("__reason"):
+                if item.endswith("__reason") or item.endswith("__count"):
                     continue
                 if selected_status == "UNRECORDED":
                     # Do not create a record for a never-recorded item. If the user
                     # deliberately reset an existing item, remove only that item.
                     merged_items.pop(item, None)
                     merged_items.pop(f"{item}__reason", None)
+                    merged_items.pop(f"{item}__count", None)
                 elif selected_status == "GREEN":
                     merged_items[item] = "GREEN"
                     merged_items[f"{item}__reason"] = ""
+                    if item == "OCB Tripping Count Recorded":
+                        merged_items[f"{item}__count"] = int(asset_values.get(f"{item}__count", 0) or 0)
                 elif selected_status == "RED":
                     merged_items[item] = "RED"
                     merged_items[f"{item}__reason"] = asset_values.get(f"{item}__reason", "").strip()
+                    merged_items.pop(f"{item}__count", None)
 
             recorded_items = [
                 item for item in cfg["items"]
