@@ -500,6 +500,13 @@ def seed_database():
                              inverter_count=10, table_count=80, zone_count=10, active=True))
         db.commit()
 
+        # ORK has 51 solar tables. Keep the stored count aligned so overview cards,
+        # panel-cleaning tasks, grass-cutting overlays, and progress use the same total.
+        ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
+        if ork_plant and ork_plant.table_count != 51:
+            ork_plant.table_count = 51
+            db.commit()
+
         # HRN has been renamed to HS1 in the application. If an older Neon database
         # still contains HRN, migrate it to HS1 without deleting the plant data.
         old_hrn = db.query(Plant).filter(Plant.code == "HRN").first()
@@ -1665,10 +1672,14 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     if plant_code in {"HS1", "HRN1", "HRN"}:
         # HRN 1: two upper vertical-column arrays and two broad lower arrays.
         block_specs = [
-            (.13, .00, .46, .25, "x"),
-            (.17, .25, .42, .49, "x"),
-            (.23, .51, .89, .75, "x"),
-            (.25, .75, .82, 1.00, "x"),
+            # Upper-left array: long north/south table strips.
+            (.135, .005, .448, .244, "x"),
+            # Second upper array, separated by the cross-lane.
+            (.174, .252, .407, .488, "x"),
+            # Broad lower array, above the lower cross-lane.
+            (.232, .512, .886, .742, "x"),
+            # Broad bottom array.
+            (.253, .752, .817, .994, "x"),
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2: eight separated groups of horizontal table rows.
