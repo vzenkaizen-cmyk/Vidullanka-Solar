@@ -1621,7 +1621,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     # Plant-specific satellite photos. The same selected photo is used on
     # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
-    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
+    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
     satellite_files = {
         "HS1": "HRN1.jpg",   # HRN 1 (first supplied image)
         "HRN1": "HRN1.jpg",
@@ -1631,14 +1631,16 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         "ORK": "ORK.jpg",    # ORK (third supplied image)
     }
     selected_satellite = satellite_files.get(plant_code, "HR1.jpeg")
-    # Use the plant-specific asset only. Do not silently fall back to HR1.jpeg,
-    # because that makes HRN 1 display the wrong satellite photo on deployment.
-    image_path = os.path.join(os.path.dirname(__file__), "assets", selected_satellite)
-    if not os.path.isfile(image_path):
-        st.error(
-            f"Required satellite image '{selected_satellite}' is missing from the assets folder. "
-            "Add and commit the correct image file, then redeploy the app."
-        )
+    image_candidates = [
+        os.path.join(os.path.dirname(__file__), "assets", selected_satellite),
+        os.path.join(os.path.dirname(__file__), selected_satellite),
+        # Backward-compatible fallback if an older deployment only has HR1.jpeg.
+        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
+        os.path.join(os.path.dirname(__file__), "HR1.jpeg"),
+    ]
+    image_path = next((candidate for candidate in image_candidates if os.path.exists(candidate)), None)
+    if not image_path:
+        st.error(f"Satellite image not found: {selected_satellite}. Ensure the image is included in the assets folder.")
         return
 
     with Image.open(image_path) as im:
@@ -1659,7 +1661,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # so the same status logic follows the real panel rows on each satellite photo.
     # Each block is (left, top, right, bottom, split_direction).
     # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
-    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
+    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
     if plant_code in {"HS1", "HRN1", "HRN"}:
         # HRN 1 satellite image: three real horizontal-row array groups.
         # Coordinates are normalized to the supplied HRN1.jpg image:
