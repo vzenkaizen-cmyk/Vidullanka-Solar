@@ -500,13 +500,6 @@ def seed_database():
                              inverter_count=10, table_count=80, zone_count=10, active=True))
         db.commit()
 
-        # ORK has 51 solar tables. Keep the stored count aligned so overview cards,
-        # panel-cleaning tasks, grass-cutting overlays, and progress use the same total.
-        ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
-        if ork_plant and ork_plant.table_count != 51:
-            ork_plant.table_count = 51
-            db.commit()
-
         # HRN has been renamed to HS1 in the application. If an older Neon database
         # still contains HRN, migrate it to HS1 without deleting the plant data.
         old_hrn = db.query(Plant).filter(Plant.code == "HRN").first()
@@ -1628,7 +1621,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     # Plant-specific satellite photos. The same selected photo is used on
     # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
-    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
+    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
     satellite_files = {
         "HS1": "HRN1.jpg",   # HRN 1 (first supplied image)
         "HRN1": "HRN1.jpg",
@@ -1668,18 +1661,16 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # so the same status logic follows the real panel rows on each satellite photo.
     # Each block is (left, top, right, bottom, split_direction).
     # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
-    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
+    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
     if plant_code in {"HS1", "HRN1", "HRN"}:
-        # HRN 1: two upper vertical-column arrays and two broad lower arrays.
+        # HRN 1 satellite image: three real horizontal-row array groups.
+        # Coordinates are normalized to the supplied HRN1.jpg image:
+        # left array, tall centre array, and upper-right array. Each table
+        # is a horizontal row, so rows are divided from top to bottom ("y").
         block_specs = [
-            # Upper-left array: long north/south table strips.
-            (.135, .005, .448, .244, "x"),
-            # Second upper array, separated by the cross-lane.
-            (.174, .252, .407, .488, "x"),
-            # Broad lower array, above the lower cross-lane.
-            (.232, .512, .886, .742, "x"),
-            # Broad bottom array.
-            (.253, .752, .817, .994, "x"),
+            (.018, .315, .258, .815, "y"),  # left array
+            (.255, .225, .505, .965, "y"),  # centre array
+            (.515, .105, .990, .555, "y"),  # right array
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2: eight separated groups of horizontal table rows.
@@ -1725,8 +1716,14 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (right * img_width, bottom * img_height),
             direction,
         ))
-    weights = [max(1, int((r-l) * (b-t) * (1.6 if direction == "x" else 1.0)))
-               for l, t, r, b, direction in block_specs]
+    if plant_code in {"HS1", "HRN1", "HRN"}:
+        # The number of horizontal tables is proportional to each group's
+        # vertical span, not its image area/width.
+        weights = [max(1, int((bottom - top) * 1000))
+                   for _left, top, _right, bottom, _direction in block_specs]
+    else:
+        weights = [max(1, int((r-l) * (b-t) * (1.6 if direction == "x" else 1.0)))
+                   for l, t, r, b, direction in block_specs]
     if assets:
         total_weight = sum(weights)
         counts = [len(assets) * w // total_weight for w in weights]
@@ -1741,13 +1738,37 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
 
     # Zone borders are coloured only on the Overview and Grass Cutting pages.
-    # Panel Cleaning deliberately does not display grass-cutting status.
+    # HRN 1 has 10 zones, represented by subdivisions within its three real
+    # array groups (3 left, 4 centre, 3 right). Other sites keep their geometry.
     zone_count = max(1, len(zone_assets))
-    for block_idx, block in enumerate(blocks):
+    zone_blocks = blocks
+    if plant_code in {"HS1", "HRN1", "HRN"} and zone_assets:
+        zone_blocks = []
+        zone_groups = [
+            (0.018, 0.315, 0.258, 0.815, 3),
+            (0.255, 0.225, 0.505, 0.965, 4),
+            (0.515, 0.105, 0.990, 0.555, 3),
+        ]
+        zone_number = 0
+        for left, top, right, bottom, group_count in zone_groups:
+            for part in range(group_count):
+                y0 = top + (bottom - top) * part / group_count
+                y1 = top + (bottom - top) * (part + 1) / group_count
+                zone_blocks.append((
+                    (left * img_width, y0 * img_height),
+                    (right * img_width, y0 * img_height),
+                    (left * img_width, y1 * img_height),
+                    (right * img_width, y1 * img_height),
+                    "y",
+                ))
+                zone_number += 1
+        # If the plant has a non-standard zone count, preserve all registered
+        # zones by mapping the closest available footprint to each zone.
+    for block_idx, block in enumerate(zone_blocks):
         if not zone_assets:
             break
         left_top, right_top, left_bottom, right_bottom, _direction = block
-        zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(blocks) - 1)))
+        zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(zone_blocks) - 1)))
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
         points = [left_top, right_top, right_bottom, left_bottom, left_top]
