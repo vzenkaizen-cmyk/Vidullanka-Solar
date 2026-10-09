@@ -1643,10 +1643,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         st.error(f"Satellite image not found: {selected_satellite}. Ensure the image is included in the assets folder.")
         return
 
+    # Rotate only the HRN 1 satellite background clockwise. The coloured table
+    # polygons and zone outlines below are intentionally left unchanged.
     with Image.open(image_path) as im:
+        im = im.convert("RGB")
         img_width, img_height = im.size
-    with open(image_path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("ascii")
+        if plant_code in {"HS1", "HRN1", "HRN"}:
+            rotated = im.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
+            # Keep the original canvas dimensions so existing overlay coordinates
+            # and table/zone colouring remain exactly as they are.
+            im = rotated.resize((img_width, img_height), Image.Resampling.LANCZOS)
+        from io import BytesIO
+        buffer = BytesIO()
+        im.save(buffer, format="JPEG", quality=92, optimize=True)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     image_uri = f"data:image/jpeg;base64,{encoded}"
 
     assets = asset_list(plant, "Table")
