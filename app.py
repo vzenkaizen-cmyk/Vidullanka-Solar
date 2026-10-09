@@ -1628,7 +1628,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
     # Plant-specific satellite photos. The same selected photo is used on
     # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
-    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
+    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
     satellite_files = {
         "HS1": "HRN1.jpg",   # HRN 1 (first supplied image)
         "HRN1": "HRN1.jpg",
@@ -1668,7 +1668,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # so the same status logic follows the real panel rows on each satellite photo.
     # Each block is (left, top, right, bottom, split_direction).
     # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
-    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
+    plant_code = "".join(str(getattr(plant, "code", "") or "").upper().split()).replace("-", "")
     if plant_code in {"HS1", "HRN1", "HRN"}:
         # HRN 1: two upper vertical-column arrays and two broad lower arrays.
         block_specs = [
