@@ -1657,29 +1657,65 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
 
-    # These quadrilaterals follow the existing solar-array overlay layout.
-    # Coordinates use a 1280x720 reference frame and scale with the selected photo.
-    # Each block is filled with separate long row-shaped polygons, not floating dots.
-    blocks = [
-        # top-left array
-        ((250, 8), (438, 0), (300, 325), (465, 320)),
-        # upper middle-left array
-        ((466, 145), (653, 132), (493, 350), (672, 348)),
-        # upper middle-right array
-        ((650, 78), (833, 58), (690, 348), (850, 340)),
-        # upper-right array
-        ((833, 15), (1045, 0), (870, 315), (1072, 310)),
-        # lower-left array
-        ((305, 390), (492, 377), (340, 700), (515, 710)),
-        # lower middle-left array
-        ((485, 390), (665, 370), (520, 710), (690, 710)),
-        # lower middle-right array
-        ((666, 350), (855, 328), (705, 704), (875, 695)),
-        # lower-right array
-        ((850, 325), (1074, 310), (885, 685), (1095, 670)),
-    ]
-    # Allocate table records over the physical blocks in proportion to their visible size.
-    weights = [10, 8, 9, 10, 10, 10, 11, 12]
+    # Plant-specific array footprints. Coordinates are normalized to each image,
+    # so the same status logic follows the real panel rows on each satellite photo.
+    # Each block is (left, top, right, bottom, split_direction).
+    # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
+    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
+    if plant_code in {"HS1", "HRN1", "HRN"}:
+        # HRN 1: two upper vertical-column arrays and two broad lower arrays.
+        block_specs = [
+            (.13, .00, .46, .25, "x"),
+            (.17, .25, .42, .49, "x"),
+            (.23, .51, .89, .75, "x"),
+            (.25, .75, .82, 1.00, "x"),
+        ]
+    elif plant_code in {"HS2", "HRN2"}:
+        # HRN 2: eight separated groups of horizontal table rows.
+        block_specs = [
+            (.14, .12, .31, .49, "y"),
+            (.31, .27, .47, .51, "y"),
+            (.47, .18, .64, .50, "y"),
+            (.62, .12, .80, .48, "y"),
+            (.17, .55, .34, .94, "y"),
+            (.33, .54, .50, .93, "y"),
+            (.50, .51, .67, .89, "y"),
+            (.66, .49, .85, .86, "y"),
+        ]
+    elif plant_code == "ORK":
+        # ORK: irregular array layout, matching the supplied ORK satellite image.
+        block_specs = [
+            (.37, .08, .55, .17, "y"),
+            (.21, .18, .39, .47, "y"),
+            (.38, .18, .56, .48, "y"),
+            (.56, .18, .74, .48, "y"),
+            (.20, .50, .39, .72, "y"),
+            (.39, .49, .57, .78, "y"),
+            (.57, .49, .75, .78, "y"),
+            (.70, .77, .86, .94, "y"),
+        ]
+    else:
+        # Preserve the original map overlay geometry for other sites.
+        block_specs = [
+            (.195, .011, .363, .444, "y"), (.364, .183, .525, .486, "y"),
+            (.508, .081, .664, .472, "y"), (.651, .010, .838, .431, "y"),
+            (.238, .542, .402, .986, "y"), (.379, .514, .539, .986, "y"),
+            (.520, .456, .684, .978, "y"), (.664, .431, .855, .931, "y"),
+        ]
+
+    # Convert normalized footprints into pixel coordinates. The displayed image
+    # itself is unchanged; only status overlays are drawn on top of it.
+    blocks = []
+    for left, top, right, bottom, direction in block_specs:
+        blocks.append((
+            (left * img_width, top * img_height),
+            (right * img_width, top * img_height),
+            (left * img_width, bottom * img_height),
+            (right * img_width, bottom * img_height),
+            direction,
+        ))
+    weights = [max(1, int((r-l) * (b-t) * (1.6 if direction == "x" else 1.0)))
+               for l, t, r, b, direction in block_specs]
     if assets:
         total_weight = sum(weights)
         counts = [len(assets) * w // total_weight for w in weights]
@@ -1688,7 +1724,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     else:
         counts = [0] * len(blocks)
 
-    scale_x, scale_y = img_width / 1280.0, img_height / 720.0
+    scale_x, scale_y = 1.0, 1.0
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
@@ -1699,10 +1735,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     for block_idx, block in enumerate(blocks):
         if not zone_assets:
             break
+        left_top, right_top, left_bottom, right_bottom, _direction = block
         zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(blocks) - 1)))
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
-        points = [block[0], block[1], block[3], block[2], block[0]]
+        points = [left_top, right_top, right_bottom, left_bottom, left_top]
         if map_mode in ("both", "grass"):
             border_color = "#13c982" if grass_done else "#ff4e59"
         else:
@@ -1721,9 +1758,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     for block_idx, (block, count) in enumerate(zip(blocks, counts)):
         if count <= 0:
             continue
-        top_left, top_right, bottom_left, bottom_right = block
-        # Slight inset avoids painting the paths and gaps between solar tables.
-        inset = 0.018
+        top_left, top_right, bottom_left, bottom_right, direction = block
+        # A small gap between strips keeps the satellite roads and row gaps visible.
+        inset = 0.045
         for row_idx in range(count):
             if asset_index >= len(assets):
                 break
@@ -1735,11 +1772,18 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             def interp(a, b, f):
                 return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
 
-            # Interpolate both ends along the slanted sides of the array block.
-            tl = interp(top_left, bottom_left, f0)
-            tr = interp(top_right, bottom_right, f0)
-            br = interp(top_right, bottom_right, f1)
-            bl = interp(top_left, bottom_left, f1)
+            if direction == "x":
+                # Vertical table strips: divide the footprint from left to right.
+                tl = interp(top_left, top_right, f0)
+                tr = interp(top_left, top_right, f1)
+                br = interp(bottom_left, bottom_right, f1)
+                bl = interp(bottom_left, bottom_right, f0)
+            else:
+                # Horizontal table strips: divide the footprint from top to bottom.
+                tl = interp(top_left, bottom_left, f0)
+                tr = interp(top_right, bottom_right, f0)
+                br = interp(top_right, bottom_right, f1)
+                bl = interp(top_left, bottom_left, f1)
             polygon = [tl, tr, br, bl, tl]
             is_done = asset in completed
             zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets)))) if zone_assets else 0
