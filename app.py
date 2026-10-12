@@ -1675,14 +1675,25 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
 
     if task_date is None:
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
+    # Choose the supplied satellite photo for the selected plant.
+    # HRN1 uses image 1; HRN2, MTR and MDP use image 2; ORK uses image 3.
+    # The existing table and zone overlays below are intentionally unchanged.
+    plant_code = (getattr(plant, "code", "") or "").strip().upper()
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        satellite_filename = "HRN1.jpeg"
+    elif plant_code == "ORK":
+        satellite_filename = "ORK.jpeg"
+    else:
+        # HRN2 (HS2), MTR and MDP all use the second supplied image.
+        satellite_filename = "HRN2.jpeg"
+
     image_candidates = [
-        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
-        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpg"),
-        os.path.join(os.path.dirname(__file__), "HR1.jpeg"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", satellite_filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), satellite_filename),
     ]
     image_path = next((p for p in image_candidates if os.path.exists(p)), None)
     if not image_path:
-        st.error("Satellite image not found. Add the supplied site photo to the repository as assets/HR1.jpeg.")
+        st.error(f"Satellite image not found: assets/{satellite_filename}. Ensure the assets folder is included in the repository.")
         return
 
     with Image.open(image_path) as im:
