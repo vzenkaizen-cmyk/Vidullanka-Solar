@@ -1680,12 +1680,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # The existing table and zone overlays below are intentionally unchanged.
     plant_code = (getattr(plant, "code", "") or "").strip().upper()
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        satellite_filename = "HRN1.jpeg"
+        satellite_filename = "HRN1.jpg"
     elif plant_code == "ORK":
-        satellite_filename = "ORK.jpeg"
+        satellite_filename = "ORK.jpg"
     else:
         # HRN2 (HS2), MTR and MDP all use the second supplied image.
-        satellite_filename = "HRN2.jpeg"
+        satellite_filename = "HRN2.jpg"
 
     image_candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", satellite_filename),
