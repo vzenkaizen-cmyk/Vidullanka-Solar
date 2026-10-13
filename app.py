@@ -1703,6 +1703,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     image_uri = f"data:image/jpeg;base64,{encoded}"
 
     assets = asset_list(plant, "Table")
+    if plant_code == "ORK":
+        # ORK has exactly 52 physical solar tables, as confirmed by the supplied layout.
+        assets = [f"T-{i:02d}" for i in range(1, 53)]
+    elif plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        # HRN 1 panel rows follow the four groups in the supplied sketch (24+32+10+14).
+        assets = [f"T-{i:02d}" for i in range(1, 81)]
     panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
     completed = {a for a, r in panel_records.items() if r.status == "Completed"}
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
@@ -1768,20 +1774,30 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ]
         weights = [10, 8, 9, 10, 10, 10, 11, 12]
 
-    # Allocate the plant's table assets to its real mapped blocks. Zero-weight
-    # areas (vegetation/no panels) remain visible as zones but do not receive tables.
-    table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
-    table_weights = [w for w in weights if w > 0]
-    if assets and table_blocks:
-        total_weight = sum(table_weights)
-        counts = [len(assets) * w // total_weight for w in table_weights]
-        for i in range(len(assets) - sum(counts)):
-            counts[i % len(counts)] += 1
-    else:
-        counts = [0] * len(table_blocks)
-    # Zone geometry is independent from the table count, so empty zones still
-    # receive their correct grass-cutting border and zone label.
+    # Table-row overlays follow the exact physical row counts in the supplied sketches.
+    # Keep zone geometry independent so grass-cutting outlines retain all site zones.
     zone_blocks = blocks
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        table_blocks = [
+            ((0, 175), (320, 155), (0, 410), (320, 410), 1),   # 24 rows
+            ((320, 155), (650, 140), (320, 665), (650, 665), 4), # 32 rows
+            ((650, 140), (945, 115), (650, 305), (945, 305), 6), # 10 rows
+            ((945, 115), (1270, 95), (945, 315), (1270, 315), 7), # 14 rows
+        ]
+        counts = [24, 32, 10, 14]
+    elif plant_code == "ORK":
+        table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
+        counts = [1, 6, 7, 2, 13, 14, 9]
+    else:
+        table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
+        table_weights = [w for w in weights if w > 0]
+        if assets and table_blocks:
+            total_weight = sum(table_weights)
+            counts = [len(assets) * w // total_weight for w in table_weights]
+            for i in range(len(assets) - sum(counts)):
+                counts[i % len(counts)] += 1
+        else:
+            counts = [0] * len(table_blocks)
     scale_x, scale_y = img_width / 1280.0, img_height / 720.0
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
@@ -2017,7 +2033,7 @@ def render_plant_details_and_specs(db, plant):
     detail_rows = [
         ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
-        ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
+        ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{52 if (getattr(plant, 'code', '') or '').strip().upper() == 'ORK' else plant.table_count}"),
         ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
         ("Plant In-Charge / Supervisor", supervisor), ("Immediate Reportee", engineer),
     ]
