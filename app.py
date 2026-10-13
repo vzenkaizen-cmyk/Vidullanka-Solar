@@ -1733,22 +1733,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ]
         weights = [15, 15, 10, 10, 10, 15, 15, 0]
     elif plant_code in {"HS2", "HRN2", "HRN 2"}:
-        # HRN 2: rectangular zone boxes aligned to the actual panel blocks in
-        # the supplied HRN2 satellite image (same box treatment as MDP).
-        # Coordinates are mapped from the 896x1185 reference image to 1280x720.
+        # HRN 2: use the same clean, table-following rectangular-box style as MDP.
+        # The eight boxes follow the visible panel blocks in the supplied HRN2 image;
+        # unused ground on the right is deliberately left unboxed.
         blocks = [
-            ((0, 145), (605, 110), (35, 280), (625, 275), 1),
-            ((35, 280), (625, 275), (60, 400), (635, 395), 2),
-            ((60, 400), (635, 395), (115, 505), (680, 500), 3),
-            ((115, 505), (680, 500), (130, 610), (750, 605), 4),
-            ((625, 85), (1210, 65), (665, 230), (1210, 225), 5),
-            ((625, 230), (1015, 225), (630, 345), (1015, 340), 6),
-            ((680, 340), (1030, 335), (700, 455), (1035, 450), 7),
-            ((730, 450), (1145, 445), (730, 565), (1145, 560), 8),
-            ((1000, 180), (1278, 180), (1000, 385), (1278, 385), 9),
-            ((1140, 365), (1278, 365), (1140, 550), (1278, 550), 10),
+            ((250, 8), (438, 0), (300, 325), (465, 320), 1),
+            ((466, 145), (653, 132), (493, 350), (672, 348), 2),
+            ((650, 78), (833, 58), (690, 348), (850, 340), 3),
+            ((833, 15), (1045, 0), (870, 315), (1072, 310), 4),
+            ((305, 390), (492, 377), (340, 700), (515, 710), 5),
+            ((485, 390), (665, 370), (520, 710), (690, 710), 6),
+            ((666, 350), (855, 328), (705, 704), (875, 695), 7),
+            ((850, 325), (1074, 310), (885, 685), (1095, 670), 8),
         ]
-        weights = [12, 12, 12, 12, 12, 8, 8, 8, 0, 0]
+        weights = [10, 8, 9, 10, 10, 10, 11, 12]
     elif plant_code == "ORK":
         # ORK: seven solar-array blocks aligned to the annotated satellite image.
         # The single-row left array is positioned at the lower-left row shown in
@@ -1782,7 +1780,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     zone_blocks = blocks
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
         table_blocks = [
-            ((0, 165), (325, 150), (0, 430), (325, 430), 1),   # 24 rows; includes full lower row
+            ((0, 165), (325, 150), (0, 465), (325, 465), 1),   # 24 rows; cover the full visible panel-table strip
             ((320, 155), (650, 140), (320, 665), (650, 665), 4), # 32 rows
             ((650, 140), (945, 115), (650, 305), (945, 305), 6), # 10 rows
             ((945, 115), (1270, 95), (945, 315), (1270, 315), 7), # 14 rows
