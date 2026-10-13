@@ -1791,34 +1791,53 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # have staggered edges, but the grass zones must never be drawn on top of
     # one another. Coordinates are on the same 1280x720 reference canvas.
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        # HRN 1: ten clean, shared-edge zones. Adjacent polygons use identical
-        # boundary coordinates so they do not cross or overlap each other.
+        # HRN 1: non-overlapping grass zones following the user's hand-drawn
+        # ten-zone layout. Shared boundaries are reused so outlines do not cross.
+        # The former central cross-shaped overlap has been removed.
         zone_blocks = [
-            ((18, 150), (330, 150), (18, 385), (330, 385), 1),
+            # 1 — upper-left array area
+            ((18, 205), (330, 185), (18, 385), (330, 385), 1),
+            # 2 — lower-left array and the small lower-left table area
             ((18, 385), (330, 385), (35, 640), (330, 640), 2),
-            ((330, 130), (500, 130), (330, 385), (500, 385), 3),
-            ((330, 385), (500, 385), (330, 625), (500, 625), 4),
-            ((500, 115), (655, 115), (500, 385), (655, 385), 5),
-            ((500, 385), (655, 385), (500, 625), (655, 625), 6),
-            ((655, 100), (945, 100), (655, 300), (945, 300), 7),
-            ((655, 300), (945, 300), (655, 520), (945, 520), 8),
-            ((945, 80), (1270, 80), (945, 315), (1270, 315), 9),
-            ((945, 315), (1270, 315), (945, 560), (1270, 560), 10),
+            # 3 — upper central-left tables
+            ((330, 150), (500, 145), (330, 385), (500, 385), 3),
+            # 4 — central-left ground corridor; kept separate from zone 3
+            ((330, 385), (500, 385), (350, 690), (500, 690), 4),
+            # 5 — upper central tables, including the small top rows
+            ((500, 35), (655, 35), (500, 370), (655, 370), 5),
+            # 6 — lower central tables
+            ((500, 370), (655, 370), (500, 700), (655, 700), 6),
+            # 7 — upper-right/central table bank
+            ((655, 130), (820, 130), (655, 370), (820, 370), 7),
+            # 8 — lower-right/central table bank
+            ((655, 370), (820, 370), (655, 650), (820, 650), 8),
+            # 9 — right-side lower table bank
+            ((820, 370), (1010, 370), (820, 665), (1010, 665), 9),
+            # 10 — bottom-right edge, beyond the last table rows
+            ((820, 665), (1010, 665), (820, 710), (1010, 710), 10),
         ]
     elif plant_code == "ORK":
-        # ORK: ten non-overlapping grass-cutting zones following the supplied
-        # hand-marked site plan. The shared edges keep the outlines from crossing.
+        # ORK: divide grass cutting into the eight adjoining areas shown in
+        # the user's marked reference. The two left blocks, three centre-left
+        # blocks, and two upper-right blocks share edges without overlapping;
+        # zone 8 is the lower-right ground area, not a crossed-out panel block.
         zone_blocks = [
-            ((0, 175), (300, 175), (0, 390), (300, 390), 1),
+            # 1 — upper-left solar block
+            ((0, 175), (300, 160), (0, 390), (300, 390), 1),
+            # 2 — lower-left solar block
             ((0, 390), (300, 390), (35, 690), (300, 690), 2),
-            ((300, 155), (590, 155), (300, 300), (590, 300), 3),
-            ((300, 300), (590, 300), (300, 455), (590, 455), 4),
-            ((300, 455), (590, 455), (300, 690), (590, 690), 5),
-            ((590, 120), (875, 120), (590, 300), (875, 300), 6),
-            ((875, 80), (1270, 80), (875, 300), (1270, 300), 7),
-            ((875, 300), (1270, 300), (875, 470), (1270, 470), 8),
-            ((875, 470), (1270, 470), (875, 580), (1270, 580), 9),
-            ((590, 300), (875, 300), (590, 690), (875, 690), 10),
+            # 3 — upper middle-left block
+            ((300, 155), (590, 140), (300, 390), (590, 390), 3),
+            # 4 — middle-left block
+            ((300, 390), (590, 390), (300, 520), (590, 520), 4),
+            # 5 — lower middle-left block
+            ((300, 520), (590, 520), (300, 690), (590, 690), 5),
+            # 6 — upper central-right block
+            ((590, 120), (875, 100), (590, 300), (875, 300), 6),
+            # 7 — far-right upper table bank
+            ((875, 80), (1270, 65), (875, 300), (1270, 300), 7),
+            # 8 — lower-right open/vegetated area, separate from the panels
+            ((875, 300), (1270, 300), (900, 470), (1270, 500), 8),
         ]
     else:
         zone_blocks = blocks
