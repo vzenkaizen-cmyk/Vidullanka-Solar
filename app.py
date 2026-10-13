@@ -1703,6 +1703,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     image_uri = f"data:image/jpeg;base64,{encoded}"
 
     assets = asset_list(plant, "Table")
+    if plant_code == "ORK":
+        # ORK has exactly 52 physical solar tables, as confirmed by the supplied layout.
+        assets = [f"T-{i:02d}" for i in range(1, 53)]
+    elif plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        # HRN 1 panel rows follow the four groups in the supplied sketch (24+32+10+14).
+        assets = [f"T-{i:02d}" for i in range(1, 81)]
     panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
     completed = {a for a, r in panel_records.items() if r.status == "Completed"}
     grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
@@ -1714,48 +1720,45 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # Coordinates use a 1280x720 reference canvas and are scaled to each photo.
     # Each entry is (top-left, top-right, bottom-left, bottom-right, zone number).
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        # HRN 1: four actual solar-table groups from the supplied sketch.
-        # Coordinates are on the 1280x720 reference canvas and scale to the
-        # panoramic satellite photo. The left 24-row group deliberately extends
-        # through the lower table rows that were left uncoloured in the prior map.
-        # Group row counts follow the sketch exactly: 24, 32, 10 and 14.
+        # HRN 1: eight mapped areas; Zone 8 is the green/unused area with no tables.
         blocks = [
-            # Left group: include both the upper and lower horizontal table rows.
-            ((18, 145), (330, 125), (35, 535), (330, 520), 1),
-            # Tall centre group.
-            ((330, 115), (655, 100), (330, 625), (655, 610), 2),
-            # Short upper-middle group.
-            ((655, 105), (945, 82), (655, 315), (945, 300), 3),
-            # Upper-right group; stop at the end of the actual table rows.
-            ((945, 80), (1270, 58), (945, 325), (1270, 315), 4),
+            ((0, 175), (320, 155), (0, 410), (320, 410), 1),
+            ((0, 410), (320, 410), (40, 665), (320, 665), 2),
+            ((320, 155), (650, 140), (320, 305), (650, 305), 3),
+            ((320, 305), (650, 305), (320, 490), (650, 490), 4),
+            ((320, 490), (650, 490), (320, 665), (650, 665), 5),
+            ((650, 140), (945, 115), (650, 305), (945, 305), 6),
+            ((945, 115), (1270, 95), (945, 315), (1270, 315), 7),
+            ((945, 315), (1270, 315), (970, 430), (1270, 455), 8),
         ]
-        weights = [24, 32, 10, 14]
+        weights = [15, 15, 10, 10, 10, 15, 15, 0]
     elif plant_code in {"HS2", "HRN2", "HRN 2"}:
-        # HRN 2: ten zones follow the numbered blocks in the supplied image.
+        # HRN 2: use the same clean, table-following rectangular-box style as MDP.
+        # The eight boxes follow the visible panel blocks in the supplied HRN2 image;
+        # unused ground on the right is deliberately left unboxed.
         blocks = [
-            ((0, 125), (565, 115), (30, 270), (565, 255), 1),
-            ((30, 270), (565, 255), (75, 405), (565, 390), 2),
-            ((75, 405), (565, 390), (95, 555), (565, 540), 3),
-            ((95, 555), (565, 540), (125, 700), (565, 690), 4),
-            ((565, 115), (1110, 100), (610, 245), (1110, 240), 5),
-            ((565, 255), (850, 245), (600, 385), (850, 375), 6),
-            ((600, 390), (850, 375), (650, 525), (850, 515), 7),
-            ((650, 530), (850, 515), (700, 685), (875, 670), 8),
-            ((850, 245), (1110, 240), (850, 385), (1110, 385), 9),
-            ((875, 390), (1110, 385), (875, 535), (1110, 535), 10),
+            ((250, 8), (438, 0), (300, 325), (465, 320), 1),
+            ((466, 145), (653, 132), (493, 350), (672, 348), 2),
+            ((650, 78), (833, 58), (690, 348), (850, 340), 3),
+            ((833, 15), (1045, 0), (870, 315), (1072, 310), 4),
+            ((305, 390), (492, 377), (340, 700), (515, 710), 5),
+            ((485, 390), (665, 370), (520, 710), (690, 710), 6),
+            ((666, 350), (855, 328), (705, 704), (875, 695), 7),
+            ((850, 325), (1074, 310), (885, 685), (1095, 670), 8),
         ]
-        weights = [12, 12, 12, 12, 12, 8, 8, 8, 0, 0]
+        weights = [10, 8, 9, 10, 10, 10, 11, 12]
     elif plant_code == "ORK":
-        # ORK: seven solar-array blocks; the row distribution follows the supplied
-        # sketch (1, 6, 7, 2, 13, 14 and 9 rows; 52 tables in total).
+        # ORK: seven solar-array blocks aligned to the annotated satellite image.
+        # The single-row left array is positioned at the lower-left row shown in
+        # the reference; its box extends over the full physical table strip.
         blocks = [
-            ((120, 250), (300, 250), (120, 285), (300, 285), 1),
-            ((200, 180), (390, 180), (200, 345), (390, 345), 2),
-            ((390, 105), (560, 105), (390, 340), (560, 340), 3),
-            ((560, 70), (720, 70), (560, 110), (720, 110), 4),
-            ((560, 150), (720, 150), (560, 535), (720, 535), 5),
-            ((720, 150), (900, 150), (720, 545), (900, 545), 6),
-            ((900, 245), (1090, 245), (900, 520), (1090, 520), 7),
+            ((128, 395), (300, 395), (128, 423), (300, 423), 1),   # 1 row, lower-left
+            ((210, 190), (380, 190), (210, 350), (380, 350), 2),   # 6 rows
+            ((380, 125), (555, 125), (380, 350), (555, 350), 3),   # 7 rows
+            ((555, 65), (715, 65), (555, 112), (715, 112), 4),    # 2 rows
+            ((555, 115), (715, 115), (555, 420), (715, 420), 5),  # 13 rows
+            ((715, 115), (895, 115), (715, 425), (895, 425), 6),  # 14 rows
+            ((895, 230), (1090, 230), (895, 415), (1090, 415), 7),# 9 rows
         ]
         weights = [1, 6, 7, 2, 13, 14, 9]
     else:
@@ -1772,20 +1775,30 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ]
         weights = [10, 8, 9, 10, 10, 10, 11, 12]
 
-    # Allocate the plant's table assets to its real mapped blocks. Zero-weight
-    # areas (vegetation/no panels) remain visible as zones but do not receive tables.
-    table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
-    table_weights = [w for w in weights if w > 0]
-    if assets and table_blocks:
-        total_weight = sum(table_weights)
-        counts = [len(assets) * w // total_weight for w in table_weights]
-        for i in range(len(assets) - sum(counts)):
-            counts[i % len(counts)] += 1
-    else:
-        counts = [0] * len(table_blocks)
-    # Zone geometry is independent from the table count, so empty zones still
-    # receive their correct grass-cutting border and zone label.
+    # Table-row overlays follow the exact physical row counts in the supplied sketches.
+    # Keep zone geometry independent so grass-cutting outlines retain all site zones.
     zone_blocks = blocks
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        table_blocks = [
+            ((0, 165), (325, 150), (0, 465), (325, 465), 1),   # 24 rows; cover the full visible panel-table strip
+            ((320, 155), (650, 140), (320, 665), (650, 665), 4), # 32 rows
+            ((650, 140), (945, 115), (650, 305), (945, 305), 6), # 10 rows
+            ((945, 115), (1270, 95), (945, 315), (1270, 315), 7), # 14 rows
+        ]
+        counts = [24, 32, 10, 14]
+    elif plant_code == "ORK":
+        table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
+        counts = [1, 6, 7, 2, 13, 14, 9]
+    else:
+        table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
+        table_weights = [w for w in weights if w > 0]
+        if assets and table_blocks:
+            total_weight = sum(table_weights)
+            counts = [len(assets) * w // total_weight for w in table_weights]
+            for i in range(len(assets) - sum(counts)):
+                counts[i % len(counts)] += 1
+        else:
+            counts = [0] * len(table_blocks)
     scale_x, scale_y = img_width / 1280.0, img_height / 720.0
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
@@ -2021,7 +2034,7 @@ def render_plant_details_and_specs(db, plant):
     detail_rows = [
         ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
-        ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{plant.table_count}"),
+        ("Inverters", f"{plant.inverter_count}"), ("Solar tables", f"{52 if (getattr(plant, 'code', '') or '').strip().upper() == 'ORK' else plant.table_count}"),
         ("Zones", f"{plant.zone_count}"), ("Operating staff", str(staff_count)),
         ("Plant In-Charge / Supervisor", supervisor), ("Immediate Reportee", engineer),
     ]
