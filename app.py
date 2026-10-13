@@ -1791,32 +1791,34 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # have staggered edges, but the grass zones must never be drawn on top of
     # one another. Coordinates are on the same 1280x720 reference canvas.
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        # HRN 1: contiguous zones follow the marked site plan; adjacent edges
-        # share boundaries without crossing or overlapping.
+        # HRN 1: ten clean, shared-edge zones. Adjacent polygons use identical
+        # boundary coordinates so they do not cross or overlap each other.
         zone_blocks = [
-            ((18, 150), (330, 130), (18, 385), (330, 385), 1),
-            ((18, 385), (330, 385), (35, 640), (330, 625), 2),
-            ((330, 130), (500, 115), (330, 385), (500, 385), 3),
-            ((330, 385), (500, 385), (330, 625), (500, 610), 4),
-            ((500, 115), (655, 100), (500, 385), (655, 375), 5),
-            ((500, 385), (655, 375), (500, 625), (655, 610), 6),
-            ((655, 100), (945, 82), (655, 300), (945, 300), 7),
+            ((18, 150), (330, 150), (18, 385), (330, 385), 1),
+            ((18, 385), (330, 385), (35, 640), (330, 640), 2),
+            ((330, 130), (500, 130), (330, 385), (500, 385), 3),
+            ((330, 385), (500, 385), (330, 625), (500, 625), 4),
+            ((500, 115), (655, 115), (500, 385), (655, 385), 5),
+            ((500, 385), (655, 385), (500, 625), (655, 625), 6),
+            ((655, 100), (945, 100), (655, 300), (945, 300), 7),
             ((655, 300), (945, 300), (655, 520), (945, 520), 8),
-            ((945, 82), (1270, 58), (945, 315), (1270, 315), 9),
+            ((945, 80), (1270, 80), (945, 315), (1270, 315), 9),
             ((945, 315), (1270, 315), (945, 560), (1270, 560), 10),
         ]
     elif plant_code == "ORK":
-        # ORK: eight distinct grass zones following the hand-marked plan.
-        # All rectangles are adjacent or separated; none overlap another zone.
+        # ORK: ten non-overlapping grass-cutting zones following the supplied
+        # hand-marked site plan. The shared edges keep the outlines from crossing.
         zone_blocks = [
-            ((0, 190), (300, 175), (0, 390), (300, 390), 1),
+            ((0, 175), (300, 175), (0, 390), (300, 390), 1),
             ((0, 390), (300, 390), (35, 690), (300, 690), 2),
-            ((300, 175), (590, 155), (300, 300), (590, 300), 3),
+            ((300, 155), (590, 155), (300, 300), (590, 300), 3),
             ((300, 300), (590, 300), (300, 455), (590, 455), 4),
             ((300, 455), (590, 455), (300, 690), (590, 690), 5),
-            ((590, 155), (875, 120), (590, 300), (875, 300), 6),
-            ((875, 120), (1270, 80), (875, 300), (1270, 300), 7),
+            ((590, 120), (875, 120), (590, 300), (875, 300), 6),
+            ((875, 80), (1270, 80), (875, 300), (1270, 300), 7),
             ((875, 300), (1270, 300), (875, 470), (1270, 470), 8),
+            ((875, 470), (1270, 470), (875, 580), (1270, 580), 9),
+            ((590, 300), (875, 300), (590, 690), (875, 690), 10),
         ]
     else:
         zone_blocks = blocks
@@ -1837,18 +1839,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
         points = [block[0], block[1], block[3], block[2], block[0]]
+        # Do not draw grass-zone boundaries on the Panel Cleaning map.
+        # The dark outlines previously shown there looked like unwanted black
+        # blocks over the satellite tables. Zone borders appear only on Overview
+        # (both) and Grass Cutting, where they are relevant.
         if map_mode in ("both", "grass"):
             border_color = "#13c982" if grass_done else "#ff4e59"
-        else:
-            border_color = "#243447"
-        fig.add_trace(go.Scatter(
-            x=[x * scale_x for x, y in points],
-            y=[img_height - y * scale_y for x, y in points],
-            mode="lines", line=dict(color=border_color, width=3),
-            hoverinfo="text",
-            text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}" if map_mode in ("both", "grass") else "Solar array"] * len(points),
-            showlegend=False,
-        ))
+            fig.add_trace(go.Scatter(
+                x=[x * scale_x for x, y in points],
+                y=[img_height - y * scale_y for x, y in points],
+                mode="lines", line=dict(color=border_color, width=2),
+                hoverinfo="text",
+                text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
+                showlegend=False,
+            ))
 
     # A table is represented by a narrow polygon matching one real panel row.
     asset_index = 0
