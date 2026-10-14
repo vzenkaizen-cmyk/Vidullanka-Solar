@@ -517,7 +517,7 @@ def seed_database():
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
-                             inverter_count=10, table_count=80, zone_count=(8 if site_code == "HS1" else 10), active=True))
+                             inverter_count=10, table_count=80, zone_count=10, active=True))
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -543,7 +543,7 @@ def seed_database():
                 db.delete(old_profile)
             old_hrn.active = False
         if hs1_plant:
-            hs1_plant.zone_count = 8
+            hs1_plant.zone_count = 10
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
@@ -1792,25 +1792,23 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # have staggered edges, but the grass zones must never be drawn on top of
     # one another. Coordinates are on the same 1280x720 reference canvas.
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        # HRN 1: contiguous zones follow the marked site plan; adjacent edges
-        # share boundaries without crossing or overlapping.
+        # HRN 1: ten grass-cutting zones as requested. The first two main
+        # table groups are each split into four zones; the remaining two
+        # table groups are individual zones. Shared boundaries avoid overlap.
         zone_blocks = [
-            # Zone 1: upper-left array
-            ((0, 220), (320, 195), (0, 465), (320, 465), 1),
-            # Zone 2: lower-left array and its grass margin
-            ((0, 465), (320, 465), (35, 700), (320, 700), 2),
-            # Zone 3: upper middle-left array
-            ((320, 195), (650, 175), (320, 355), (650, 355), 3),
-            # Zone 4: middle middle-left array
-            ((320, 355), (650, 355), (320, 535), (650, 535), 4),
-            # Zone 5: lower middle-left array
-            ((320, 535), (650, 535), (320, 700), (650, 700), 5),
-            # Zone 6: upper central-right array
-            ((650, 175), (950, 145), (650, 355), (950, 355), 6),
-            # Zone 7: upper-right array
-            ((950, 145), (1270, 110), (950, 365), (1270, 365), 7),
-            # Zone 8: right-side grass field below the upper-right array
-            ((950, 365), (1270, 365), (1270, 555), (1070, 500), 8),
+            # First table group — four zones (1–4)
+            ((0, 220), (320, 195), (0, 340), (320, 340), 1),
+            ((0, 340), (320, 340), (0, 465), (320, 465), 2),
+            ((0, 465), (320, 465), (35, 580), (320, 580), 3),
+            ((0, 580), (320, 580), (35, 700), (320, 700), 4),
+            # Second table group — four zones (5–8)
+            ((320, 195), (650, 175), (320, 285), (650, 285), 5),
+            ((320, 285), (650, 285), (320, 375), (650, 375), 6),
+            ((320, 375), (650, 375), (320, 535), (650, 535), 7),
+            ((320, 535), (650, 535), (320, 700), (650, 700), 8),
+            # Remaining two table groups (9–10)
+            ((650, 175), (950, 145), (650, 355), (950, 355), 9),
+            ((950, 145), (1270, 110), (950, 365), (1270, 365), 10),
         ]
     elif plant_code == "ORK":
         # ORK: eight distinct grass zones following the hand-marked plan.
@@ -2077,7 +2075,7 @@ def render_plant_details_and_specs(db, plant):
 
     # Technical values are populated only where supplied in the plant-specification sheet.
     specs = {
-        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Grass Cutting Zones": "8 zones", "Plant In-Charge": "Roshan"},
+        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Grass Cutting Zones": "10 zones", "Plant In-Charge": "Roshan"},
         "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
         "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
         "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
