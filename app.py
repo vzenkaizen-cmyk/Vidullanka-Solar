@@ -1899,13 +1899,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                # Hide the dark panel-row outlines on the Panel Cleaning map so
-                # they do not look like extra grass-cutting boundaries. Keep the
-                # existing outlines on Overview/Grass Cutting maps.
-                line=dict(
-                    color="rgba(0,0,0,0)" if map_mode == "panel" else "#062337",
-                    width=0 if map_mode == "panel" else 1,
-                ),
+                line=dict(color="#062337", width=1),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
