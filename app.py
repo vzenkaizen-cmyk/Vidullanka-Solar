@@ -422,6 +422,7 @@ PROCESS_CATEGORIES = {
     },
 }
 
+
 # These are dashboard work categories.
 DASHBOARD_CATEGORIES = [
     "All",
