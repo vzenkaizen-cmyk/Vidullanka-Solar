@@ -1741,21 +1741,26 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ]
         weights = [24, 32, 10, 14]
     elif plant_code in {"HS2", "HRN2", "HRN 2"}:
-        # HRN 2: use the same individual panel-array box style as MDP,
-        # fitted to the HRN 2 satellite photo. Zones 9 and 10 are ground-only.
+        # HRN 2: panel-cleaning overlays follow the eight actual panel groups
+        # in the supplied sketch. Zones 9 and 10 are ground-only and are not
+        # included in the panel-cleaning overlays.
+        # The four left groups are stacked vertically; groups 5-8 follow the
+        # right/centre panel arrays. Coordinates use the 1280x720 reference.
         blocks = [
-            ((285, 18), (465, 8), (300, 250), (480, 240), 1),
-            ((495, 8), (665, 0), (510, 270), (680, 260), 2),
-            ((700, 35), (890, 20), (710, 275), (900, 265), 3),
-            ((285, 265), (475, 255), (305, 500), (495, 490), 4),
-            ((505, 275), (680, 265), (520, 520), (695, 510), 5),
-            ((700, 280), (895, 270), (715, 525), (910, 515), 6),
-            ((300, 515), (495, 505), (320, 700), (510, 690), 7),
-            ((520, 530), (700, 520), (540, 705), (720, 695), 8),
-            ((910, 275), (1115, 265), (910, 430), (1115, 420), 9),
-            ((910, 435), (1115, 425), (910, 600), (1115, 590), 10),
+            # Left column: zones 1-4.
+            ((55, 145), (585, 125), (65, 360), (595, 345), 1),
+            ((65, 360), (595, 345), (75, 475), (605, 460), 2),
+            ((75, 475), (605, 460), (85, 585), (615, 570), 3),
+            ((85, 585), (615, 570), (105, 700), (625, 685), 4),
+            # Right/centre column: zones 5-8.
+            ((600, 105), (1110, 125), (610, 320), (1120, 330), 5),
+            ((610, 320), (850, 330), (620, 455), (860, 465), 6),
+            ((620, 455), (875, 465), (635, 565), (885, 575), 7),
+            ((635, 565), (900, 575), (650, 690), (915, 700), 8),
         ]
-        weights = [14, 14, 14, 14, 14, 14, 10, 10, 0, 0]
+        # Row-count proportions from the user's HRN2 sketch: 7, 6, 7, 8,
+        # followed by four groups of 10 rows.
+        weights = [7, 6, 7, 8, 10, 10, 10, 10]
     elif plant_code == "ORK":
         # ORK: seven solar-array blocks; the row distribution follows the supplied
         # sketch (1, 6, 7, 2, 13, 14 and 9 rows; 52 tables in total).
@@ -1817,6 +1822,22 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # Remaining two panel-table groups are single zones each.
             ((655, 105), (945, 82), (655, 315), (945, 300), 9),
             ((945, 80), (1270, 58), (945, 325), (1270, 315), 10),
+        ]
+    elif plant_code in {"HS2", "HRN2", "HRN 2"}:
+        # HRN 2 grass-cutting layout follows the ten numbered zones in the
+        # user's reference image. Zones 1-8 cover panel groups; 9-10 cover
+        # the ground-only area on the right. This layer is hidden on Panel Cleaning.
+        zone_blocks = [
+            ((55, 145), (585, 125), (65, 360), (595, 345), 1),
+            ((65, 360), (595, 345), (75, 475), (605, 460), 2),
+            ((75, 475), (605, 460), (85, 585), (615, 570), 3),
+            ((85, 585), (615, 570), (105, 700), (625, 685), 4),
+            ((600, 105), (1110, 125), (610, 320), (1120, 330), 5),
+            ((610, 320), (850, 330), (620, 455), (860, 465), 6),
+            ((620, 455), (875, 465), (635, 565), (885, 575), 7),
+            ((635, 565), (900, 575), (650, 690), (915, 700), 8),
+            ((850, 330), (1200, 335), (850, 505), (1200, 510), 9),
+            ((900, 510), (1270, 515), (900, 690), (1270, 695), 10),
         ]
     elif plant_code == "ORK":
         # ORK: ten grass-cutting zones following the user's blue-marked layout.
