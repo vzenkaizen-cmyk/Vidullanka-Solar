@@ -1770,7 +1770,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.615, .53, .785, .91, "y"),  # Group 8: 10 rows
         ]
     elif plant_code == "ORK":
-        # ORK: irregular array layout, matching the supplied ORK satellite image.
+        # ORK panel-cleaning overlay: keep the same eight array footprints as
+        # the second Python file; do not alter any other site's map geometry.
         block_specs = [
             (.37, .08, .55, .17, "y"),
             (.21, .18, .39, .47, "y"),
