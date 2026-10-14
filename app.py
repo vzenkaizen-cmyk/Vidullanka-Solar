@@ -497,7 +497,7 @@ def seed_database():
                     capacity_mw=2,
                     inverter_count=17,
                     table_count=150,
-                    zone_count=10,
+                    zone_count=8,
                 )
             )
             db.commit()
@@ -517,7 +517,7 @@ def seed_database():
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
-                             inverter_count=10, table_count=80, zone_count=10, active=True))
+                             inverter_count=10, table_count=80, zone_count=(8 if site_code == "HS1" else 10), active=True))
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -543,6 +543,7 @@ def seed_database():
                 db.delete(old_profile)
             old_hrn.active = False
         if hs1_plant:
+            hs1_plant.zone_count = 8
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
@@ -1791,53 +1792,38 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # have staggered edges, but the grass zones must never be drawn on top of
     # one another. Coordinates are on the same 1280x720 reference canvas.
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
-        # HRN 1: non-overlapping grass zones following the user's hand-drawn
-        # ten-zone layout. Shared boundaries are reused so outlines do not cross.
-        # The former central cross-shaped overlap has been removed.
+        # HRN 1: contiguous zones follow the marked site plan; adjacent edges
+        # share boundaries without crossing or overlapping.
         zone_blocks = [
-            # 1 — upper-left array area
-            ((18, 205), (330, 185), (18, 385), (330, 385), 1),
-            # 2 — lower-left array and the small lower-left table area
-            ((18, 385), (330, 385), (35, 640), (330, 640), 2),
-            # 3 — upper central-left tables
-            ((330, 150), (500, 145), (330, 385), (500, 385), 3),
-            # 4 — central-left ground corridor; kept separate from zone 3
-            ((330, 385), (500, 385), (350, 690), (500, 690), 4),
-            # 5 — upper central tables, including the small top rows
-            ((500, 35), (655, 35), (500, 370), (655, 370), 5),
-            # 6 — lower central tables
-            ((500, 370), (655, 370), (500, 700), (655, 700), 6),
-            # 7 — upper-right/central table bank
-            ((655, 130), (820, 130), (655, 370), (820, 370), 7),
-            # 8 — lower-right/central table bank
-            ((655, 370), (820, 370), (655, 650), (820, 650), 8),
-            # 9 — right-side lower table bank
-            ((820, 370), (1010, 370), (820, 665), (1010, 665), 9),
-            # 10 — bottom-right edge, beyond the last table rows
-            ((820, 665), (1010, 665), (820, 710), (1010, 710), 10),
+            # Zone 1: upper-left array
+            ((0, 220), (320, 195), (0, 465), (320, 465), 1),
+            # Zone 2: lower-left array and its grass margin
+            ((0, 465), (320, 465), (35, 700), (320, 700), 2),
+            # Zone 3: upper middle-left array
+            ((320, 195), (650, 175), (320, 355), (650, 355), 3),
+            # Zone 4: middle middle-left array
+            ((320, 355), (650, 355), (320, 535), (650, 535), 4),
+            # Zone 5: lower middle-left array
+            ((320, 535), (650, 535), (320, 700), (650, 700), 5),
+            # Zone 6: upper central-right array
+            ((650, 175), (950, 145), (650, 355), (950, 355), 6),
+            # Zone 7: upper-right array
+            ((950, 145), (1270, 110), (950, 365), (1270, 365), 7),
+            # Zone 8: right-side grass field below the upper-right array
+            ((950, 365), (1270, 365), (1270, 555), (1070, 500), 8),
         ]
     elif plant_code == "ORK":
-        # ORK: divide grass cutting into the eight adjoining areas shown in
-        # the user's marked reference. The two left blocks, three centre-left
-        # blocks, and two upper-right blocks share edges without overlapping;
-        # zone 8 is the lower-right ground area, not a crossed-out panel block.
+        # ORK: eight distinct grass zones following the hand-marked plan.
+        # All rectangles are adjacent or separated; none overlap another zone.
         zone_blocks = [
-            # 1 — upper-left solar block
-            ((0, 175), (300, 160), (0, 390), (300, 390), 1),
-            # 2 — lower-left solar block
+            ((0, 190), (300, 175), (0, 390), (300, 390), 1),
             ((0, 390), (300, 390), (35, 690), (300, 690), 2),
-            # 3 — upper middle-left block
-            ((300, 155), (590, 140), (300, 390), (590, 390), 3),
-            # 4 — middle-left block
-            ((300, 390), (590, 390), (300, 520), (590, 520), 4),
-            # 5 — lower middle-left block
-            ((300, 520), (590, 520), (300, 690), (590, 690), 5),
-            # 6 — upper central-right block
-            ((590, 120), (875, 100), (590, 300), (875, 300), 6),
-            # 7 — far-right upper table bank
-            ((875, 80), (1270, 65), (875, 300), (1270, 300), 7),
-            # 8 — lower-right open/vegetated area, separate from the panels
-            ((875, 300), (1270, 300), (900, 470), (1270, 500), 8),
+            ((300, 175), (590, 155), (300, 300), (590, 300), 3),
+            ((300, 300), (590, 300), (300, 455), (590, 455), 4),
+            ((300, 455), (590, 455), (300, 690), (590, 690), 5),
+            ((590, 155), (875, 120), (590, 300), (875, 300), 6),
+            ((875, 120), (1270, 80), (875, 300), (1270, 300), 7),
+            ((875, 300), (1270, 300), (875, 470), (1270, 470), 8),
         ]
     else:
         zone_blocks = blocks
@@ -1858,20 +1844,18 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
         points = [block[0], block[1], block[3], block[2], block[0]]
-        # Do not draw grass-zone boundaries on the Panel Cleaning map.
-        # The dark outlines previously shown there looked like unwanted black
-        # blocks over the satellite tables. Zone borders appear only on Overview
-        # (both) and Grass Cutting, where they are relevant.
         if map_mode in ("both", "grass"):
             border_color = "#13c982" if grass_done else "#ff4e59"
-            fig.add_trace(go.Scatter(
-                x=[x * scale_x for x, y in points],
-                y=[img_height - y * scale_y for x, y in points],
-                mode="lines", line=dict(color=border_color, width=2),
-                hoverinfo="text",
-                text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
-                showlegend=False,
-            ))
+        else:
+            border_color = "#243447"
+        fig.add_trace(go.Scatter(
+            x=[x * scale_x for x, y in points],
+            y=[img_height - y * scale_y for x, y in points],
+            mode="lines", line=dict(color=border_color, width=3),
+            hoverinfo="text",
+            text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}" if map_mode in ("both", "grass") else "Solar array"] * len(points),
+            showlegend=False,
+        ))
 
     # A table is represented by a narrow polygon matching one real panel row.
     asset_index = 0
@@ -2093,7 +2077,7 @@ def render_plant_details_and_specs(db, plant):
 
     # Technical values are populated only where supplied in the plant-specification sheet.
     specs = {
-        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Plant In-Charge": "Roshan"},
+        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Grass Cutting Zones": "8 zones", "Plant In-Charge": "Roshan"},
         "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
         "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
         "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
