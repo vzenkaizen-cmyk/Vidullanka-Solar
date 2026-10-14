@@ -1744,15 +1744,15 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # Each block is (left, top, right, bottom, split_direction).
     # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
     plant_code = str(getattr(plant, "code", "") or "").strip().upper()
-    if plant_code in {"HS1", "HRN1", "HRN"}:
-        # HRN 1 satellite image: three real horizontal-row array groups.
-        # Coordinates are normalized to the supplied HRN1.jpg image:
-        # left array, tall centre array, and upper-right array. Each table
-        # is a horizontal row, so rows are divided from top to bottom ("y").
+    if plant_code in {"HS1", "HRN1", "HRN", "HRN 1"}:
+        # HRN 1 layout matches the first Python version: four actual
+        # solar-table groups traced from the supplied HRN1 satellite image.
+        # Each table row is coloured from top to bottom ("y").
         block_specs = [
-            (.018, .315, .258, .900, "y"),  # left array; extended down to cover the remaining three rows
-            (.255, .225, .505, .965, "y"),  # centre array
-            (.515, .105, .990, .555, "y"),  # right array
+            (.014, .201, .258, .889, "y"),  # Group 1: left array, including lower rows
+            (.258, .139, .512, .847, "y"),  # Group 2: tall centre array
+            (.512, .114, .738, .438, "y"),  # Group 3: short upper-middle array
+            (.738, .081, .992, .438, "y"),  # Group 4: upper-right array
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2 panel-cleaning layout: eight separate panel groups matching
@@ -1838,26 +1838,25 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
 
     # Zone borders are coloured only on the Overview and Grass Cutting pages.
-    # HRN 1 has 10 zones, represented by subdivisions within its three real
-    # array groups (3 left, 4 centre, 3 right). Other sites keep their geometry.
+    # HRN 1 has 10 zones, following the same four array groups as the first
+    # Python version. Other sites keep their existing geometry.
     zone_count = max(1, len(zone_assets))
     zone_blocks = blocks
     if plant_code in {"HS1", "HRN1", "HRN"} and zone_assets:
-        # HRN 1 grass-cutting zones follow the actual site division sketch:
-        # left upper/lower, centre-left upper/lower, centre upper/lower,
-        # right upper/lower, and the two lower-right areas (10 zones total).
-        # Coordinates are normalized to HRN1.jpg and do not alter the image.
+        # HRN 1 grass-cutting zones follow the same four table groups as
+        # the first Python version: four zones in each of the two tall groups,
+        # then one zone for each of the two shorter upper groups.
         zone_rects = [
-            (.015, .285, .285, .535),  # Zone 1: left upper array
-            (.015, .535, .285, .820),  # Zone 2: left lower array
-            (.285, .200, .505, .425),  # Zone 3: centre-left upper
-            (.285, .425, .505, .650),  # Zone 4: centre-left lower
-            (.425, .015, .585, .425),  # Zone 5: central upper rows
-            (.425, .425, .585, .890),  # Zone 6: central lower rows
-            (.585, .105, .790, .425),  # Zone 7: upper-right array
-            (.585, .425, .790, .690),  # Zone 8: middle-right array
-            (.790, .425, .970, .735),  # Zone 9: lower-right array
-            (.790, .735, .985, .925),  # Zone 10: bottom-right rows
+            (.014, .201, .258, .347),  # Zone 1: left group, upper
+            (.017, .347, .258, .521),  # Zone 2: left group, upper-middle
+            (.021, .521, .258, .718),  # Zone 3: left group, lower-middle
+            (.024, .718, .258, .889),  # Zone 4: left group, lower
+            (.258, .159, .512, .336),  # Zone 5: centre group, upper
+            (.258, .336, .512, .493),  # Zone 6: centre group, upper-middle
+            (.258, .493, .512, .692),  # Zone 7: centre group, lower-middle
+            (.258, .692, .512, .847),  # Zone 8: centre group, lower
+            (.512, .146, .738, .438),  # Zone 9: upper-middle group
+            (.738, .111, .992, .438),  # Zone 10: upper-right group
         ]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
