@@ -1870,20 +1870,21 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # zones 1-4 cover the left-side panel groups, zones 5-8 cover the
         # right-side panel groups, and zones 9-10 cover the two open-ground
         # sections on the far right. Coordinates are normalized to HRN2.jpg.
+        # Non-overlapping zones are defined in the *displayed* (rotated)
+        # image coordinate system. Each zone has a shared edge at most; no
+        # zone rectangle crosses into another zone.
         zone_rects = [
-            (.015, .155, .465, .405),  # Zone 1: upper-left panel block (7 rows)
-            (.035, .405, .465, .605),  # Zone 2: middle-left panel block
-            (.065, .605, .490, .795),  # Zone 3: lower-left panel block
-            (.085, .795, .515, .985),  # Zone 4: bottom-left panel block
-            (.445, .125, .900, .385),  # Zone 5: upper-right panel block (6 rows)
-            (.455, .385, .710, .555),  # Zone 6: middle upper-right panel block
-            (.480, .555, .755, .735),  # Zone 7: middle lower-right panel block
-            (.515, .735, .825, .925),  # Zone 8: bottom-right panel block
-            (.805, .385, .995, .665),  # Zone 9: upper open-ground area
-            (.825, .665, .995, .965),  # Zone 10: lower open-ground area
+            (.015, .020, .465, .250),  # Zone 1: upper-left section
+            (.015, .250, .465, .480),  # Zone 2: upper-middle-left section
+            (.015, .480, .465, .715),  # Zone 3: lower-middle-left section
+            (.015, .715, .465, .985),  # Zone 4: lower-left section
+            (.465, .020, .805, .250),  # Zone 5: upper-centre section
+            (.465, .250, .805, .480),  # Zone 6: upper-middle-centre section
+            (.465, .480, .805, .715),  # Zone 7: lower-middle-centre section
+            (.465, .715, .805, .985),  # Zone 8: lower-centre section
+            (.805, .020, .995, .500),  # Zone 9: upper-right section
+            (.805, .500, .995, .985),  # Zone 10: lower-right section
         ]
-        if rotate_hrn2_map:
-            zone_rects = [(top, 1 - right, bottom, 1 - left) for left, top, right, bottom in zone_rects]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
              (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
@@ -1934,8 +1935,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             ))
 
     # A table is represented by a narrow polygon matching one real panel row.
+    # On the Grass Cutting map, omit table polygons entirely: even transparent
+    # fills retain dark outline strokes and made black borders appear over zones.
     asset_index = 0
     for block_idx, (block, count) in enumerate(zip(blocks, counts)):
+        if map_mode == "grass":
+            break
         if count <= 0:
             continue
         top_left, top_right, bottom_left, bottom_right, direction = block
