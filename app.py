@@ -1811,17 +1811,31 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             ((945, 80), (1270, 58), (945, 325), (1270, 315), 10),
         ]
     elif plant_code == "ORK":
-        # ORK: eight distinct grass zones following the hand-marked plan.
-        # All rectangles are adjacent or separated; none overlap another zone.
+        # ORK: ten grass-cutting zones traced to the user's blue-marked reference.
+        # Zone polygons stay within the ORK site boundary and follow the ten
+        # numbered areas: 1-2 on the left, 3-4 next column, 5-6 centre,
+        # 7 upper-right, 8 mid-right, and 9-10 along the lower-right area.
         zone_blocks = [
-            ((0, 190), (300, 175), (0, 390), (300, 390), 1),
-            ((0, 390), (300, 390), (35, 690), (300, 690), 2),
-            ((300, 175), (590, 155), (300, 300), (590, 300), 3),
-            ((300, 300), (590, 300), (300, 455), (590, 455), 4),
-            ((300, 455), (590, 455), (300, 690), (590, 690), 5),
-            ((590, 155), (875, 120), (590, 300), (875, 300), 6),
-            ((875, 120), (1270, 80), (875, 300), (1270, 300), 7),
-            ((875, 300), (1270, 300), (875, 470), (1270, 470), 8),
+            # 1 — upper-left array area.
+            ((25, 205), (330, 175), (20, 415), (330, 415), 1),
+            # 2 — lower-left array and adjacent cleared ground.
+            ((20, 415), (330, 415), (55, 675), (330, 675), 2),
+            # 3 — upper part of the second column.
+            ((330, 170), (535, 125), (330, 300), (535, 300), 3),
+            # 4 — lower part of the second column.
+            ((330, 300), (535, 300), (330, 500), (535, 500), 4),
+            # 5 — upper central array group.
+            ((535, 125), (735, 105), (535, 300), (735, 300), 5),
+            # 6 — lower central array group.
+            ((535, 300), (735, 300), (535, 685), (735, 685), 6),
+            # 7 — upper-right array group.
+            ((735, 105), (930, 145), (735, 300), (930, 300), 7),
+            # 8 — middle-right area below Zone 7.
+            ((735, 300), (930, 300), (900, 505), (930, 505), 8),
+            # 9 — lower-right array group.
+            ((735, 505), (1110, 505), (735, 665), (1110, 665), 9),
+            # 10 — bottom-right edge area within the site boundary.
+            ((930, 300), (1270, 300), (930, 680), (1270, 680), 10),
         ]
     else:
         zone_blocks = blocks
@@ -2082,7 +2096,7 @@ def render_plant_details_and_specs(db, plant):
     specs = {
         "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Grass Cutting Zones": "10 zones", "Plant In-Charge": "Roshan"},
         "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
-        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
+        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 52 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
         "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
         "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres", "Plant In-Charge": "Sansala"},
     }
