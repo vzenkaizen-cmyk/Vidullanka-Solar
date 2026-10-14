@@ -3,7 +3,6 @@ import os
 import io
 import json
 import base64
-import uuid
 import hashlib
 import hmac
 import smtplib
@@ -1623,9 +1622,6 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # Streamlit identity to prevent StreamlitDuplicateElementId errors.
     chart_instance = int(st.session_state.get("_satellite_chart_instance", 0)) + 1
     st.session_state["_satellite_chart_instance"] = chart_instance
-    # Unique per rendered chart, including when the same site/map is displayed
-    # more than once on Overview. This prevents StreamlitDuplicateElementId.
-    chart_token = uuid.uuid4().hex[:10]
 
     if not embedded:
         header(plant)
@@ -1637,21 +1633,6 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # Plant-specific satellite photos. The same selected photo is used on
     # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
     plant_code = str(getattr(plant, "code", "") or "").strip().upper()
-    # Resolve plant identity from both the database code and display name. Some
-    # existing database rows use a descriptive name rather than the short code.
-    plant_identity = " ".join([
-        plant_code,
-        str(getattr(plant, "name", "") or "").strip().upper(),
-        str(getattr(plant, "display_name", "") or "").strip().upper(),
-    ])
-    if "DPV" in plant_identity or "RANNA" in plant_identity:
-        plant_code = "DPV"
-    elif "ORK" in plant_identity:
-        plant_code = "ORK"
-    elif "HRN 1" in plant_identity or "HRN1" in plant_identity or "HS1" in plant_identity:
-        plant_code = "HRN1"
-    elif "HRN 2" in plant_identity or "HRN2" in plant_identity or "HS2" in plant_identity:
-        plant_code = "HRN2"
     satellite_files = {
         "HS1": "HRN1.jpg",   # HRN 1: first supplied site image
         "HRN1": "HRN1.jpg",
@@ -1660,10 +1641,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         "HRN2": "HRN2.jpg",
         "DPV": "DPV.jpeg",   # DPV (Ranna): supplied clean aerial photo
         "ORK": "ORK.jpg",    # ORK: third supplied site image
-        "MDP": "MDP view .png",  # MDP: use the supplied MDP satellite image
-        "MTR": "MTR view .png",  # MTR: use the supplied MTR satellite image
-        "MTR-I": "MTR view .png",
-        "MTR-II": "MTR view .png",
+        "MDP": "HRN2.jpg",   # Use HRN 2 site image for MDP
+        "MTR": "HRN2.jpg",   # Use HRN 2 site image for MTR
+        "MTR-I": "HRN2.jpg",
+        "MTR-II": "HRN2.jpg",
     }
     # ORK Grass Cutting uses the supplied clean aerial zone-map image only.
     # It is intentionally shown without any status polygons, table outlines, or labels.
@@ -1727,7 +1708,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             clean_fig,
             use_container_width=True,
             config={"displayModeBar": False},
-            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{'dpv' if dpv_reference else 'ork'}_clean_{chart_instance}_{chart_token}_{uuid.uuid4().hex[:8]}",
+            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{'dpv' if dpv_reference else 'ork'}_clean_{chart_instance}",
         )
         return
 
@@ -2011,7 +1992,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 "zoomOut2d", "autoScale2d", "resetScale2d"
             ],
         },
-        key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{chart_instance}_{chart_token}_{uuid.uuid4().hex[:8]}",
+        key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{chart_instance}",
     )
     if show_metrics:
         green_col, red_col, grass_col = st.columns([1, 1, 1.15], gap="small")
