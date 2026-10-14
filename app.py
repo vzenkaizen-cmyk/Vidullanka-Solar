@@ -53,9 +53,8 @@ DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
 # These are deliberately kept in one place so management can change them later.
-PANEL_CLEANING_TARGET_DAYS = 7
-GRASS_CUTTING_TARGET_DAYS = 30
-REPAIR_MAINTENANCE_TARGET_DAYS = 7
+PANEL_CLEANING_TARGET_MONTHS = 4
+GRASS_CUTTING_TARGET_MONTHS = 3
 # ============================================================
 # NEON POSTGRESQL CONFIGURATION
 # ============================================================
@@ -452,6 +451,27 @@ PLANT_SUPERVISOR_EMAILS = {
     "ork.ops@vidullanka.com": "ORK",
 }
 
+# Worker lists used by Panel Cleaning and Grass Cutting. The lists are plant-specific
+# and can be extended later without changing the maintenance records structure.
+WORKERS_BY_PLANT = {
+    "HS1": ["Roshan", "Worker 1", "Worker 2", "Worker 3"],
+    "HS2": ["Worker 1", "Worker 2", "Worker 3"],
+    "MDP": ["Worker 1", "Worker 2", "Worker 3"],
+    "MTR": [
+        "Sudheera Athukorala",
+        "VIraj Samarasinghe",
+        "Alaththuge Gunarathne",
+        "Saman Kumara",
+        "Chiwantha Dahanayake",
+        "Minidu Gawesh",
+    ],
+    "ORK": ["Worker 1", "Worker 2", "Worker 3"],
+}
+
+def worker_options_for_plant(plant):
+    code = (getattr(plant, "code", "") or "").strip().upper()
+    return list(WORKERS_BY_PLANT.get(code, ["Worker 1", "Worker 2", "Worker 3"]))
+
 def _plant_id_for_code(db, code):
     if not code:
         return None
@@ -477,7 +497,7 @@ def seed_database():
                     capacity_mw=2,
                     inverter_count=17,
                     table_count=150,
-                    zone_count=10,
+                    zone_count=8,
                 )
             )
             db.commit()
@@ -497,12 +517,15 @@ def seed_database():
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
-                             inverter_count=10, table_count=80, zone_count=10, active=True))
-        db.flush()
-        # ORK has 51 solar tables. Keep the displayed count and generated table IDs aligned.
+                             inverter_count=10, table_count=(52 if site_code == "ORK" else 80),
+                             zone_count=10, active=True))
+        # ORK has 52 solar tables. Keep existing installations aligned as well as
+        # newly created plant records so the dashboard and maintenance checklist
+        # both display 52 tables.
         ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
-        if ork_plant and ork_plant.table_count != 51:
-            ork_plant.table_count = 51
+        if ork_plant:
+            ork_plant.table_count = 52
+            ork_plant.zone_count = 10
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -528,6 +551,7 @@ def seed_database():
                 db.delete(old_profile)
             old_hrn.active = False
         if hs1_plant:
+            hs1_plant.zone_count = 10
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
@@ -1150,7 +1174,7 @@ def css():
         .inspection-asset-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0 12px;box-sizing:border-box}
         .inspection-asset-name{font-weight:800;color:var(--text);font-size:15px}
         .inspection-status-legend{font-size:12px;white-space:nowrap}.inspection-status-legend .done{color:var(--green);font-weight:900}.inspection-status-legend .notdone{color:var(--red);font-weight:900}.inspection-status-legend .unrecorded{color:var(--muted);font-weight:900}
-        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 8px;margin:3px 0;min-height:70px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:11px;font-weight:800;color:var(--text);line-height:1.2;min-height:28px;display:flex;align-items:flex-start}.inspection-group-item [data-testid="stRadio"]{margin-top:2px}
+        .inspection-group-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 9px;margin:3px 0;min-height:78px;box-sizing:border-box;box-shadow:var(--shadow);overflow:hidden}.inspection-group-item .inspection-item-name{font-size:13px;font-weight:800;color:var(--text);line-height:1.25;min-height:40px;height:auto;display:flex;align-items:flex-start;overflow-wrap:anywhere;word-break:break-word}.inspection-group-item [data-testid="stRadio"]{margin-top:3px}
         .inspection-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 8px;margin:5px 0;box-sizing:border-box}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:7px!important;flex-wrap:nowrap!important;justify-content:center!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{border:1px solid var(--border)!important;border-radius:50%!important;padding:0!important;width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important;cursor:pointer!important;background:var(--surface)!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
@@ -1171,7 +1195,7 @@ def css():
             text-overflow:clip!important;
             font-size:13px!important;
             padding:8px 10px!important;
-            min-width:max-content!important;
+            min-width:0!important;
             min-height:38px!important;
             width:100%!important;
             border:1px solid var(--border)!important;
@@ -1200,13 +1224,28 @@ def css():
             border-bottom:1px solid var(--border)!important;
         }
 
-        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 10px;margin:7px 0 5px;font-weight:800;color:var(--text);box-sizing:border-box}
+        .inspection-check-title{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin:7px 0 5px;font-weight:800;font-size:13px;line-height:1.25;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}
         .inspection-check-hint{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap}
-        .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:11px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px}
+        .inspection-asset-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 5px;text-align:center;font-weight:800;font-size:12px;color:var(--text);min-height:30px;box-sizing:border-box;margin-top:2px;overflow-wrap:anywhere;word-break:break-word}
         .inspection-item-divider{height:1px;background:var(--border);margin:6px 0 3px}
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
-        .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
+        .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}.inspection-item-name{font-size:13px;line-height:1.25;overflow-wrap:anywhere;word-break:break-word}
         .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
+        /* Maintenance process tabs: wide readable boxes with no ellipsis. */
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]{
+            column-gap:1rem!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button{
+            min-width:0!important;
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button p{
+            white-space:nowrap!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+        }
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
             border:1px solid #16a66a!important;
@@ -1337,6 +1376,7 @@ def login_page():
                 background-attachment:fixed;
             }}
             [data-testid="stHeader"]{{background:transparent!important}}
+            [data-testid="stSidebar"]{{display:none!important}}
             [data-testid="stAppViewContainer"]{{background:transparent!important}}
             [data-testid="stMainBlockContainer"]{{max-width:1420px!important;padding-top:1.8rem!important;padding-bottom:2rem!important}}
             [data-testid="stColumn"]:has(.login-card-anchor){{background:rgba(255,255,255,.94);border:1px solid rgba(214,226,240,.95);border-radius:22px;padding:28px 30px 24px;box-shadow:0 18px 50px rgba(24,58,100,.16);backdrop-filter:blur(7px);align-self:flex-start}}
@@ -1365,8 +1405,7 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-brand-sub">Building on renewable energy sources</div>
-            <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
+            <div class="login-hero-title">Solar Operation &amp; Maintenance Platform</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
                 <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
@@ -1414,6 +1453,17 @@ def login_page():
                 st.markdown(f"### {title}")
                 name = st.text_input("Full name", key=f"{prefix}_name")
                 reg_email = st.text_input("Vidullanka work email", key=f"{prefix}_email")
+                selected_registration_plant = None
+                if account_kind == "supervisor":
+                    supervisor_plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
+                    supervisor_plant_options = {display_plant_name(p): p.id for p in supervisor_plants}
+                    if supervisor_plant_options:
+                        selected_registration_name = st.selectbox(
+                            "Assigned plant",
+                            list(supervisor_plant_options.keys()),
+                            key=f"{prefix}_plant",
+                        )
+                        selected_registration_plant = supervisor_plant_options[selected_registration_name]
                 reg_password = st.text_input("Create password", type="password", key=f"{prefix}_password")
                 confirm = st.text_input("Confirm password", type="password", key=f"{prefix}_confirm")
                 if st.button(f"Create {title}", key=f"{prefix}_create", use_container_width=True):
@@ -1429,14 +1479,12 @@ def login_page():
                     else:
                         if account_kind == "supervisor":
                             role = "supervisor"
-                            plant_code = PLANT_SUPERVISOR_EMAILS.get(email_value)
-                            if email_value in PLANT_SUPERVISOR_EMAILS:
-                                plant_id = _plant_id_for_code(db, plant_code)
-                                if not plant_id:
-                                    st.error(f"The {plant_code} plant is not configured yet. Ask an administrator to add it before registering this account.")
-                                    return
-                            else:
-                                plant_id = None
+                            plant_id = selected_registration_plant
+                            if not plant_id:
+                                st.error("Select the supervisor's assigned plant before creating the account.")
+                                return
+                            selected_plant = db.query(Plant).filter(Plant.id == plant_id).first()
+                            plant_code = selected_plant.code if selected_plant else ""
                         else:
                             role = MANAGEMENT_ROLE_BY_EMAIL.get(email_value)
                             if not role:
@@ -1445,12 +1493,12 @@ def login_page():
                             plant_id = None
                         db.add(User(full_name=name.strip(), email=email_value, password_hash=hash_password(reg_password), role=role, plant_id=plant_id, active=True, approved=True))
                         db.commit()
-                        scope = f" Assigned plant: {plant_code}." if account_kind == "supervisor" and email_value in PLANT_SUPERVISOR_EMAILS else (" Access: all active plants." if role in ("admin", "engineer") else " Plant assignment is required before using plant features.")
+                        scope = f" Assigned plant: {display_plant_name(selected_plant)}." if account_kind == "supervisor" else (" Access: all active plants." if role in ("admin", "engineer") else "")
                         st.success(f"{title} created successfully as {role.title()}. You can sign in immediately.{scope}")
 
             with r1:
                 registration_form("supervisor", "Supervisor Account", "reg_supervisor")
-                st.caption("The MTR, MDP, HS1 and ORK in-charge emails are automatically assigned to their matching plant. Other supervisor accounts need a plant assignment from an administrator.")
+                st.caption("Select the supervisor's plant during registration. After sign-in, supervisors can only access that assigned plant.")
             with r2:
                 registration_form("management", "Engineer / Administrator Account", "reg_management")
                 st.caption("Role is assigned from the registered email list; users cannot promote themselves to Administrator.")
@@ -1506,13 +1554,25 @@ def top_nav(db, user):
     current_id = st.session_state.get("selected_plant_id") or (user.plant_id if user.role not in ("admin", "engineer") else plants[0].id)
     current_name = next((n for n, pid in plant_options.items() if pid == current_id), plants[0].name)
 
-    st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
-
     with st.sidebar:
         st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sidebar-sub">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
-        selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
-        st.session_state.selected_plant_id = plant_options[selected_name]
+        if user.role in ("admin", "engineer"):
+            selected_name = st.selectbox(
+                "Plant",
+                list(plant_options.keys()),
+                index=list(plant_options.keys()).index(current_name),
+                key="top_plant",
+            )
+            st.session_state.selected_plant_id = plant_options[selected_name]
+        else:
+            # Supervisors are permanently scoped to their assigned plant and do not
+            # receive a plant selector in the navigation bar.
+            st.markdown(
+                f'<div class="sidebar-sub" style="margin:8px 0 0;"><b>Plant</b><br>{display_plant_name(plants[0])}</div>',
+                unsafe_allow_html=True,
+            )
+            st.session_state.selected_plant_id = plants[0].id
         st.divider()
         st.caption("🟢 System Online")
 
@@ -1624,32 +1684,25 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
 
     if task_date is None:
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
-    # Plant-specific satellite photos. The same selected photo is used on
-    # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
-    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
-    satellite_files = {
-        "HS1": "HRN1.jpg",   # HRN 1: first supplied site image
-        "HRN1": "HRN1.jpg",
-        "HRN": "HRN1.jpg",
-        "HS2": "HRN2.jpg",   # HRN 2: second supplied site image
-        "HRN2": "HRN2.jpg",
-        "ORK": "ORK.jpg",    # ORK: third supplied site image
-        "MDP": "HRN2.jpg",   # Use HRN 2 site image for MDP
-        "MTR": "HRN2.jpg",   # Use HRN 2 site image for MTR
-        "MTR-I": "HRN2.jpg",
-        "MTR-II": "HRN2.jpg",
-    }
-    selected_satellite = satellite_files.get(plant_code, "HR1.jpeg")
+    # Choose the supplied satellite photo for the selected plant.
+    # HRN1 uses image 1; HRN2, MTR and MDP use image 2; ORK uses image 3.
+    # The existing table and zone overlays below are intentionally unchanged.
+    plant_code = (getattr(plant, "code", "") or "").strip().upper()
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        satellite_filename = "HRN1.jpg"
+    elif plant_code == "ORK":
+        satellite_filename = "ORK.jpg"
+    else:
+        # HRN2 (HS2), MTR and MDP all use the second supplied image.
+        satellite_filename = "HRN2.jpg"
+
     image_candidates = [
-        os.path.join(os.path.dirname(__file__), "assets", selected_satellite),
-        os.path.join(os.path.dirname(__file__), selected_satellite),
-        # Backward-compatible fallback if an older deployment only has HR1.jpeg.
-        os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
-        os.path.join(os.path.dirname(__file__), "HR1.jpeg"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", satellite_filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), satellite_filename),
     ]
-    image_path = next((candidate for candidate in image_candidates if os.path.exists(candidate)), None)
+    image_path = next((p for p in image_candidates if os.path.exists(p)), None)
     if not image_path:
-        st.error(f"Satellite image not found: {selected_satellite}. Ensure the image is included in the assets folder.")
+        st.error(f"Satellite image not found: assets/{satellite_filename}. Ensure the assets folder is included in the repository.")
         return
 
     with Image.open(image_path) as im:
@@ -1666,186 +1719,172 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
 
-    # Plant-specific array footprints. Coordinates are normalized to each image,
-    # so the same status logic follows the real panel rows on each satellite photo.
-    # Each block is (left, top, right, bottom, split_direction).
-    # split_direction="x" colours vertical table strips; "y" colours horizontal strips.
-    plant_code = str(getattr(plant, "code", "") or "").strip().upper()
-    if plant_code in {"HS1", "HRN1", "HRN"}:
-        # HRN 1 satellite image: three real horizontal-row array groups.
-        # Coordinates are normalized to the supplied HRN1.jpg image:
-        # left array, tall centre array, and upper-right array. Each table
-        # is a horizontal row, so rows are divided from top to bottom ("y").
-        block_specs = [
-            (.018, .315, .258, .900, "y"),  # left array; extended down to cover the remaining three rows
-            (.255, .225, .505, .965, "y"),  # centre array
-            (.515, .105, .990, .555, "y"),  # right array
+    # Site-specific zone/table layouts traced from the supplied satellite zone maps.
+    # Coordinates use a 1280x720 reference canvas and are scaled to each photo.
+    # Each entry is (top-left, top-right, bottom-left, bottom-right, zone number).
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        # HRN 1: four actual solar-table groups from the supplied sketch.
+        # Coordinates are on the 1280x720 reference canvas and scale to the
+        # panoramic satellite photo. The left 24-row group deliberately extends
+        # through the lower table rows that were left uncoloured in the prior map.
+        # Group row counts follow the sketch exactly: 24, 32, 10 and 14.
+        blocks = [
+            # Left group: extend down over the remaining solar-table rows in the
+            # lower-left corner of the HRN1 satellite image.
+            ((18, 145), (330, 125), (35, 640), (330, 625), 1),
+            # Tall centre group.
+            ((330, 115), (655, 100), (330, 625), (655, 610), 2),
+            # Short upper-middle group.
+            ((655, 105), (945, 82), (655, 315), (945, 300), 3),
+            # Upper-right group; stop at the end of the actual table rows.
+            ((945, 80), (1270, 58), (945, 325), (1270, 315), 4),
         ]
-    elif plant_code in {"HS2", "HRN2"}:
-        # HRN 2: eight separated groups of horizontal table rows.
-        block_specs = [
-            (.14, .12, .31, .49, "y"),
-            (.31, .27, .47, .51, "y"),
-            (.47, .18, .64, .50, "y"),
-            (.62, .12, .80, .48, "y"),
-            (.17, .55, .34, .94, "y"),
-            (.33, .54, .50, .93, "y"),
-            (.50, .51, .67, .89, "y"),
-            (.66, .49, .85, .86, "y"),
+        weights = [24, 32, 10, 14]
+    elif plant_code in {"HS2", "HRN2", "HRN 2"}:
+        # HRN 2: use the same individual panel-array box style as MDP,
+        # fitted to the HRN 2 satellite photo. Zones 9 and 10 are ground-only.
+        blocks = [
+            ((285, 18), (465, 8), (300, 250), (480, 240), 1),
+            ((495, 8), (665, 0), (510, 270), (680, 260), 2),
+            ((700, 35), (890, 20), (710, 275), (900, 265), 3),
+            ((285, 265), (475, 255), (305, 500), (495, 490), 4),
+            ((505, 275), (680, 265), (520, 520), (695, 510), 5),
+            ((700, 280), (895, 270), (715, 525), (910, 515), 6),
+            ((300, 515), (495, 505), (320, 700), (510, 690), 7),
+            ((520, 530), (700, 520), (540, 705), (720, 695), 8),
+            ((910, 275), (1115, 265), (910, 430), (1115, 420), 9),
+            ((910, 435), (1115, 425), (910, 600), (1115, 590), 10),
         ]
+        weights = [14, 14, 14, 14, 14, 14, 10, 10, 0, 0]
     elif plant_code == "ORK":
-        # ORK: irregular array layout, matching the supplied ORK satellite image.
-        block_specs = [
-            (.37, .08, .55, .17, "y"),
-            (.21, .18, .39, .47, "y"),
-            (.38, .18, .56, .48, "y"),
-            (.56, .18, .74, .48, "y"),
-            (.20, .50, .39, .72, "y"),
-            (.39, .49, .57, .78, "y"),
-            (.57, .49, .75, .78, "y"),
-            (.70, .77, .86, .94, "y"),
+        # ORK: seven solar-array blocks; the row distribution follows the supplied
+        # sketch (1, 6, 7, 2, 13, 14 and 9 rows; 52 tables in total).
+        blocks = [
+            # The isolated one-table row is at the bottom-left of the ORK image.
+            ((120, 445), (300, 445), (120, 480), (300, 480), 1),
+            ((200, 180), (390, 180), (200, 345), (390, 345), 2),
+            ((390, 105), (560, 105), (390, 340), (560, 340), 3),
+            ((560, 70), (720, 70), (560, 110), (720, 110), 4),
+            ((560, 150), (720, 150), (560, 535), (720, 535), 5),
+            ((720, 150), (900, 150), (720, 545), (900, 545), 6),
+            ((900, 245), (1090, 245), (900, 520), (1090, 520), 7),
         ]
+        weights = [1, 6, 7, 2, 13, 14, 9]
     else:
-        # Preserve the original map overlay geometry for other sites.
-        block_specs = [
-            (.195, .011, .363, .444, "y"), (.364, .183, .525, .486, "y"),
-            (.508, .081, .664, .472, "y"), (.651, .010, .838, .431, "y"),
-            (.238, .542, .402, .986, "y"), (.379, .514, .539, .986, "y"),
-            (.520, .456, .684, .978, "y"), (.664, .431, .855, .931, "y"),
+        # Preserve the existing general layout for other plants.
+        blocks = [
+            ((250, 8), (438, 0), (300, 325), (465, 320), 1),
+            ((466, 145), (653, 132), (493, 350), (672, 348), 2),
+            ((650, 78), (833, 58), (690, 348), (850, 340), 3),
+            ((833, 15), (1045, 0), (870, 315), (1072, 310), 4),
+            ((305, 390), (492, 377), (340, 700), (515, 710), 5),
+            ((485, 390), (665, 370), (520, 710), (690, 710), 6),
+            ((666, 350), (855, 328), (705, 704), (875, 695), 7),
+            ((850, 325), (1074, 310), (885, 685), (1095, 670), 8),
         ]
+        weights = [10, 8, 9, 10, 10, 10, 11, 12]
 
-    # Convert normalized footprints into pixel coordinates. The displayed image
-    # itself is unchanged; only status overlays are drawn on top of it.
-    blocks = []
-    for left, top, right, bottom, direction in block_specs:
-        blocks.append((
-            (left * img_width, top * img_height),
-            (right * img_width, top * img_height),
-            (left * img_width, bottom * img_height),
-            (right * img_width, bottom * img_height),
-            direction,
-        ))
-    if plant_code in {"HS1", "HRN1", "HRN"}:
-        # The number of horizontal tables is proportional to each group's
-        # vertical span, not its image area/width.
-        weights = [max(1, int((bottom - top) * 1000))
-                   for _left, top, _right, bottom, _direction in block_specs]
-    else:
-        weights = [max(1, int((r-l) * (b-t) * (1.6 if direction == "x" else 1.0)))
-                   for l, t, r, b, direction in block_specs]
-    if assets:
-        total_weight = sum(weights)
-        counts = [len(assets) * w // total_weight for w in weights]
+    # Allocate the plant's table assets to its real mapped blocks. Zero-weight
+    # areas (vegetation/no panels) remain visible as zones but do not receive tables.
+    table_blocks = [b for b, w in zip(blocks, weights) if w > 0]
+    table_weights = [w for w in weights if w > 0]
+    if assets and table_blocks:
+        total_weight = sum(table_weights)
+        counts = [len(assets) * w // total_weight for w in table_weights]
         for i in range(len(assets) - sum(counts)):
             counts[i % len(counts)] += 1
     else:
-        counts = [0] * len(blocks)
-
-    scale_x, scale_y = 1.0, 1.0
+        counts = [0] * len(table_blocks)
+    # Grass-cutting zones use their own non-overlapping geometry. Keep these
+    # boundaries separate from the panel-row overlays above: panel arrays may
+    # have staggered edges, but the grass zones must never be drawn on top of
+    # one another. Coordinates are on the same 1280x720 reference canvas.
+    if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
+        # HRN 1: ten grass-cutting zones as requested. The first two main
+        # table groups are each split into four zones; the remaining two
+        # table groups are individual zones. Shared boundaries avoid overlap.
+        zone_blocks = [
+            # First panel-table group — four zones, following the panel edges.
+            ((18, 145), (330, 125), (22, 269), (330, 250), 1),
+            ((22, 269), (330, 250), (27, 393), (330, 375), 2),
+            ((27, 393), (330, 375), (31, 517), (330, 500), 3),
+            ((31, 517), (330, 500), (35, 640), (330, 625), 4),
+            # Second panel-table group — four zones, following the panel edges.
+            ((330, 115), (655, 100), (330, 242), (655, 228), 5),
+            ((330, 242), (655, 228), (330, 370), (655, 355), 6),
+            ((330, 370), (655, 355), (330, 498), (655, 483), 7),
+            ((330, 498), (655, 483), (330, 625), (655, 610), 8),
+            # Remaining two panel-table groups are single zones each.
+            ((655, 105), (945, 82), (655, 315), (945, 300), 9),
+            ((945, 80), (1270, 58), (945, 325), (1270, 315), 10),
+        ]
+    elif plant_code == "ORK":
+        # ORK: ten grass-cutting zones following the user's blue-marked layout.
+        # The zones are contained within the site footprint and follow the
+        # numbered arrangement: 1-2 left, 3-4 next column, 5-6 centre,
+        # 7 upper-right, 8 middle-right, 9 lower-right, 10 bottom-right.
+        # All coordinates use the common 1280x720 reference canvas.
+        zone_blocks = [
+            # 1 — upper-left panel area.
+            ((25, 205), (330, 175), (20, 415), (330, 415), 1),
+            # 2 — lower-left panel area.
+            ((20, 415), (330, 415), (55, 675), (330, 675), 2),
+            # 3 — upper section of the second column.
+            ((330, 170), (535, 125), (330, 300), (535, 300), 3),
+            # 4 — lower section of the second column.
+            ((330, 300), (535, 300), (330, 500), (535, 500), 4),
+            # 5 — upper central panel area.
+            ((535, 125), (735, 105), (535, 300), (735, 300), 5),
+            # 6 — lower central panel area.
+            ((535, 300), (735, 300), (535, 685), (735, 685), 6),
+            # 7 — upper-right panel area.
+            ((735, 105), (930, 145), (735, 300), (930, 300), 7),
+            # 8 — middle-right section; full-width zone, not a narrow sliver.
+            ((735, 300), (930, 300), (735, 505), (930, 505), 8),
+            # 9 — lower-right section above the bottom edge.
+            ((800, 505), (1110, 505), (800, 640), (1110, 640), 9),
+            # 10 — bottom-right strip, kept inside the ORK site boundary.
+            ((800, 640), (1270, 640), (800, 680), (1270, 680), 10),
+        ]
+    else:
+        zone_blocks = blocks
+    scale_x, scale_y = img_width / 1280.0, img_height / 720.0
     fig = go.Figure()
     fig.add_layout_image(dict(source=image_uri, xref="x", yref="y", x=0, y=img_height,
                               sizex=img_width, sizey=img_height, sizing="stretch", layer="below"))
 
     # Zone borders are coloured only on the Overview and Grass Cutting pages.
-    # HRN 1 has 10 zones, represented by subdivisions within its three real
-    # array groups (3 left, 4 centre, 3 right). Other sites keep their geometry.
+    # Panel Cleaning deliberately does not display grass-cutting status.
     zone_count = max(1, len(zone_assets))
-    zone_blocks = blocks
-    if plant_code in {"HS1", "HRN1", "HRN"} and zone_assets:
-        # HRN 1 grass-cutting zones follow the actual site division sketch:
-        # left upper/lower, centre-left upper/lower, centre upper/lower,
-        # right upper/lower, and the two lower-right areas (10 zones total).
-        # Coordinates are normalized to HRN1.jpg and do not alter the image.
-        zone_rects = [
-            (.015, .285, .285, .535),  # Zone 1: left upper array
-            (.015, .535, .285, .820),  # Zone 2: left lower array
-            (.285, .200, .505, .425),  # Zone 3: centre-left upper
-            (.285, .425, .505, .650),  # Zone 4: centre-left lower
-            (.425, .015, .585, .425),  # Zone 5: central upper rows
-            (.425, .425, .585, .890),  # Zone 6: central lower rows
-            (.585, .105, .790, .425),  # Zone 7: upper-right array
-            (.585, .425, .790, .690),  # Zone 8: middle-right array
-            (.790, .425, .970, .735),  # Zone 9: lower-right array
-            (.790, .735, .985, .925),  # Zone 10: bottom-right rows
-        ]
-        zone_blocks = [
-            ((l * img_width, t * img_height), (r * img_width, t * img_height),
-             (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
-            for l, t, r, b in zone_rects
-        ]
-    elif plant_code in {"HS2", "HRN2"} and zone_assets:
-        # HRN 2 grass-cutting zones follow the user's 10-zone sketch:
-        # zones 1-4 cover the left-side panel groups, zones 5-8 cover the
-        # right-side panel groups, and zones 9-10 cover the two open-ground
-        # sections on the far right. Coordinates are normalized to HRN2.jpg.
-        zone_rects = [
-            (.015, .155, .465, .405),  # Zone 1: upper-left panel block (7 rows)
-            (.035, .405, .465, .605),  # Zone 2: middle-left panel block
-            (.065, .605, .490, .795),  # Zone 3: lower-left panel block
-            (.085, .795, .515, .985),  # Zone 4: bottom-left panel block
-            (.445, .125, .900, .385),  # Zone 5: upper-right panel block (6 rows)
-            (.455, .385, .710, .555),  # Zone 6: middle upper-right panel block
-            (.480, .555, .755, .735),  # Zone 7: middle lower-right panel block
-            (.515, .735, .825, .925),  # Zone 8: bottom-right panel block
-            (.805, .385, .995, .665),  # Zone 9: upper open-ground area
-            (.825, .665, .995, .965),  # Zone 10: lower open-ground area
-        ]
-        zone_blocks = [
-            ((l * img_width, t * img_height), (r * img_width, t * img_height),
-             (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
-            for l, t, r, b in zone_rects
-        ]
-    elif plant_code == "ORK" and zone_assets:
-        # ORK grass-cutting divisions follow the supplied marked-up satellite:
-        # two left zones, two centre-left zones, central upper/lower zones,
-        # upper/middle right zones, plus lower-right and bottom-right zones.
-        zone_rects = [
-            (.025, .245, .270, .535),  # Zone 1: upper-left
-            (.025, .535, .270, .835),  # Zone 2: lower-left
-            (.270, .190, .505, .430),  # Zone 3: upper centre-left
-            (.270, .430, .505, .650),  # Zone 4: lower centre-left
-            (.420, .010, .575, .430),  # Zone 5: top-centre
-            (.420, .430, .575, .900),  # Zone 6: lower-centre
-            (.575, .105, .785, .430),  # Zone 7: upper-right
-            (.575, .430, .785, .690),  # Zone 8: mid-right
-            (.785, .430, .965, .735),  # Zone 9: lower-right
-            (.785, .735, .985, .925),  # Zone 10: bottom-right
-        ]
-        zone_blocks = [
-            ((l * img_width, t * img_height), (r * img_width, t * img_height),
-             (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
-            for l, t, r, b in zone_rects
-        ]
-        # Keep the existing panel-table geometry separate from these grass zones.
-    for block_idx, block in enumerate(zone_blocks):
+    for block_idx, block_info in enumerate(zone_blocks):
         if not zone_assets:
             break
-        left_top, right_top, left_bottom, right_bottom, _direction = block
-        zone_idx = min(zone_count - 1, round(block_idx * (zone_count - 1) / max(1, len(zone_blocks) - 1)))
+        block = block_info[:4]
+        zone_number = block_info[4]
+        zone_idx = min(zone_count - 1, max(0, zone_number - 1))
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
-        points = [left_top, right_top, right_bottom, left_bottom, left_top]
+        points = [block[0], block[1], block[3], block[2], block[0]]
+        # Never draw grass-zone outlines on the Panel Cleaning map.
         if map_mode in ("both", "grass"):
             border_color = "#13c982" if grass_done else "#ff4e59"
-        else:
-            border_color = "#243447"
-        fig.add_trace(go.Scatter(
-            x=[x * scale_x for x, y in points],
-            y=[img_height - y * scale_y for x, y in points],
-            mode="lines", line=dict(color=border_color, width=3),
-            hoverinfo="text",
-            text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}" if map_mode in ("both", "grass") else "Solar array"] * len(points),
-            showlegend=False,
-        ))
+            fig.add_trace(go.Scatter(
+                x=[x * scale_x for x, y in points],
+                y=[img_height - y * scale_y for x, y in points],
+                mode="lines", line=dict(color=border_color, width=3),
+                hoverinfo="text",
+                text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
+                showlegend=False,
+            ))
 
     # A table is represented by a narrow polygon matching one real panel row.
     asset_index = 0
-    for block_idx, (block, count) in enumerate(zip(blocks, counts)):
+    for block_idx, (block_info, count) in enumerate(zip(table_blocks, counts)):
         if count <= 0:
             continue
-        top_left, top_right, bottom_left, bottom_right, direction = block
-        # A small gap between strips keeps the satellite roads and row gaps visible.
-        inset = 0.045
+        top_left, top_right, bottom_left, bottom_right, block_zone_number = block_info
+        # Slight inset avoids painting the paths and gaps between solar tables.
+        inset = 0.018
         for row_idx in range(count):
             if asset_index >= len(assets):
                 break
@@ -1857,21 +1896,14 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             def interp(a, b, f):
                 return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
 
-            if direction == "x":
-                # Vertical table strips: divide the footprint from left to right.
-                tl = interp(top_left, top_right, f0)
-                tr = interp(top_left, top_right, f1)
-                br = interp(bottom_left, bottom_right, f1)
-                bl = interp(bottom_left, bottom_right, f0)
-            else:
-                # Horizontal table strips: divide the footprint from top to bottom.
-                tl = interp(top_left, bottom_left, f0)
-                tr = interp(top_right, bottom_right, f0)
-                br = interp(top_right, bottom_right, f1)
-                bl = interp(top_left, bottom_left, f1)
+            # Interpolate both ends along the slanted sides of the array block.
+            tl = interp(top_left, bottom_left, f0)
+            tr = interp(top_right, bottom_right, f0)
+            br = interp(top_right, bottom_right, f1)
+            bl = interp(top_left, bottom_left, f1)
             polygon = [tl, tr, br, bl, tl]
             is_done = asset in completed
-            zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets)))) if zone_assets else 0
+            zone_idx = min(zone_count - 1, max(0, block_zone_number - 1)) if zone_assets else 0
             zone_name = zone_assets[zone_idx] if zone_assets else f"Zone {zone_idx + 1}"
             grass_done = zone_name in completed_grass
             if map_mode in ("both", "panel"):
@@ -1889,7 +1921,13 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                line=dict(color="#062337", width=1),
+                # Hide the dark panel-row outlines on the Panel Cleaning map so
+                # they do not look like extra grass-cutting boundaries. Keep the
+                # existing outlines on Overview/Grass Cutting maps.
+                line=dict(
+                    color="rgba(0,0,0,0)" if map_mode == "panel" else "#062337",
+                    width=0 if map_mode == "panel" else 1,
+                ),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
@@ -2065,9 +2103,9 @@ def render_plant_details_and_specs(db, plant):
 
     # Technical values are populated only where supplied in the plant-specification sheet.
     specs = {
-        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Plant In-Charge": "Roshan"},
+        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Grass Cutting Zones": "10 zones", "Plant In-Charge": "Roshan"},
         "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
-        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
+        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "52 solar tables (including the isolated table)", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
         "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
         "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres", "Plant In-Charge": "Sansala"},
     }
@@ -2137,11 +2175,10 @@ def render_plant_details_and_specs(db, plant):
         st.info("Technical specifications have not yet been provided for this site. Add them to the site specification configuration when available.")
 
 
-def _overview_target_label(done, total, target_days, unit):
-    remaining = max(0, total - done)
-    if remaining == 0:
-        return "Target complete"
-    return f"Estimated target: {target_days} days / cycle" if unit == "cycle" else f"Estimated target: {target_days} days"
+def _overview_target_label(done, total, target_months):
+    # Management maintenance cycle shown on the Overview cards.
+    # Keep this independent from the current completion percentage.
+    return f"Estimated target: {target_months} months / cycle"
 
 
 def _render_overview_card(title, icon, pct, done, total, target_text, map_renderer=None):
@@ -2185,10 +2222,45 @@ def overview_page(db, user, plant):
     metrics["grass_done"] = grass_done
     metrics["grass_total"] = grass_total
 
-    repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
-        RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
-    ).group_by(RepairItem.asset_id).all()
-    repair_counts = {a: int(c) for a, c in repair_rows}
+    # Repair & Maintenance must remain 0% until repair records are actually
+    # entered. A plant with no repair records is "not updated", not "100% complete".
+    # Once records exist, an inverter is counted as completed only when it has
+    # repair/maintenance records and none of its records are still open.
+    repair_rows = db.query(
+        RepairItem.asset_id, RepairItem.status
+    ).filter(
+        RepairItem.plant_id == plant.id
+    ).all()
+
+    repair_asset_status = {}
+    for asset_id, status in repair_rows:
+        current = repair_asset_status.setdefault(asset_id, {"has_record": False, "open": False})
+        current["has_record"] = True
+        if status != "Completed":
+            current["open"] = True
+
+    repair_assets = asset_list(plant, "Inverter")
+    repair_done = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("has_record")
+        and not repair_asset_status.get(asset, {}).get("open")
+    )
+    repair_updated = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("has_record")
+    )
+    repair_open_assets = sum(
+        1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("open")
+    )
+    repair_total = len(repair_assets)
+    repair_pct = round(repair_done / repair_total * 100, 1) if repair_total else 0
+
+    # Keep the detailed inverter status display below the card.
+    repair_counts = {
+        asset: 1 for asset in repair_assets
+        if repair_asset_status.get(asset, {}).get("open")
+    }
 
     st.markdown("## ⚡ Maintenance Productivity")
     st.caption("Compact operational view — cleaning, grass cutting and repair/maintenance status.")
@@ -2198,7 +2270,7 @@ def overview_page(db, user, plant):
     with panel_col:
         _render_overview_card(
             "Panel Cleaning", "🧹", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
-            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_MONTHS)
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
@@ -2206,18 +2278,24 @@ def overview_page(db, user, plant):
     with grass_col:
         _render_overview_card(
             "Grass Cutting", "🌿", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
-            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_MONTHS)
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
+        # Repair & Maintenance is a plant health indicator.
+        # When there are no active repair issues, all configured inverters
+        # are treated as healthy/completed: 100% and 10/10 (or the
+        # configured inverter count). Active issues reduce the percentage.
+        repair_health_pct = 100 if repair_open_assets == 0 else max(0, 100 - min(100, repair_open_assets / max(1, plant.inverter_count) * 100))
+        repair_health_done = plant.inverter_count - repair_open_assets
         _render_overview_card(
             "Repair & Maintenance", "🔧",
-            100 if metrics["open_repairs"] == 0 else 0,
-            plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
+            repair_health_pct,
+            repair_health_done,
             plant.inverter_count,
-            _overview_target_label(0 if metrics["open_repairs"] else 1, 1, REPAIR_MAINTENANCE_TARGET_DAYS, "days")
+            f"{max(0, 100 - repair_health_pct):.0f}% losses"
         )
         st.markdown("**Inverter status**")
         inverter_items = []
@@ -2228,8 +2306,10 @@ def overview_page(db, user, plant):
             else:
                 inverter_items.append(f'<div class="overview-inverter good">🟢 <b>{inverter}</b> — No issue</div>')
         st.markdown('<div class="overview-inverter-grid">' + ''.join(inverter_items) + '</div>', unsafe_allow_html=True)
-        if metrics["open_repairs"]:
-            st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
+        if repair_open_assets:
+            st.error(f"{repair_open_assets} inverter(s) have active repair/maintenance issues")
+        elif repair_updated == 0:
+            st.caption("Not updated yet")
         else:
             st.success("No repair maintenance items")
 
@@ -2265,26 +2345,29 @@ def panel_cleaning_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
-                label_visibility="collapsed",
-                key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
-                placeholder="Enter name",
-            ).strip()
+            worker_options = worker_options_for_plant(plant)
+            saved_workers = [w.strip() for w in saved_worker_name.split(",") if w.strip()]
+            worker_name = st.multiselect(
+                "Workers",
+                worker_options,
+                default=[w for w in saved_workers if w in worker_options],
+                key=f"panel_workers_{plant.id}_{asset}_{task_date}",
+                placeholder="Select workers",
+            )
+            worker_name_value = ", ".join(worker_name)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"panel_{asset}_{task_date}",
                 use_container_width=True,
             ):
                 if not done and not worker_name:
-                    st.warning(f"Enter the worker's name for {asset} before marking it completed.")
+                    st.warning(f"Select at least one worker for {asset} before marking it completed.")
                 else:
                     upsert_record(
                         db, plant.id, "Panel Cleaning", asset, task_date, user.id,
                         "Pending" if done else "Completed",
                         {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_name,
+                        remarks="" if done else worker_name_value,
                     )
                     st.rerun()
 
@@ -2314,26 +2397,29 @@ def grass_cutting_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
-                label_visibility="collapsed",
-                key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
-                placeholder="Enter name",
-            ).strip()
+            worker_options = worker_options_for_plant(plant)
+            saved_workers = [w.strip() for w in saved_worker_name.split(",") if w.strip()]
+            worker_name = st.multiselect(
+                "Workers",
+                worker_options,
+                default=[w for w in saved_workers if w in worker_options],
+                key=f"grass_workers_{plant.id}_{zone}_{task_date}",
+                placeholder="Select workers",
+            )
+            worker_name_value = ", ".join(worker_name)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"grass_{zone}_{task_date}",
                 use_container_width=True,
             ):
                 if not done and not worker_name:
-                    st.warning(f"Enter the worker's name for {zone} before marking it completed.")
+                    st.warning(f"Select at least one worker for {zone} before marking it completed.")
                 else:
                     upsert_record(
                         db, plant.id, "Grass Cutting", zone, task_date, user.id,
                         "Pending" if done else "Completed",
                         {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_name,
+                        remarks="" if done else worker_name_value,
                     )
                     st.rerun()
 
@@ -2342,19 +2428,30 @@ def grass_cutting_page(db, user, plant):
 # Maintenance inspections
 # ============================================================
 
-def _inspection_saved_item(old_record, item):
-    """Return saved UI status and reason for one checklist item.
+def _inspection_display_item(item):
+    """Return a clean user-facing checklist label without changing stored keys."""
+    label = str(item or "").strip()
+    if label.startswith("Outdoor -"):
+        label = label[len("Outdoor -"):].strip()
+    elif label.startswith("Indoor -"):
+        label = label[len("Indoor -"):].strip()
 
-    A checklist item that has never been saved is deliberately kept as
-    UNRECORDED.  It must not silently become RED/Not OK just because the
-    inspection page was opened or saved.
-    """
+    # Expand CT to the requested full terminology in the UI.
+    if label.startswith("CT "):
+        label = "Current Transformer " + label[3:]
+    elif label == "CT":
+        label = "Current Transformer"
+    return label
+
+
+def _inspection_saved_item(old_record, item):
+    """Return saved UI status, reason and optional tripping count."""
     if not old_record:
-        return "UNRECORDED", ""
+        return "UNRECORDED", "", 0
     details = parse_details(old_record)
     items = details.get("items", {}) if isinstance(details, dict) else {}
     if item not in items:
-        return "UNRECORDED", ""
+        return "UNRECORDED", "", 0
 
     saved = items.get(item)
     if saved in ("OK / Green", "GREEN", "Completed", "DONE"):
@@ -2363,7 +2460,14 @@ def _inspection_saved_item(old_record, item):
         status = "RED"
     else:
         status = "UNRECORDED"
-    return status, str(items.get(f"{item}__reason", "") or "")
+
+    raw_count = items.get(f"{item}__count", 0)
+    try:
+        count = max(0, int(raw_count or 0))
+    except (TypeError, ValueError):
+        count = 0
+    return status, str(items.get(f"{item}__reason", "") or ""), count
+
 
 
 def _inspection_groups(category, assets):
@@ -2382,30 +2486,14 @@ def _inspection_groups(category, assets):
         ]
 
     if category == "MDB Inspection":
-        item_map = {item: i for i, item in enumerate(cfg["items"])}
-        groups = [
-            ("ACB", cfg["items"][0:2]),
-            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
-            ("MCCB", cfg["items"][5:7]),
-            ("CT", cfg["items"][7:9]),
-            ("Auto Transformer", cfg["items"][9:10]),
-            ("Multi-Function Meter", cfg["items"][10:11]),
-            ("Fans / Ventilation", cfg["items"][11:12]),
-            ("Thermo", cfg["items"][12:13]),
-            ("Enclosure", cfg["items"][13:14]),
-            ("Surge Protection", cfg["items"][14:15]),
-            ("Fuse", cfg["items"][15:16]),
-            ("Meter Panel Battery", cfg["items"][16:17]),
-            ("Protection Module", cfg["items"][17:18]),
-        ]
-        return [(title, items, assets) for title, items in groups]
+        # One continuous MDB checklist; the old ACB / Bus Bar / MCCB / CT
+        # category boxes are intentionally removed from the UI.
+        return [("Checklist", cfg["items"], assets)]
 
     if category == "Switch Yard Inspection":
-        return [
-            ("🔌 Transformers", cfg["items"][0:5], assets),
-            ("⚡ OCB", cfg["items"][5:8], assets),
-            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
-        ]
+        # One continuous Switch Yard checklist; no Transformer / OCB / Other
+        # category boxes are shown.
+        return [("Checklist", cfg["items"], assets)]
 
     if category == "AC Inspection":
         outdoor = [item for item in cfg["items"] if item.strip().startswith("Outdoor -")]
@@ -2420,8 +2508,8 @@ def _inspection_groups(category, assets):
 
 def _render_inspection_status(db, user, plant, category, task_date, item, item_index,
                               asset, old_record, values, reason_widgets):
-    """Render one checklist status control and keep the three-state behaviour."""
-    saved_status, saved_reason = _inspection_saved_item(old_record, item)
+    """Render one checklist status control, plus the OCB tripping-count field when needed."""
+    saved_status, saved_reason, saved_count = _inspection_saved_item(old_record, item)
     status_options = ["UNRECORDED", "GREEN", "RED"]
 
     status = st.radio(
@@ -2435,6 +2523,19 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     )
     values.setdefault(asset, {})[item] = status
 
+    if item == "OCB Tripping Count Recorded" and status == "GREEN":
+        tripping_count = st.number_input(
+            "Tripping count",
+            min_value=0,
+            value=saved_count,
+            step=1,
+            key=f"inspection_count_{category}_{task_date}_{asset}_{item_index}",
+            help="Enter the recorded OCB tripping count.",
+        )
+        values[asset][f"{item}__count"] = int(tripping_count)
+    else:
+        values[asset][f"{item}__count"] = 0
+
     if status == "RED":
         reason = st.text_input(
             "Reason / issue",
@@ -2444,7 +2545,7 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
             label_visibility="collapsed",
         ).strip()
         values[asset][f"{item}__reason"] = reason
-        reason_widgets.append((f"{asset} – {item}", reason))
+        reason_widgets.append((f"{asset} – {_inspection_display_item(item)}", reason))
     else:
         values[asset][f"{item}__reason"] = ""
 
@@ -2458,8 +2559,9 @@ def _render_inspection_category(db, user, plant, category):
         f'<div class="dashboard-card"><h4>Frequency</h4><div class="dashboard-value">{cfg["frequency"]}</div></div>',
         unsafe_allow_html=True,
     )
+    asset_type_display = "Inverter & Safety Checks" if category == "Daily Inspection" else cfg["asset_type"]
     c2.markdown(
-        f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{cfg["asset_type"]}</div></div>',
+        f'<div class="dashboard-card"><h4>Asset Type</h4><div class="dashboard-value">{asset_type_display}</div></div>',
         unsafe_allow_html=True,
     )
     c3.markdown(
@@ -2522,7 +2624,11 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
-            if category != "Daily Inspection":
+            show_group_header = (
+                category != "Daily Inspection"
+                and not (category in ("MDB Inspection", "Switch Yard Inspection") and group_title == "Checklist")
+            )
+            if show_group_header:
                 st.markdown(
                     f'<div class="inspection-check-title">'
                     f'<span>{group_title}</span>'
@@ -2543,7 +2649,7 @@ def _render_inspection_category(db, user, plant, category):
                             old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
                             st.markdown(
                                 f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
+                                f'<div class="inspection-item-name">{item_number_map[item]}. {_inspection_display_item(item)}</div>',
                                 unsafe_allow_html=True,
                             )
                             _render_inspection_status(
@@ -2557,8 +2663,8 @@ def _render_inspection_category(db, user, plant, category):
 
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                # Site Safety & Security Checks uses one inverter only and keeps
-                # CCTV / Lightning / Fire as three compact, separate boxes.
+                # Site Safety & Security Checks uses one inverter only internally, but the
+                # INV-01 asset label is hidden so each safety check stays compact.
                 if category == "Daily Inspection" and group_title.startswith("🛡️"):
                     grid_cols = 3
                 else:
@@ -2567,7 +2673,7 @@ def _render_inspection_category(db, user, plant, category):
                     item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_number_map[item]}. {item}</span>'
+                        f'<span>{item_number_map[item]}. {_inspection_display_item(item)}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -2578,10 +2684,14 @@ def _render_inspection_category(db, user, plant, category):
                         for col, asset in zip(cols, row_assets):
                             with col:
                                 old_record = old_records.get(asset)
-                                st.markdown(
-                                    f'<div class="inspection-asset-box">{asset}</div>',
-                                    unsafe_allow_html=True,
-                                )
+                                if not (
+                                    category == "Daily Inspection"
+                                    and group_title.startswith("🛡️")
+                                ):
+                                    st.markdown(
+                                        f'<div class="inspection-asset-box">{asset}</div>',
+                                        unsafe_allow_html=True,
+                                    )
                                 _render_inspection_status(
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
@@ -2619,19 +2729,23 @@ def _render_inspection_category(db, user, plant, category):
             merged_items = dict(existing_details.get("items", {}) if isinstance(existing_details, dict) else {})
 
             for item, selected_status in asset_values.items():
-                if item.endswith("__reason"):
+                if item.endswith("__reason") or item.endswith("__count"):
                     continue
                 if selected_status == "UNRECORDED":
                     # Do not create a record for a never-recorded item. If the user
                     # deliberately reset an existing item, remove only that item.
                     merged_items.pop(item, None)
                     merged_items.pop(f"{item}__reason", None)
+                    merged_items.pop(f"{item}__count", None)
                 elif selected_status == "GREEN":
                     merged_items[item] = "GREEN"
                     merged_items[f"{item}__reason"] = ""
+                    if item == "OCB Tripping Count Recorded":
+                        merged_items[f"{item}__count"] = int(asset_values.get(f"{item}__count", 0) or 0)
                 elif selected_status == "RED":
                     merged_items[item] = "RED"
                     merged_items[f"{item}__reason"] = asset_values.get(f"{item}__reason", "").strip()
+                    merged_items.pop(f"{item}__count", None)
 
             recorded_items = [
                 item for item in cfg["items"]
@@ -2681,7 +2795,7 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
+        "Select a maintenance process tab. Inverter & Safety Checks, panel and DC cable inspections "
         "are checked asset-by-asset."
     )
 
@@ -2693,7 +2807,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Daily Inspection",
+        "Daily Inspection": "Inverter & Safety Checks",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
@@ -2701,17 +2815,29 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
-    for col, category in zip(tab_cols, categories):
-        with col:
-            if st.button(
-                tab_labels[category],
-                key=f"inspection_tab_{category}",
-                use_container_width=True,
-                type="primary" if category == selected else "secondary",
-            ):
-                st.session_state.inspection_category = category
-                st.rerun()
+    # Use two rows so every maintenance process name has enough horizontal space.
+    # This prevents Streamlit from shortening labels with an ellipsis (...).
+    tab_rows = [
+        categories[:4],
+        categories[4:],
+    ]
+    tab_ratios = [
+        [1.55, 1.45, 1.35, 1.50],
+        [1.45, 1.80, 1.30],
+    ]
+
+    for row_index, row_categories in enumerate(tab_rows):
+        row_cols = st.columns(tab_ratios[row_index], gap="medium")
+        for col, category in zip(row_cols, row_categories):
+            with col:
+                if st.button(
+                    tab_labels[category],
+                    key=f"inspection_tab_{category}",
+                    use_container_width=True,
+                    type="primary" if category == selected else "secondary",
+                ):
+                    st.session_state.inspection_category = category
+                    st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
