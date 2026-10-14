@@ -1796,19 +1796,19 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # table groups are each split into four zones; the remaining two
         # table groups are individual zones. Shared boundaries avoid overlap.
         zone_blocks = [
-            # First table group — four zones (1–4)
-            ((0, 220), (320, 195), (0, 340), (320, 340), 1),
-            ((0, 340), (320, 340), (0, 465), (320, 465), 2),
-            ((0, 465), (320, 465), (35, 580), (320, 580), 3),
-            ((0, 580), (320, 580), (35, 700), (320, 700), 4),
-            # Second table group — four zones (5–8)
-            ((320, 195), (650, 175), (320, 285), (650, 285), 5),
-            ((320, 285), (650, 285), (320, 375), (650, 375), 6),
-            ((320, 375), (650, 375), (320, 535), (650, 535), 7),
-            ((320, 535), (650, 535), (320, 700), (650, 700), 8),
-            # Remaining two table groups (9–10)
-            ((650, 175), (950, 145), (650, 355), (950, 355), 9),
-            ((950, 145), (1270, 110), (950, 365), (1270, 365), 10),
+            # First panel-table group — four zones, following the panel edges.
+            ((18, 145), (330, 125), (22, 269), (330, 250), 1),
+            ((22, 269), (330, 250), (27, 393), (330, 375), 2),
+            ((27, 393), (330, 375), (31, 517), (330, 500), 3),
+            ((31, 517), (330, 500), (35, 640), (330, 625), 4),
+            # Second panel-table group — four zones, following the panel edges.
+            ((330, 115), (655, 100), (330, 242), (655, 228), 5),
+            ((330, 242), (655, 228), (330, 370), (655, 355), 6),
+            ((330, 370), (655, 355), (330, 498), (655, 483), 7),
+            ((330, 498), (655, 483), (330, 625), (655, 610), 8),
+            # Remaining two panel-table groups are single zones each.
+            ((655, 105), (945, 82), (655, 315), (945, 300), 9),
+            ((945, 80), (1270, 58), (945, 325), (1270, 315), 10),
         ]
     elif plant_code == "ORK":
         # ORK: eight distinct grass zones following the hand-marked plan.
@@ -1842,18 +1842,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         zone_name = zone_assets[zone_idx]
         grass_done = zone_name in completed_grass
         points = [block[0], block[1], block[3], block[2], block[0]]
+        # Never draw grass-zone outlines on the Panel Cleaning map.
         if map_mode in ("both", "grass"):
             border_color = "#13c982" if grass_done else "#ff4e59"
-        else:
-            border_color = "#243447"
-        fig.add_trace(go.Scatter(
-            x=[x * scale_x for x, y in points],
-            y=[img_height - y * scale_y for x, y in points],
-            mode="lines", line=dict(color=border_color, width=3),
-            hoverinfo="text",
-            text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}" if map_mode in ("both", "grass") else "Solar array"] * len(points),
-            showlegend=False,
-        ))
+            fig.add_trace(go.Scatter(
+                x=[x * scale_x for x, y in points],
+                y=[img_height - y * scale_y for x, y in points],
+                mode="lines", line=dict(color=border_color, width=3),
+                hoverinfo="text",
+                text=[f"{zone_name} — Grass cutting: {'Completed' if grass_done else 'Pending'}"] * len(points),
+                showlegend=False,
+            ))
 
     # A table is represented by a narrow polygon matching one real panel row.
     asset_index = 0
@@ -1899,7 +1898,13 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                line=dict(color="#062337", width=1),
+                # Hide the dark panel-row outlines on the Panel Cleaning map so
+                # they do not look like extra grass-cutting boundaries. Keep the
+                # existing outlines on Overview/Grass Cutting maps.
+                line=dict(
+                    color="rgba(0,0,0,0)" if map_mode == "panel" else "#062337",
+                    width=0 if map_mode == "panel" else 1,
+                ),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
