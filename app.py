@@ -1639,6 +1639,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         "HRN": "HRN1.jpg",
         "HS2": "HRN2.jpg",   # HRN 2: second supplied site image
         "HRN2": "HRN2.jpg",
+        "DPV": "DPV.jpeg",   # DPV (Ranna): supplied clean aerial photo
         "ORK": "ORK.jpg",    # ORK: third supplied site image
         "MDP": "HRN2.jpg",   # Use HRN 2 site image for MDP
         "MTR": "HRN2.jpg",   # Use HRN 2 site image for MTR
@@ -1648,6 +1649,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # ORK Grass Cutting uses the supplied clean aerial zone-map image only.
     # It is intentionally shown without any status polygons, table outlines, or labels.
     ork_grass_reference = plant_code == "ORK" and map_mode == "grass"
+    dpv_reference = plant_code == "DPV"
     if ork_grass_reference:
         selected_satellite = "Aerial Solar Farm Zone Map.png"
     else:
@@ -1657,7 +1659,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         os.path.join(os.path.dirname(__file__), "assets", selected_satellite),
         os.path.join(os.path.dirname(__file__), selected_satellite),
         # Backward-compatible fallback if an older deployment only has HR1.jpeg.
-        *([] if ork_grass_reference else [
+        *([] if (ork_grass_reference or dpv_reference) else [
             os.path.join(os.path.dirname(__file__), "assets", "HR1.jpeg"),
             os.path.join(os.path.dirname(__file__), "HR1.jpeg"),
         ]),
@@ -1685,8 +1687,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     encoded = base64.b64encode(image_bytes).decode("ascii")
     image_uri = f"data:{image_mime};base64,{encoded}"
 
-    if ork_grass_reference:
-        # Render the supplied ORK zone map as a plain image, with no markings.
+    if ork_grass_reference or dpv_reference:
+        # ORK Grass Cutting uses the supplied zone-map image without markings.
+        # DPV uses its supplied aerial photograph on Overview, Panel Cleaning,
+        # and Grass Cutting, also without guessed table/zone overlays.
         import plotly.graph_objects as go
         clean_fig = go.Figure()
         clean_fig.add_layout_image(dict(
@@ -1704,7 +1708,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             clean_fig,
             use_container_width=True,
             config={"displayModeBar": False},
-            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_ork_clean_{chart_instance}",
+            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{'dpv' if dpv_reference else 'ork'}_clean_{chart_instance}",
         )
         return
 
