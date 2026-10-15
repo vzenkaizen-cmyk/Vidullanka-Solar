@@ -1694,6 +1694,14 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if rotate_hrn2_map:
             # Rotate the HRN 2 satellite image 90 degrees anti-clockwise.
             rotated = im.convert("RGB").rotate(90, expand=True)
+            if map_mode == "grass":
+                # Grass-cutting view: crop away the outer ground/road margins so
+                # the panel-array area is enlarged and fills the zone map.
+                rw, rh = rotated.size
+                rotated = rotated.crop((
+                    int(rw * 0.04), int(rh * 0.08),
+                    int(rw * 0.96), int(rh * 0.92),
+                ))
             img_width, img_height = rotated.size
             image_buffer = io.BytesIO()
             rotated.save(image_buffer, format="PNG")
@@ -1717,6 +1725,34 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             source=image_uri, xref="x", yref="y", x=0, y=img_height,
             sizex=img_width, sizey=img_height, sizing="stretch", layer="below"
         ))
+        if ork_grass_reference:
+            # Show a large, high-contrast status dot in each of ORK's 10 zones.
+            # Positions follow the visible zone layout on the supplied aerial image.
+            grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+            zone_assets = asset_list(plant, "Zone")
+            zone_centres = [
+                (.145, .385), (.145, .685), (.385, .310), (.385, .540),
+                (.495, .180), (.495, .665), (.680, .270), (.680, .550),
+                (.870, .580), (.885, .825),
+            ]
+            dot_x, dot_y, dot_colors, dot_text = [], [], [], []
+            for idx, (cx, cy) in enumerate(zone_centres):
+                if idx >= len(zone_assets):
+                    break
+                zone_name = zone_assets[idx]
+                rec = grass_records.get(zone_name)
+                done = bool(rec and rec.status == "Completed")
+                dot_x.append(cx * img_width)
+                dot_y.append((1 - cy) * img_height)
+                dot_colors.append("#00e676" if done else "#ff2638")
+                dot_text.append(f"{zone_name} — Grass cutting: {'Completed' if done else 'Pending'}")
+            clean_fig.add_trace(go.Scatter(
+                x=dot_x, y=dot_y, mode="markers+text",
+                marker=dict(size=19, color=dot_colors, line=dict(color="#ffffff", width=2)),
+                text=[f"Z{i+1}" for i in range(len(dot_x))],
+                textposition="middle center", textfont=dict(size=8, color="#07131f"),
+                hovertext=dot_text, hoverinfo="text", showlegend=False,
+            ))
         clean_fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
         clean_fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True)
         clean_fig.update_layout(
@@ -2497,11 +2533,17 @@ def _inspection_groups(category, assets):
     if category == "Daily Inspection":
         one_inverter = [assets[0]] if assets else ["INV-01"]
         return [
-            ("🔌 Inverter Health Checks", cfg["items"][:3], list(assets)),
-            ("🛡️ Site Safety & Security Checks", cfg["items"][3:], one_inverter),
+            ("🔌 Inverter Checks", cfg["items"][:3], list(assets)),
+            ("🛡️ Safety Checks", cfg["items"][3:], one_inverter),
         ]
 
-    # MDB, Switch Yard and AC inspections use a single continuous checklist.
+    if category == "AC Inspection":
+        return [
+            ("🌤️ Outdoor Unit Checks", cfg["items"][:7], assets),
+            ("❄️ Indoor Unit Checks", cfg["items"][7:], assets),
+        ]
+
+    # MDB and Switch Yard inspections use a single continuous checklist.
     # Category headers such as ACB, MCCB, Transformers, OCB, Outdoor and Indoor
     # are not rendered as separate sections.
     return [("Checklist", cfg["items"], assets)]
@@ -2601,7 +2643,7 @@ def _render_inspection_category(db, user, plant, category):
 
     # Daily inspection gets separate tabs so CCTV, Lightning Arresters and Fire
     # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
-    if category == "Daily Inspection":
+    if category in ("Daily Inspection", "AC Inspection"):
         tabs = st.tabs([title for title, _, _ in groups])
         group_contexts = list(zip(tabs, groups))
     else:
@@ -2611,6 +2653,30 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
+            if category == "AC Inspection":
+                st.markdown(f"### {group_title}")
+                row_size = 4
+                for row_start in range(0, len(group_items), row_size):
+                    row_items = group_items[row_start:row_start + row_size]
+                    cols = st.columns(len(row_items), gap="small")
+                    for col, item in zip(cols, row_items):
+                        with col:
+                            asset = group_assets[0] if group_assets else "AC-01"
+                            old_record = old_records.get(asset)
+                            st.markdown(
+                                f'<div class="inspection-group-item">'
+                                f'<div class="inspection-item-name">'
+                                f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _render_inspection_status(
+                                db, user, plant, category, task_date, item,
+                                item_number_map[item] - 1, asset, old_record,
+                                values, reason_widgets,
+                            )
+                            st.markdown('</div>', unsafe_allow_html=True)
+                continue
+
             if category == "Daily Inspection":
                 # Each inverter is shown once, with its applicable checks beneath it.
                 # Site Safety & Security checks intentionally apply only to INV-01.
@@ -2788,8 +2854,7 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
-        "are checked asset-by-asset."
+        "Select a maintenance process tab. Inverter and safety checks are separated, and AC inspections are split into outdoor and indoor units."
     )
 
     categories = list(PROCESS_CATEGORIES.keys())
@@ -2800,7 +2865,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Daily Inspection",
+        "Daily Inspection": "Inverter & Safety Checks",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
