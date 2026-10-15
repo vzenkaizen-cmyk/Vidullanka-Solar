@@ -290,24 +290,48 @@ initialize_database(engine)
 # ============================================================
 
 def hash_password(password: str) -> str:
+    """Store passwords in a consistently parseable PBKDF2 format."""
     salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 180_000)
-    return f"pbkdf2_sha256180000{salt.hex()}${digest.hex()}"
+    iterations = 180_000
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, iterations
+    )
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
+    """Verify current hashes and legacy hashes created by the previous buggy format."""
     try:
-        scheme, iterations, salt_hex, digest_hex = stored.split("$")
-        if scheme != "pbkdf2_sha256":
+        parts = stored.split("$")
+
+        if len(parts) == 4:
+            scheme, iterations_text, salt_hex, digest_hex = parts
+            if scheme != "pbkdf2_sha256":
+                return False
+            iterations = int(iterations_text)
+
+        elif len(parts) == 2:
+            # Legacy format was accidentally saved as:
+            # pbkdf2_sha256180000<SALT_HEX>$<DIGEST_HEX>
+            legacy_prefix = "pbkdf2_sha256180000"
+            legacy_header, digest_hex = parts
+            if not legacy_header.startswith(legacy_prefix):
+                return False
+            salt_hex = legacy_header[len(legacy_prefix):]
+            iterations = 180_000
+            if len(salt_hex) != 32:
+                return False
+
+        else:
             return False
-        digest = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            bytes.fromhex(salt_hex),
-            int(iterations),
+
+        salt = bytes.fromhex(salt_hex)
+        expected_digest = bytes.fromhex(digest_hex)
+        actual_digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations
         )
-        return hmac.compare_digest(digest.hex(), digest_hex)
-    except Exception:
+        return hmac.compare_digest(actual_digest, expected_digest)
+    except (TypeError, ValueError, UnicodeError):
         return False
 
 
@@ -1403,6 +1427,10 @@ def login_page():
                 elif not verify_password(password, user.password_hash):
                     st.error("Incorrect email or password.")
                 else:
+                    # Upgrade legacy hashes after successful authentication.
+                    if len(user.password_hash.split("$")) == 2:
+                        user.password_hash = hash_password(password)
+                        db.commit()
                     st.session_state.user = user
                     st.session_state.selected_plant_id = user.plant_id
                     st.rerun()
