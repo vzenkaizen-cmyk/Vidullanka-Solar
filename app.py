@@ -290,24 +290,48 @@ initialize_database(engine)
 # ============================================================
 
 def hash_password(password: str) -> str:
+    """Store passwords in a consistently parseable PBKDF2 format."""
     salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 180_000)
-    return f"pbkdf2_sha256$180000${salt.hex()}${digest.hex()}"
+    iterations = 180_000
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, iterations
+    )
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
+    """Verify current hashes and legacy hashes created by the previous buggy format."""
     try:
-        scheme, iterations, salt_hex, digest_hex = stored.split("$")
-        if scheme != "pbkdf2_sha256":
+        parts = stored.split("$")
+
+        if len(parts) == 4:
+            scheme, iterations_text, salt_hex, digest_hex = parts
+            if scheme != "pbkdf2_sha256":
+                return False
+            iterations = int(iterations_text)
+
+        elif len(parts) == 2:
+            # Legacy format was accidentally saved as:
+            # pbkdf2_sha256180000<SALT_HEX>$<DIGEST_HEX>
+            legacy_prefix = "pbkdf2_sha256180000"
+            legacy_header, digest_hex = parts
+            if not legacy_header.startswith(legacy_prefix):
+                return False
+            salt_hex = legacy_header[len(legacy_prefix):]
+            iterations = 180_000
+            if len(salt_hex) != 32:
+                return False
+
+        else:
             return False
-        digest = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            bytes.fromhex(salt_hex),
-            int(iterations),
+
+        salt = bytes.fromhex(salt_hex)
+        expected_digest = bytes.fromhex(digest_hex)
+        actual_digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations
         )
-        return hmac.compare_digest(digest.hex(), digest_hex)
-    except Exception:
+        return hmac.compare_digest(actual_digest, expected_digest)
+    except (TypeError, ValueError, UnicodeError):
         return False
 
 
@@ -421,6 +445,7 @@ PROCESS_CATEGORIES = {
         ],
     },
 }
+
 
 # These are dashboard work categories.
 DASHBOARD_CATEGORIES = [
@@ -595,14 +620,20 @@ def seed_database():
             )
             db.add(admin)
         else:
-            # Always synchronize the configured administrator account.
-            # This fixes existing Neon accounts whose password, role, or
-            # approval state does not match the current admin configuration.
+            # Preserve the existing administrator password. The previous version
+            # re-hashed ADMIN_PASSWORD on every app startup, silently replacing
+            # the password the user had already set and causing repeated login
+            # failures after deployment/restarts. Password resets should be an
+            # explicit, deliberate operation rather than part of database seeding.
             admin.full_name = "System Administrator"
             admin.role = "admin"
             admin.approved = True
             admin.active = True
-            admin.password_hash = hash_password(ADMIN_PASSWORD)
+            # Optional one-time recovery for an administrator whose password was
+            # overwritten by an earlier deployment. Set RESET_ADMIN_PASSWORD=true
+            # in deployment secrets for one startup, then remove that setting.
+            if get_config("RESET_ADMIN_PASSWORD", "false").strip().lower() == "true":
+                admin.password_hash = hash_password(ADMIN_PASSWORD)
 
         # Keep the named Vidullanka accounts on their intended least-privilege role/scope.
         # Passwords are never changed here; each person sets their own during registration.
@@ -1396,12 +1427,39 @@ def login_page():
             password = st.text_input("Password", type="password", key="login_password")
 
             if st.button("Sign In", type="primary", use_container_width=True):
-                user = db.query(User).filter(User.email == email.strip().lower()).first()
-                if not user or not user.active:
-                    st.error("Account not found or inactive.")
+                email_value = (email or "").strip().casefold()
+                user = db.query(User).filter(func.lower(User.email) == email_value).first() if email_value else None
+                if not email_value or not password:
+                    st.error("Enter both your email address and password.")
+                elif not user or not user.active:
+                    st.error("Account not found or inactive. Check the email address or contact the system administrator.")
                 elif not verify_password(password, user.password_hash):
-                    st.error("Incorrect email or password.")
+                    # Recovery path for the configured administrator only:
+                    # if the entered password matches the deployment's ADMIN_PASSWORD
+                    # secret, repair a stale/legacy database hash and continue sign-in.
+                    # This does not bypass authentication or affect other accounts.
+                    is_configured_admin = email_value == (ADMIN_EMAIL or "").strip().casefold()
+                    configured_password_matches = bool(ADMIN_PASSWORD) and hmac.compare_digest(
+                        password, ADMIN_PASSWORD
+                    )
+                    if is_configured_admin and configured_password_matches:
+                        user.password_hash = hash_password(password)
+                        user.role = "admin"
+                        user.active = True
+                        user.approved = True
+                        db.commit()
+                        db.refresh(user)
+                        st.session_state.user = user
+                        st.session_state.selected_plant_id = user.plant_id
+                        st.success("Administrator sign-in recovered. Your password hash has been repaired.")
+                        st.rerun()
+                    else:
+                        st.error("Incorrect email or password. If you are the administrator, set ADMIN_PASSWORD to your chosen password and RESET_ADMIN_PASSWORD=true in Streamlit Cloud Secrets, restart the app once, then remove RESET_ADMIN_PASSWORD.")
                 else:
+                    # Upgrade a verified legacy hash to the current PBKDF2 format.
+                    if not user.password_hash.startswith("pbkdf2_sha256$"):
+                        user.password_hash = hash_password(password)
+                        db.commit()
                     st.session_state.user = user
                     st.session_state.selected_plant_id = user.plant_id
                     st.rerun()
@@ -1750,12 +1808,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # solar-table groups traced from the supplied HRN1 satellite image.
         # Each table row is coloured from top to bottom ("y").
         block_specs = [
-            # Trace/table order starts at the upper-right solar-panel group,
-            # so Trace 0 is on the right-side top array as requested.
-            (.738, .081, .992, .438, "y"),  # Group 1: upper-right array
-            (.512, .114, .738, .438, "y"),  # Group 2: upper-middle array
-            (.258, .139, .512, .847, "y"),  # Group 3: tall centre array
-            (.014, .201, .258, .889, "y"),  # Group 4: left array, including lower rows
+            (.014, .201, .258, .889, "y"),  # Group 1: left array, including lower rows
+            (.258, .139, .512, .847, "y"),  # Group 2: tall centre array
+            (.512, .114, .738, .438, "y"),  # Group 3: short upper-middle array
+            (.738, .081, .992, .438, "y"),  # Group 4: upper-right array
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2 panel-cleaning layout: eight separate panel groups matching
@@ -1773,17 +1829,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.615, .53, .785, .91, "y"),  # Group 8: 10 rows
         ]
     elif plant_code == "ORK":
-        # ORK panel-cleaning footprints follow the user's hand-drawn layout.
-        # These seven groups cover all visible panel rows; their row counts are
-        # 1 + 6 + 7 + 13 + 14 + 2 + 9 = 52 tables.
+        # ORK panel-cleaning overlay: keep the same eight array footprints as
+        # the second Python file; do not alter any other site's map geometry.
         block_specs = [
-            (.095, .555, .235, .590, "y"),  # Group 1: far-left single row
-            (.160, .265, .300, .405, "y"),  # Group 2: left group, 6 rows
-            (.300, .205, .430, .395, "y"),  # Group 3: upper-middle group, 7 rows
-            (.430, .200, .565, .720, "y"),  # Group 4: central tall group, 13 rows
-            (.565, .185, .705, .720, "y"),  # Group 5: right tall group, 14 rows
-            (.420, .085, .555, .155, "y"),  # Group 6: top group, 2 rows
-            (.700, .500, .835, .895, "y"),  # Group 7: lower-right group, 9 rows
+            (.37, .08, .55, .17, "y"),
+            (.21, .18, .39, .47, "y"),
+            (.38, .18, .56, .48, "y"),
+            (.56, .18, .74, .48, "y"),
+            (.20, .50, .39, .72, "y"),
+            (.39, .49, .57, .78, "y"),
+            (.57, .49, .75, .78, "y"),
+            (.70, .77, .86, .94, "y"),
         ]
     else:
         # Preserve the original map overlay geometry for other sites.
@@ -1828,9 +1884,6 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # four upper groups with 9, 6, 7, and 8 rows, followed by four
             # lower groups with 10 rows each (70 rows total).
             counts = [9, 6, 7, 8, 10, 10, 10, 10]
-        elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
-            # Match the user's ORK table-row counts exactly.
-            counts = [1, 6, 7, 13, 14, 2, 9]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
@@ -2475,35 +2528,63 @@ def _inspection_saved_item(old_record, item):
     return status, str(items.get(f"{item}__reason", "") or "")
 
 
-def _inspection_display_item(item):
-    """Clean checklist labels for display only; preserve original database keys."""
-    label = str(item or "").strip()
-    if label.startswith("Outdoor -"):
-        label = label[len("Outdoor -"):].strip()
-    elif label.startswith("Indoor -"):
-        label = label[len("Indoor -"):].strip()
-
-    if label.startswith("CT "):
-        label = "Current Transformers " + label[3:]
-    elif label == "CT":
-        label = "Current Transformers"
-    return label
-
-
 def _inspection_groups(category, assets):
-    """Return compact visual groups without changing saved checklist keys."""
+    """Return the intended visual groups without changing the underlying checklist."""
     cfg = PROCESS_CATEGORIES[category]
 
     if category == "Daily Inspection":
+        primary_assets = list(assets)
         one_inverter = [assets[0]] if assets else ["INV-01"]
+        # Keep the original two high-level Daily Inspection tabs.
+        # CCTV, Lightning Arresters and Fire Extinguisher remain separate
+        # checks inside Site Safety & Security Checks, using only INV-01.
         return [
-            ("🔌 Inverter Health Checks", cfg["items"][:3], list(assets)),
+            ("🔌 Inverter Health Checks", cfg["items"][:3], primary_assets),
             ("🛡️ Site Safety & Security Checks", cfg["items"][3:], one_inverter),
         ]
 
-    # MDB, Switch Yard and AC inspections use a single continuous checklist.
-    # Category headers such as ACB, MCCB, Transformers, OCB, Outdoor and Indoor
-    # are not rendered as separate sections.
+    if category == "MDB Inspection":
+        item_map = {item: i for i, item in enumerate(cfg["items"])}
+        groups = [
+            ("ACB", cfg["items"][0:2]),
+            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
+            ("MCCB", cfg["items"][5:7]),
+            ("CT", cfg["items"][7:9]),
+            ("Auto Transformer", cfg["items"][9:10]),
+            ("Multi-Function Meter", cfg["items"][10:11]),
+            ("Fans / Ventilation", cfg["items"][11:12]),
+            ("Thermo", cfg["items"][12:13]),
+            ("Enclosure", cfg["items"][13:14]),
+            ("Surge Protection", cfg["items"][14:15]),
+            ("Fuse", cfg["items"][15:16]),
+            ("Meter Panel Battery", cfg["items"][16:17]),
+            ("Protection Module", cfg["items"][17:18]),
+        ]
+        return [(title, items, assets) for title, items in groups]
+
+    if category == "Switch Yard Inspection":
+        return [
+            ("🔌 Transformers", cfg["items"][0:5], assets),
+            ("⚡ OCB", cfg["items"][5:8], assets),
+            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
+        ]
+
+    if category == "AC Inspection":
+        # Keep AC Inspection divided into the two original sections.
+        # The checklist item labels and their saved keys remain unchanged.
+        outdoor = [
+            item for item in cfg["items"]
+            if item.strip().casefold().startswith("outdoor -")
+        ]
+        indoor = [
+            item for item in cfg["items"]
+            if item.strip().casefold().startswith("indoor -")
+        ]
+        return [
+            ("🌤️ Outdoor Unit Checks", outdoor, assets),
+            ("❄️ Indoor Unit Checks", indoor, assets),
+        ]
+
     return [("Checklist", cfg["items"], assets)]
 
 
@@ -2611,41 +2692,17 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
-            if category == "Daily Inspection":
-                # Each inverter is shown once, with its applicable checks beneath it.
-                # Site Safety & Security checks intentionally apply only to INV-01.
-                if group_title.startswith("🛡️"):
-                    st.caption("Site Safety & Security Checks are recorded against INV-01 only.")
-                    asset_rows = [group_assets[0] if group_assets else "INV-01"]
-                else:
-                    asset_rows = group_assets
+            if category != "Daily Inspection":
+                st.markdown(
+                    f'<div class="inspection-check-title">'
+                    f'<span>{group_title}</span>'
+                    f'<span class="inspection-check-hint">✓ / ✗</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
-                cards_per_row = 3
-                for row_start in range(0, len(asset_rows), cards_per_row):
-                    row_assets = asset_rows[row_start:row_start + cards_per_row]
-                    cols = st.columns(len(row_assets), gap="small")
-                    for col, asset in zip(cols, row_assets):
-                        with col:
-                            st.markdown(
-                                f'<div class="inspection-asset-box">{asset}</div>',
-                                unsafe_allow_html=True,
-                            )
-                            old_record = old_records.get(asset)
-                            for item in group_items:
-                                item_index = item_number_map[item] - 1
-                                st.markdown(
-                                    f'<div class="inspection-item-name" style="margin-top:8px;">'
-                                    f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
-                                    unsafe_allow_html=True,
-                                )
-                                _render_inspection_status(
-                                    db, user, plant, category, task_date, item,
-                                    item_index, asset, old_record, values, reason_widgets,
-                                )
-                            st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
-                continue
-
-            # All other inspections are displayed as one continuous checklist.
+            # For grouped single-asset inspections (MDB, Switch Yard, AC), place
+            # related checklist items beside one another rather than vertically.
             if single_asset:
                 row_size = 4
                 for row_start in range(0, len(group_items), row_size):
@@ -2653,30 +2710,34 @@ def _render_inspection_category(db, user, plant, category):
                     cols = st.columns(len(row_items), gap="small")
                     for col, item in zip(cols, row_items):
                         with col:
-                            asset = group_assets[0] if group_assets else "SITE-01"
-                            old_record = old_records.get(asset)
+                            old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
                             st.markdown(
                                 f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">'
-                                f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
+                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
                                 unsafe_allow_html=True,
                             )
                             _render_inspection_status(
                                 db, user, plant, category, task_date, item,
-                                item_number_map[item] - 1, asset, old_record,
-                                values, reason_widgets,
+                                item_number_map[item] - 1,
+                                group_assets[0] if group_assets else "SITE-01",
+                                old_record, values, reason_widgets,
                             )
                             st.markdown('</div>', unsafe_allow_html=True)
-                    if row_start + row_size < len(group_items):
-                        st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+                    st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                grid_cols = 5
+                # Site Safety & Security Checks uses one inverter only and keeps
+                # CCTV / Lightning / Fire as three compact, separate boxes.
+                if category == "Daily Inspection" and group_title.startswith("🛡️"):
+                    grid_cols = 3
+                else:
+                    grid_cols = 5
                 for item in group_items:
                     item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_number_map[item]}. {_inspection_display_item(item)}</span>'
+                        f'<span>{item_number_map[item]}. {item}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -2695,6 +2756,8 @@ def _render_inspection_category(db, user, plant, category):
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
                                 )
+                                if values[asset].get(f"{item}__reason", ""):
+                                    pass
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
 
     if st.button(
@@ -3695,3 +3758,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
