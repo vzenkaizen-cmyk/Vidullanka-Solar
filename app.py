@@ -290,48 +290,24 @@ initialize_database(engine)
 # ============================================================
 
 def hash_password(password: str) -> str:
-    """Store passwords in a consistently parseable PBKDF2 format."""
     salt = os.urandom(16)
-    iterations = 180_000
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt, iterations
-    )
-    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 180_000)
+    return f"pbkdf2_sha256$180000${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """Verify current hashes and legacy hashes created by the previous buggy format."""
     try:
-        parts = stored.split("$")
-
-        if len(parts) == 4:
-            scheme, iterations_text, salt_hex, digest_hex = parts
-            if scheme != "pbkdf2_sha256":
-                return False
-            iterations = int(iterations_text)
-
-        elif len(parts) == 2:
-            # Legacy format was accidentally saved as:
-            # pbkdf2_sha256180000<SALT_HEX>$<DIGEST_HEX>
-            legacy_prefix = "pbkdf2_sha256180000"
-            legacy_header, digest_hex = parts
-            if not legacy_header.startswith(legacy_prefix):
-                return False
-            salt_hex = legacy_header[len(legacy_prefix):]
-            iterations = 180_000
-            if len(salt_hex) != 32:
-                return False
-
-        else:
+        scheme, iterations, salt_hex, digest_hex = stored.split("$")
+        if scheme != "pbkdf2_sha256":
             return False
-
-        salt = bytes.fromhex(salt_hex)
-        expected_digest = bytes.fromhex(digest_hex)
-        actual_digest = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), salt, iterations
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations),
         )
-        return hmac.compare_digest(actual_digest, expected_digest)
-    except (TypeError, ValueError, UnicodeError):
+        return hmac.compare_digest(digest.hex(), digest_hex)
+    except Exception:
         return False
 
 
@@ -445,7 +421,6 @@ PROCESS_CATEGORIES = {
         ],
     },
 }
-
 
 # These are dashboard work categories.
 DASHBOARD_CATEGORIES = [
@@ -620,20 +595,14 @@ def seed_database():
             )
             db.add(admin)
         else:
-            # Preserve the existing administrator password. The previous version
-            # re-hashed ADMIN_PASSWORD on every app startup, silently replacing
-            # the password the user had already set and causing repeated login
-            # failures after deployment/restarts. Password resets should be an
-            # explicit, deliberate operation rather than part of database seeding.
+            # Always synchronize the configured administrator account.
+            # This fixes existing Neon accounts whose password, role, or
+            # approval state does not match the current admin configuration.
             admin.full_name = "System Administrator"
             admin.role = "admin"
             admin.approved = True
             admin.active = True
-            # Optional one-time recovery for an administrator whose password was
-            # overwritten by an earlier deployment. Set RESET_ADMIN_PASSWORD=true
-            # in deployment secrets for one startup, then remove that setting.
-            if get_config("RESET_ADMIN_PASSWORD", "false").strip().lower() == "true":
-                admin.password_hash = hash_password(ADMIN_PASSWORD)
+            admin.password_hash = hash_password(ADMIN_PASSWORD)
 
         # Keep the named Vidullanka accounts on their intended least-privilege role/scope.
         # Passwords are never changed here; each person sets their own during registration.
@@ -1427,39 +1396,12 @@ def login_page():
             password = st.text_input("Password", type="password", key="login_password")
 
             if st.button("Sign In", type="primary", use_container_width=True):
-                email_value = (email or "").strip().casefold()
-                user = db.query(User).filter(func.lower(User.email) == email_value).first() if email_value else None
-                if not email_value or not password:
-                    st.error("Enter both your email address and password.")
-                elif not user or not user.active:
-                    st.error("Account not found or inactive. Check the email address or contact the system administrator.")
+                user = db.query(User).filter(User.email == email.strip().lower()).first()
+                if not user or not user.active:
+                    st.error("Account not found or inactive.")
                 elif not verify_password(password, user.password_hash):
-                    # Recovery path for the configured administrator only:
-                    # if the entered password matches the deployment's ADMIN_PASSWORD
-                    # secret, repair a stale/legacy database hash and continue sign-in.
-                    # This does not bypass authentication or affect other accounts.
-                    is_configured_admin = email_value == (ADMIN_EMAIL or "").strip().casefold()
-                    configured_password_matches = bool(ADMIN_PASSWORD) and hmac.compare_digest(
-                        password, ADMIN_PASSWORD
-                    )
-                    if is_configured_admin and configured_password_matches:
-                        user.password_hash = hash_password(password)
-                        user.role = "admin"
-                        user.active = True
-                        user.approved = True
-                        db.commit()
-                        db.refresh(user)
-                        st.session_state.user = user
-                        st.session_state.selected_plant_id = user.plant_id
-                        st.success("Administrator sign-in recovered. Your password hash has been repaired.")
-                        st.rerun()
-                    else:
-                        st.error("Incorrect email or password. If you are the administrator, set ADMIN_PASSWORD to your chosen password and RESET_ADMIN_PASSWORD=true in Streamlit Cloud Secrets, restart the app once, then remove RESET_ADMIN_PASSWORD.")
+                    st.error("Incorrect email or password.")
                 else:
-                    # Upgrade a verified legacy hash to the current PBKDF2 format.
-                    if not user.password_hash.startswith("pbkdf2_sha256$"):
-                        user.password_hash = hash_password(password)
-                        db.commit()
                     st.session_state.user = user
                     st.session_state.selected_plant_id = user.plant_id
                     st.rerun()
@@ -1808,10 +1750,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # solar-table groups traced from the supplied HRN1 satellite image.
         # Each table row is coloured from top to bottom ("y").
         block_specs = [
-            (.014, .201, .258, .889, "y"),  # Group 1: left array, including lower rows
-            (.258, .139, .512, .847, "y"),  # Group 2: tall centre array
-            (.512, .114, .738, .438, "y"),  # Group 3: short upper-middle array
-            (.738, .081, .992, .438, "y"),  # Group 4: upper-right array
+            # Trace/table order starts at the upper-right solar-panel group,
+            # so Trace 0 is on the right-side top array as requested.
+            (.738, .081, .992, .438, "y"),  # Group 1: upper-right array
+            (.512, .114, .738, .438, "y"),  # Group 2: upper-middle array
+            (.258, .139, .512, .847, "y"),  # Group 3: tall centre array
+            (.014, .201, .258, .889, "y"),  # Group 4: left array, including lower rows
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2 panel-cleaning layout: eight separate panel groups matching
@@ -1829,17 +1773,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.615, .53, .785, .91, "y"),  # Group 8: 10 rows
         ]
     elif plant_code == "ORK":
-        # ORK panel-cleaning overlay: keep the same eight array footprints as
-        # the second Python file; do not alter any other site's map geometry.
+        # ORK panel-cleaning footprints follow the user's hand-drawn layout.
+        # These seven groups cover all visible panel rows; their row counts are
+        # 1 + 6 + 7 + 13 + 14 + 2 + 9 = 52 tables.
         block_specs = [
-            (.37, .08, .55, .17, "y"),
-            (.21, .18, .39, .47, "y"),
-            (.38, .18, .56, .48, "y"),
-            (.56, .18, .74, .48, "y"),
-            (.20, .50, .39, .72, "y"),
-            (.39, .49, .57, .78, "y"),
-            (.57, .49, .75, .78, "y"),
-            (.70, .77, .86, .94, "y"),
+            (.095, .555, .235, .590, "y"),  # Group 1: far-left single row
+            (.160, .265, .300, .405, "y"),  # Group 2: left group, 6 rows
+            (.300, .205, .430, .395, "y"),  # Group 3: upper-middle group, 7 rows
+            (.430, .200, .565, .720, "y"),  # Group 4: central tall group, 13 rows
+            (.565, .185, .705, .720, "y"),  # Group 5: right tall group, 14 rows
+            (.420, .085, .555, .155, "y"),  # Group 6: top group, 2 rows
+            (.700, .500, .835, .895, "y"),  # Group 7: lower-right group, 9 rows
         ]
     else:
         # Preserve the original map overlay geometry for other sites.
@@ -1884,6 +1828,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # four upper groups with 9, 6, 7, and 8 rows, followed by four
             # lower groups with 10 rows each (70 rows total).
             counts = [9, 6, 7, 8, 10, 10, 10, 10]
+        elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
+            # Match the user's ORK table-row counts exactly.
+            counts = [1, 6, 7, 13, 14, 2, 9]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
@@ -3750,5 +3697,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
