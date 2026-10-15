@@ -1698,17 +1698,26 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
 
     if task_date is None:
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
-    # Choose the supplied satellite photo for the selected plant.
-    # Keep all existing site images unchanged; DPV uses the newly supplied aerial photo.
+    # Choose the correct supplied satellite photo for the selected plant.
+    # ORK keeps its approved panel-table map, while Grass Cutting uses the
+    # supplied numbered zone map as its background without changing zone geometry.
     plant_code = (getattr(plant, "code", "") or "").strip().upper()
     if plant_code in {"HS1", "HRN1", "HRN 1", "HRN"}:
         satellite_filename = "HRN1.jpg"
     elif plant_code == "ORK":
-        satellite_filename = "ORK.jpg"
+        satellite_filename = (
+            "Aerial Solar Farm Zone Map.png"
+            if map_mode == "grass" else "ORK.jpg"
+        )
     elif plant_code == "DPV":
         satellite_filename = "DPV.jpeg"
+    elif plant_code in {"HS2", "HRN2", "HRN 2"}:
+        satellite_filename = "HRN2.jpg"
+    elif plant_code == "MDP":
+        satellite_filename = "MDP view.png"
+    elif plant_code == "MTR":
+        satellite_filename = "MTR view.png"
     else:
-        # HRN2 (HS2), MTR and MDP all use the existing HRN2 image.
         satellite_filename = "HRN2.jpg"
 
     image_candidates = [
@@ -1724,7 +1733,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         img_width, img_height = im.size
     with open(image_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("ascii")
-    image_uri = f"data:image/jpeg;base64,{encoded}"
+    image_mime = "image/png" if satellite_filename.lower().endswith(".png") else "image/jpeg"
+    image_uri = f"data:{image_mime};base64,{encoded}"
 
     assets = asset_list(plant, "Table")
     panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
@@ -1747,7 +1757,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # Coordinates are on the 1280x720 reference canvas and scale to the
         # panoramic satellite photo. The left 24-row group deliberately extends
         # through the lower table rows that were left uncoloured in the prior map.
-        # Group row counts follow the sketch exactly: 24, 32, 10 and 14.
+        # Group trace/table proportions follow the user's latest handwritten notes.
         blocks = [
             # Left group: extend down over the remaining solar-table rows in the
             # lower-left corner of the HRN1 satellite image.
@@ -1759,7 +1769,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # Upper-right group; stop at the end of the actual table rows.
             ((945, 80), (1270, 58), (945, 325), (1270, 315), 4),
         ]
-        weights = [24, 32, 10, 14]
+        weights = [66, 15, 29, 20]
     elif plant_code in {"HS2", "HRN2", "HRN 2"}:
         # HRN 2: panel-cleaning overlays follow the eight actual panel groups
         # in the supplied sketch. Zones 9 and 10 are ground-only and are not
@@ -1782,19 +1792,28 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # followed by four groups of 10 rows.
         weights = [7, 6, 7, 8, 10, 10, 10, 10]
     elif plant_code == "ORK":
-        # ORK: seven solar-array blocks; the row distribution follows the supplied
-        # sketch (1, 6, 7, 2, 13, 14 and 9 rows; 52 tables in total).
-        blocks = [
-            # The isolated one-table row is at the bottom-left of the ORK image.
-            ((120, 445), (300, 445), (120, 480), (300, 480), 1),
-            ((200, 180), (390, 180), (200, 345), (390, 345), 2),
-            ((390, 105), (560, 105), (390, 340), (560, 340), 3),
-            ((560, 70), (720, 70), (560, 110), (720, 110), 4),
-            ((560, 150), (720, 150), (560, 535), (720, 535), 5),
-            ((720, 150), (900, 150), (720, 545), (900, 545), 6),
-            ((900, 245), (1090, 245), (900, 520), (1090, 520), 7),
+        # ORK panel-cleaning arrangement restored to the previously approved
+        # red-box layout. Keep the red horizontal-row style; only the footprints
+        # and placement are corrected to match the reference screenshot.
+        # Each footprint is normalized to the satellite image and converted to
+        # the shared 1280x720 coordinate canvas used by this renderer.
+        ork_panel_rects = [
+            (.37, .08, .55, .17),  # narrow top array
+            (.21, .18, .39, .47),  # upper-left array
+            (.38, .18, .56, .48),  # upper-centre-left array
+            (.56, .18, .74, .48),  # upper-right array
+            (.20, .50, .39, .72),  # lower-left array
+            (.39, .49, .57, .78),  # lower-centre array
+            (.57, .49, .75, .78),  # lower-right-centre array
+            (.70, .77, .86, .94),  # small bottom-right array
         ]
-        weights = [1, 6, 7, 2, 13, 14, 9]
+        blocks = [
+            ((left * 1280, top * 720), (right * 1280, top * 720),
+             (left * 1280, bottom * 720), (right * 1280, bottom * 720), idx + 1)
+            for idx, (left, top, right, bottom) in enumerate(ork_panel_rects)
+        ]
+        weights = [max(1, int((bottom - top) * 1000))
+                   for _left, top, _right, bottom in ork_panel_rects]
     else:
         # Preserve the existing general layout for other plants.
         blocks = [
@@ -1855,12 +1874,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             ((65, 360), (595, 345), (75, 475), (605, 460), 2),
             ((75, 475), (605, 460), (85, 585), (615, 570), 3),
             ((85, 585), (615, 570), (105, 700), (625, 685), 4),
-            ((600, 105), (1110, 125), (610, 320), (1120, 330), 5),
-            ((610, 320), (850, 330), (620, 455), (860, 465), 6),
-            ((620, 455), (875, 465), (635, 565), (885, 575), 7),
-            ((635, 565), (900, 575), (650, 690), (915, 700), 8),
-            ((850, 330), (1200, 335), (850, 505), (1200, 510), 9),
-            ((900, 510), (1270, 515), (900, 690), (1270, 695), 10),
+            ((600, 105), (1110, 125), (610, 320), (1120, 320), 5),
+            ((610, 320), (850, 320), (620, 455), (850, 455), 6),
+            ((620, 455), (875, 455), (635, 565), (875, 565), 7),
+            ((635, 565), (900, 565), (650, 690), (900, 690), 8),
+            ((875, 330), (1200, 330), (875, 505), (1200, 505), 9),
+            ((900, 510), (1270, 510), (900, 690), (1270, 690), 10),
         ]
     elif plant_code == "ORK":
         # ORK: ten grass-cutting zones following the user's blue-marked layout.
@@ -1999,6 +2018,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 "zoomOut2d", "autoScale2d", "resetScale2d"
             ],
         },
+        key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'full'}",
     )
     if show_metrics:
         green_col, red_col, grass_col = st.columns([1, 1, 1.15], gap="small")
@@ -2842,7 +2862,7 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Inverter & Safety Checks, panel and DC cable inspections "
+        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
         "are checked asset-by-asset."
     )
 
@@ -2854,7 +2874,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Inverter & Safety Checks",
+        "Daily Inspection": "Daily Inspection",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
@@ -2862,29 +2882,20 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    # Use two rows so every maintenance process name has enough horizontal space.
-    # This prevents Streamlit from shortening labels with an ellipsis (...).
-    tab_rows = [
-        categories[:4],
-        categories[4:],
-    ]
-    tab_ratios = [
-        [1.55, 1.45, 1.35, 1.50],
-        [1.45, 1.80, 1.30],
-    ]
-
-    for row_index, row_categories in enumerate(tab_rows):
-        row_cols = st.columns(tab_ratios[row_index], gap="medium")
-        for col, category in zip(row_cols, row_categories):
-            with col:
-                if st.button(
-                    tab_labels[category],
-                    key=f"inspection_tab_{category}",
-                    use_container_width=True,
-                    type="primary" if category == selected else "secondary",
-                ):
-                    st.session_state.inspection_category = category
-                    st.rerun()
+    # Restore the original single-row maintenance navigation and labels.
+    # In particular, keep "Daily Inspection" rather than the removed
+    # "Inverter & Safety Checks" navigation option.
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
+    for col, category in zip(tab_cols, categories):
+        with col:
+            if st.button(
+                tab_labels[category],
+                key=f"inspection_tab_{category}",
+                use_container_width=True,
+                type="primary" if category == selected else "secondary",
+            ):
+                st.session_state.inspection_category = category
+                st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
@@ -3610,9 +3621,9 @@ def reports_page(db,user,plant):
     left,right=st.columns(2)
     if total:
         with left:
-            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count"); fig=px.bar(d,x="Status",y="Count",title="Current maintenance status",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count"); fig=px.bar(d,x="Status",y="Count",title="Current maintenance status",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False},key="report_status_chart")
         with right:
-            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count"); fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count"); fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False},key="report_category_chart")
     st.markdown("### 🧹🌿 Current work progress"); pc,_,_=panel_cleaning_percent(db,plant.id,end); gc,_,_=grass_cutting_percent(db,plant.id,end); a,b=st.columns(2); a.metric("Panel cleaning",f"{pc:.0f}%"); b.metric("Grass cutting",f"{gc:.0f}%"); st.progress(pc/100,text=f"Panel cleaning • {pc:.0f}%"); st.progress(gc/100,text=f"Grass cutting • {gc:.0f}%")
     st.markdown("### 📋 Current activity report")
     if total:
