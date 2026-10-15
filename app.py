@@ -1782,28 +1782,19 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # followed by four groups of 10 rows.
         weights = [7, 6, 7, 8, 10, 10, 10, 10]
     elif plant_code == "ORK":
-        # ORK panel-cleaning arrangement restored to the previously approved
-        # red-box layout. Keep the red horizontal-row style; only the footprints
-        # and placement are corrected to match the reference screenshot.
-        # Each footprint is normalized to the satellite image and converted to
-        # the shared 1280x720 coordinate canvas used by this renderer.
-        ork_panel_rects = [
-            (.37, .08, .55, .17),  # narrow top array
-            (.21, .18, .39, .47),  # upper-left array
-            (.38, .18, .56, .48),  # upper-centre-left array
-            (.56, .18, .74, .48),  # upper-right array
-            (.20, .50, .39, .72),  # lower-left array
-            (.39, .49, .57, .78),  # lower-centre array
-            (.57, .49, .75, .78),  # lower-right-centre array
-            (.70, .77, .86, .94),  # small bottom-right array
-        ]
+        # ORK: seven solar-array blocks; the row distribution follows the supplied
+        # sketch (1, 6, 7, 2, 13, 14 and 9 rows; 52 tables in total).
         blocks = [
-            ((left * 1280, top * 720), (right * 1280, top * 720),
-             (left * 1280, bottom * 720), (right * 1280, bottom * 720), idx + 1)
-            for idx, (left, top, right, bottom) in enumerate(ork_panel_rects)
+            # The isolated one-table row is at the bottom-left of the ORK image.
+            ((120, 445), (300, 445), (120, 480), (300, 480), 1),
+            ((200, 180), (390, 180), (200, 345), (390, 345), 2),
+            ((390, 105), (560, 105), (390, 340), (560, 340), 3),
+            ((560, 70), (720, 70), (560, 110), (720, 110), 4),
+            ((560, 150), (720, 150), (560, 535), (720, 535), 5),
+            ((720, 150), (900, 150), (720, 545), (900, 545), 6),
+            ((900, 245), (1090, 245), (900, 520), (1090, 520), 7),
         ]
-        weights = [max(1, int((bottom - top) * 1000))
-                   for _left, top, _right, bottom in ork_panel_rects]
+        weights = [1, 6, 7, 2, 13, 14, 9]
     else:
         # Preserve the existing general layout for other plants.
         blocks = [
@@ -2851,7 +2842,7 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## 🔧 Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
+        "Select a maintenance process tab. Inverter & Safety Checks, panel and DC cable inspections "
         "are checked asset-by-asset."
     )
 
@@ -2863,7 +2854,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Daily Inspection",
+        "Daily Inspection": "Inverter & Safety Checks",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
@@ -2871,20 +2862,29 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    # Restore the original single-row maintenance navigation and labels.
-    # In particular, keep "Daily Inspection" rather than the removed
-    # "Inverter & Safety Checks" navigation option.
-    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
-    for col, category in zip(tab_cols, categories):
-        with col:
-            if st.button(
-                tab_labels[category],
-                key=f"inspection_tab_{category}",
-                use_container_width=True,
-                type="primary" if category == selected else "secondary",
-            ):
-                st.session_state.inspection_category = category
-                st.rerun()
+    # Use two rows so every maintenance process name has enough horizontal space.
+    # This prevents Streamlit from shortening labels with an ellipsis (...).
+    tab_rows = [
+        categories[:4],
+        categories[4:],
+    ]
+    tab_ratios = [
+        [1.55, 1.45, 1.35, 1.50],
+        [1.45, 1.80, 1.30],
+    ]
+
+    for row_index, row_categories in enumerate(tab_rows):
+        row_cols = st.columns(tab_ratios[row_index], gap="medium")
+        for col, category in zip(row_cols, row_categories):
+            with col:
+                if st.button(
+                    tab_labels[category],
+                    key=f"inspection_tab_{category}",
+                    use_container_width=True,
+                    type="primary" if category == selected else "secondary",
+                ):
+                    st.session_state.inspection_category = category
+                    st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
