@@ -279,6 +279,45 @@ def initialize_database(_engine):
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_signature TEXT DEFAULT ''"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_comment TEXT DEFAULT ''"))
+
+            # Older versions of this app may have created a CHECK constraint on
+            # users.role that does not allow the current role values. The seed
+            # routine updates existing users to admin/engineer/supervisor, which
+            # would then fail during SQLAlchemy autoflush with CheckViolation.
+            # Replace only role-related CHECK constraints and keep the supported
+            # roles consistent with the application.
+            conn.execute(text("""
+                DO $$
+                DECLARE constraint_row RECORD;
+                BEGIN
+                    FOR constraint_row IN
+                        SELECT c.conname
+                        FROM pg_constraint c
+                        JOIN pg_class t ON t.oid = c.conrelid
+                        JOIN pg_namespace n ON n.oid = t.relnamespace
+                        WHERE t.relname = 'users'
+                          AND n.nspname = current_schema()
+                          AND c.contype = 'c'
+                          AND pg_get_constraintdef(c.oid) ILIKE '%role%'
+                    LOOP
+                        EXECUTE format(
+                            'ALTER TABLE %I.%I DROP CONSTRAINT %I',
+                            current_schema(), 'users', constraint_row.conname
+                        );
+                    END LOOP;
+                END $$;
+            """))
+            conn.execute(text("""
+                UPDATE users
+                SET role = 'staff'
+                WHERE role IS NULL
+                   OR role NOT IN ('admin', 'engineer', 'supervisor', 'staff')
+            """))
+            conn.execute(text("""
+                ALTER TABLE users
+                ADD CONSTRAINT users_role_allowed_check
+                CHECK (role IN ('admin', 'engineer', 'supervisor', 'staff'))
+            """))
     return True
 
 
