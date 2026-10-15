@@ -2475,55 +2475,35 @@ def _inspection_saved_item(old_record, item):
     return status, str(items.get(f"{item}__reason", "") or "")
 
 
+def _inspection_display_item(item):
+    """Clean checklist labels for display only; preserve original database keys."""
+    label = str(item or "").strip()
+    if label.startswith("Outdoor -"):
+        label = label[len("Outdoor -"):].strip()
+    elif label.startswith("Indoor -"):
+        label = label[len("Indoor -"):].strip()
+
+    if label.startswith("CT "):
+        label = "Current Transformers " + label[3:]
+    elif label == "CT":
+        label = "Current Transformers"
+    return label
+
+
 def _inspection_groups(category, assets):
-    """Return the intended visual groups without changing the underlying checklist."""
+    """Return compact visual groups without changing saved checklist keys."""
     cfg = PROCESS_CATEGORIES[category]
 
     if category == "Daily Inspection":
-        primary_assets = list(assets)
         one_inverter = [assets[0]] if assets else ["INV-01"]
-        # Keep the original two high-level Daily Inspection tabs.
-        # CCTV, Lightning Arresters and Fire Extinguisher remain separate
-        # checks inside Site Safety & Security Checks, using only INV-01.
         return [
-            ("🔌 Inverter Health Checks", cfg["items"][:3], primary_assets),
+            ("🔌 Inverter Health Checks", cfg["items"][:3], list(assets)),
             ("🛡️ Site Safety & Security Checks", cfg["items"][3:], one_inverter),
         ]
 
-    if category == "MDB Inspection":
-        item_map = {item: i for i, item in enumerate(cfg["items"])}
-        groups = [
-            ("ACB", cfg["items"][0:2]),
-            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
-            ("MCCB", cfg["items"][5:7]),
-            ("CT", cfg["items"][7:9]),
-            ("Auto Transformer", cfg["items"][9:10]),
-            ("Multi-Function Meter", cfg["items"][10:11]),
-            ("Fans / Ventilation", cfg["items"][11:12]),
-            ("Thermo", cfg["items"][12:13]),
-            ("Enclosure", cfg["items"][13:14]),
-            ("Surge Protection", cfg["items"][14:15]),
-            ("Fuse", cfg["items"][15:16]),
-            ("Meter Panel Battery", cfg["items"][16:17]),
-            ("Protection Module", cfg["items"][17:18]),
-        ]
-        return [(title, items, assets) for title, items in groups]
-
-    if category == "Switch Yard Inspection":
-        return [
-            ("🔌 Transformers", cfg["items"][0:5], assets),
-            ("⚡ OCB", cfg["items"][5:8], assets),
-            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
-        ]
-
-    if category == "AC Inspection":
-        outdoor = [item for item in cfg["items"] if item.strip().startswith("Outdoor -")]
-        indoor = [item for item in cfg["items"] if item.strip().startswith("Indoor -")]
-        return [
-            ("🌤️ Outdoor Unit Checks", outdoor, assets),
-            ("❄️ Indoor Unit Checks", indoor, assets),
-        ]
-
+    # MDB, Switch Yard and AC inspections use a single continuous checklist.
+    # Category headers such as ACB, MCCB, Transformers, OCB, Outdoor and Indoor
+    # are not rendered as separate sections.
     return [("Checklist", cfg["items"], assets)]
 
 
@@ -2631,17 +2611,41 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
-            if category != "Daily Inspection":
-                st.markdown(
-                    f'<div class="inspection-check-title">'
-                    f'<span>{group_title}</span>'
-                    f'<span class="inspection-check-hint">✓ / ✗</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+            if category == "Daily Inspection":
+                # Each inverter is shown once, with its applicable checks beneath it.
+                # Site Safety & Security checks intentionally apply only to INV-01.
+                if group_title.startswith("🛡️"):
+                    st.caption("Site Safety & Security Checks are recorded against INV-01 only.")
+                    asset_rows = [group_assets[0] if group_assets else "INV-01"]
+                else:
+                    asset_rows = group_assets
 
-            # For grouped single-asset inspections (MDB, Switch Yard, AC), place
-            # related checklist items beside one another rather than vertically.
+                cards_per_row = 3
+                for row_start in range(0, len(asset_rows), cards_per_row):
+                    row_assets = asset_rows[row_start:row_start + cards_per_row]
+                    cols = st.columns(len(row_assets), gap="small")
+                    for col, asset in zip(cols, row_assets):
+                        with col:
+                            st.markdown(
+                                f'<div class="inspection-asset-box">{asset}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            old_record = old_records.get(asset)
+                            for item in group_items:
+                                item_index = item_number_map[item] - 1
+                                st.markdown(
+                                    f'<div class="inspection-item-name" style="margin-top:8px;">'
+                                    f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                _render_inspection_status(
+                                    db, user, plant, category, task_date, item,
+                                    item_index, asset, old_record, values, reason_widgets,
+                                )
+                            st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+                continue
+
+            # All other inspections are displayed as one continuous checklist.
             if single_asset:
                 row_size = 4
                 for row_start in range(0, len(group_items), row_size):
@@ -2649,34 +2653,30 @@ def _render_inspection_category(db, user, plant, category):
                     cols = st.columns(len(row_items), gap="small")
                     for col, item in zip(cols, row_items):
                         with col:
-                            old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
+                            asset = group_assets[0] if group_assets else "SITE-01"
+                            old_record = old_records.get(asset)
                             st.markdown(
                                 f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
+                                f'<div class="inspection-item-name">'
+                                f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
                                 unsafe_allow_html=True,
                             )
                             _render_inspection_status(
                                 db, user, plant, category, task_date, item,
-                                item_number_map[item] - 1,
-                                group_assets[0] if group_assets else "SITE-01",
-                                old_record, values, reason_widgets,
+                                item_number_map[item] - 1, asset, old_record,
+                                values, reason_widgets,
                             )
                             st.markdown('</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
-
+                    if row_start + row_size < len(group_items):
+                        st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                # Site Safety & Security Checks uses one inverter only and keeps
-                # CCTV / Lightning / Fire as three compact, separate boxes.
-                if category == "Daily Inspection" and group_title.startswith("🛡️"):
-                    grid_cols = 3
-                else:
-                    grid_cols = 5
+                grid_cols = 5
                 for item in group_items:
                     item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_number_map[item]}. {item}</span>'
+                        f'<span>{item_number_map[item]}. {_inspection_display_item(item)}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -2695,8 +2695,6 @@ def _render_inspection_category(db, user, plant, category):
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
                                 )
-                                if values[asset].get(f"{item}__reason", ""):
-                                    pass
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
 
     if st.button(
