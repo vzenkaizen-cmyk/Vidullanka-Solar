@@ -1783,10 +1783,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # Positions follow the visible zone layout on the supplied aerial image.
             grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
             zone_assets = asset_list(plant, "Zone")
+            # Circle positions are aligned to the corresponding coloured zone,
+            # rather than the old positions which placed several labels in the
+            # neighbouring zone. Coordinates are normalized to the ORK image.
             zone_centres = [
-                (.145, .385), (.145, .685), (.385, .310), (.385, .540),
-                (.495, .180), (.495, .665), (.680, .270), (.680, .550),
-                (.870, .580), (.885, .825),
+                (.505, .105),  # Z1 — top-centre zone
+                (.315, .245),  # Z2 — upper-left zone
+                (.590, .285),  # Z3 — upper-centre/right zone
+                (.365, .420),  # Z4 — middle-left zone
+                (.600, .515),  # Z5 — centre-right zone
+                (.365, .665),  # Z6 — lower-left zone
+                (.705, .355),  # Z7 — upper-right zone
+                (.720, .575),  # Z8 — lower-centre/right zone
+                (.865, .640),  # Z9 — right-side zone
+                (.870, .850),  # Z10 — bottom-right zone
             ]
             dot_x, dot_y, dot_colors, dot_text = [], [], [], []
             for idx, (cx, cy) in enumerate(zone_centres):
@@ -2926,7 +2936,7 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="medium")
     for col, category in zip(tab_cols, categories):
         with col:
             if st.button(
