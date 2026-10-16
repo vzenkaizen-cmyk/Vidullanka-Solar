@@ -43,13 +43,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ============================================================
 
 st.set_page_config(
-    page_title="Solar Plant Maintenance System",
+    page_title="Solar Operation and Maintenance Platform",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Plant Maintenance System"
+APP_TITLE = "Solar Operation and Maintenance Platform"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
@@ -3602,7 +3602,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         topMargin=12 * mm,
         bottomMargin=12 * mm,
         title=f"{plant.name} - Solar Maintenance Report",
-        author="Solar Plant Maintenance System",
+        author="Solar Operation and Maintenance Platform",
     )
 
     styles = getSampleStyleSheet()
