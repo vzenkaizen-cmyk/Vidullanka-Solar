@@ -43,13 +43,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ============================================================
 
 st.set_page_config(
-    page_title="Solar Plant Maintenance System",
+    page_title="Solar Plant Maintenance Platform",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Plant Maintenance System"
+APP_TITLE = "Solar Plant Maintenance Platform"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
