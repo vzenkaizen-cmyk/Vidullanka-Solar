@@ -43,13 +43,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ============================================================
 
 st.set_page_config(
-    page_title="Solar Operation and Maintenance System",
+    page_title="Solar Plant Maintenance System",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Operation and Maintenance System"
+APP_TITLE = "Solar Plant Maintenance System"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
@@ -1473,7 +1473,7 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-hero-title">Solar Plant<br>Maintenance System</div>
+            <div class="login-hero-title">Solar Operation and<br>Maintenance System</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
                 <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
@@ -3602,7 +3602,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         topMargin=12 * mm,
         bottomMargin=12 * mm,
         title=f"{plant.name} - Solar Maintenance Report",
-        author="Solar Operation and Maintenance System",
+        author="Solar Plant Maintenance System",
     )
 
     styles = getSampleStyleSheet()
