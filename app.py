@@ -1237,6 +1237,18 @@ def css():
             outline:none!important;
             transition:none!important;
         }
+        /* Keep the first two inspection tabs separated without affecting other buttons. */
+        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{gap:1.25rem!important}
+        .st-key-inspection_tabs [data-testid="stButton"]>button{
+            min-width:0!important;
+            white-space:normal!important;
+            overflow-wrap:anywhere!important;
+        }
+        .st-key-inspection_tabs [data-testid="stButton"]>button p{
+            white-space:normal!important;
+            overflow-wrap:anywhere!important;
+            text-align:center!important;
+        }
         [data-testid="stMain"] [data-testid="stButton"]>button p{
             white-space:nowrap!important;
             overflow:visible!important;
@@ -1823,7 +1835,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 (.315, .245),  # Z2 — upper-left zone
                 (.590, .285),  # Z3 — upper-centre/right zone
                 (.365, .420),  # Z4 — middle-left zone
-                (.590, .565),  # Z5 — moved inside the blue centre zone
+                (.590, .485),  # Z5 — positioned inside the blue Zone 5 area
                 (.355, .610),  # Z6 — moved inside the red/orange lower-left zone
                 (.665, .625),  # Z7 — inside the green centre-right zone
                 (.355, .815),  # Z8 — inside the blue lower-left zone
@@ -2968,17 +2980,18 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="large")
-    for col, category in zip(tab_cols, categories):
-        with col:
-            if st.button(
-                tab_labels[category],
-                key=f"inspection_tab_{category}",
-                use_container_width=True,
-                type="primary" if category == selected else "secondary",
-            ):
-                st.session_state.inspection_category = category
-                st.rerun()
+    with st.container(key="inspection_tabs"):
+        tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="large")
+        for col, category in zip(tab_cols, categories):
+            with col:
+                if st.button(
+                    tab_labels[category],
+                    key=f"inspection_tab_{category}",
+                    use_container_width=True,
+                    type="primary" if category == selected else "secondary",
+                ):
+                    st.session_state.inspection_category = category
+                    st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
