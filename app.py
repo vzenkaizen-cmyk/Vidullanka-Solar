@@ -1473,7 +1473,6 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-brand-sub">Building on renewable energy sources</div>
             <div class="login-hero-title">Solar Plant<br>Maintenance System</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
