@@ -543,6 +543,7 @@ def seed_database():
             ("MDP", "MDP Solar Power Plant"),
             ("MTR", "MTR Solar Power Plant"),
             ("ORK", "ORK Solar Power Plant"),
+            ("DPV", "DPV Solar Power Plant (Ranna)"),
         ]
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
@@ -1260,7 +1261,30 @@ def css():
         .inspection-item-divider{height:1px;background:var(--border);margin:6px 0 3px}
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
-        .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
+        .inspection-tabs-line{height:1px;background:var(--border);margin:8px 0 10px}
+        /* Keep inspection process buttons separated; labels must stay within each tab. */
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]){
+            gap:10px!important;
+            align-items:stretch!important;
+        }
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]) [data-testid="column"]{
+            min-width:0!important;
+        }
+        [data-testid="stMain"] button[key^="inspection_tab_"]{
+            min-width:0!important;
+            width:100%!important;
+            white-space:normal!important;
+            overflow-wrap:anywhere!important;
+            padding:6px 7px!important;
+            font-size:11px!important;
+            line-height:1.2!important;
+        }
+        [data-testid="stMain"] button[key^="inspection_tab_"] p{
+            white-space:normal!important;
+            overflow-wrap:anywhere!important;
+            font-size:11px!important;
+            line-height:1.2!important;
+        }
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
             border:1px solid #16a66a!important;
@@ -1549,6 +1573,14 @@ def notification_center(db, user):
 def top_nav(db, user):
     """Render the sidebar using clickable buttons instead of radio controls."""
     plants = allowed_plants(db, user)
+    # Keep DPV (Ranna) as the final item in the site selector.
+    plants = sorted(
+        plants,
+        key=lambda p: (
+            "DPV" in f"{getattr(p, 'code', '')} {getattr(p, 'name', '')}".upper(),
+            display_plant_name(p).casefold(),
+        ),
+    )
     if not plants:
         st.sidebar.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
         st.sidebar.error("No plant is assigned to this account. Ask an administrator to assign a plant.")
@@ -1791,8 +1823,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 (.315, .245),  # Z2 — upper-left zone
                 (.590, .285),  # Z3 — upper-centre/right zone
                 (.365, .420),  # Z4 — middle-left zone
-                (.600, .515),  # Z5 — centre-right zone
-                (.365, .665),  # Z6 — lower-left zone
+                (.590, .565),  # Z5 — moved inside the blue centre zone
+                (.355, .610),  # Z6 — moved inside the red/orange lower-left zone
                 (.665, .625),  # Z7 — inside the green centre-right zone
                 (.355, .815),  # Z8 — inside the blue lower-left zone
                 (.600, .875),  # Z9 — inside the pink bottom-centre zone
@@ -3361,7 +3393,14 @@ def plants_page(db):
 def reminders_page(db):
     st.title("⏰ Automatic Maintenance Reminders")
 
-    plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
+    plants = db.query(Plant).filter(Plant.active == True).all()
+    plants = sorted(
+        plants,
+        key=lambda p: (
+            "DPV" in f"{getattr(p, 'code', '')} {getattr(p, 'name', '')}".upper(),
+            (p.name or "").casefold(),
+        ),
+    )
     plant_map = {p.name: p.id for p in plants}
 
     selected_name = st.selectbox("Plant", list(plant_map.keys()))
