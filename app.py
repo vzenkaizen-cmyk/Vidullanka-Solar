@@ -1218,16 +1218,17 @@ def css():
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] p{margin:0!important;font-size:17px!important;line-height:1!important;font-weight:900!important}
         [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
 
-        /* Compact maintenance process navigation. Full names stay on one line. */
-        /* Main action buttons: the entire box is clickable; never show an underline/focus line. */
+        /* Main action buttons: preserve the full label without ellipses. */
         [data-testid="stMain"] [data-testid="stButton"]>button{
-            white-space:nowrap!important;
+            white-space:normal!important;
             overflow:visible!important;
             text-overflow:clip!important;
-            font-size:13px!important;
-            padding:8px 10px!important;
-            min-width:max-content!important;
+            font-size:12px!important;
+            line-height:1.2!important;
+            padding:7px 8px!important;
+            min-width:0!important;
             min-height:38px!important;
+            height:auto!important;
             width:100%!important;
             border:1px solid var(--border)!important;
             border-radius:9px!important;
@@ -1237,23 +1238,40 @@ def css():
             outline:none!important;
             transition:none!important;
         }
-        /* Keep the first two inspection tabs separated without affecting other buttons. */
-        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{gap:1.25rem!important}
+        /* Inspection labels wrap onto a second line when needed, rather than truncating. */
+        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{
+            gap:.8rem!important;
+            align-items:stretch!important;
+        }
         .st-key-inspection_tabs [data-testid="stButton"]>button{
             min-width:0!important;
             white-space:normal!important;
-            overflow-wrap:anywhere!important;
+            overflow:visible!important;
+            overflow-wrap:normal!important;
+            word-break:normal!important;
+            height:auto!important;
+            min-height:40px!important;
+            padding:7px 6px!important;
         }
-        .st-key-inspection_tabs [data-testid="stButton"]>button p{
+        .st-key-inspection_tabs [data-testid="stButton"]>button p,
+        .st-key-inspection_tabs [data-testid="stButton"]>button span,
+        .st-key-inspection_tabs [data-testid="stButton"]>button div{
             white-space:normal!important;
-            overflow-wrap:anywhere!important;
-            text-align:center!important;
-        }
-        [data-testid="stMain"] [data-testid="stButton"]>button p{
-            white-space:nowrap!important;
             overflow:visible!important;
             text-overflow:clip!important;
-            font-size:13px!important;
+            overflow-wrap:normal!important;
+            word-break:normal!important;
+            text-align:center!important;
+            font-size:12px!important;
+            line-height:1.2!important;
+            margin:0!important;
+        }
+        [data-testid="stMain"] [data-testid="stButton"]>button p{
+            white-space:normal!important;
+            overflow:visible!important;
+            text-overflow:clip!important;
+            font-size:12px!important;
+            line-height:1.2!important;
             text-decoration:none!important;
             margin:0!important;
         }
@@ -2981,7 +2999,7 @@ def inspection_page(db, user, plant):
         "AC Inspection": "AC Inspection",
     }
     with st.container(key="inspection_tabs"):
-        tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="large")
+        tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85], gap="small")
         for col, category in zip(tab_cols, categories):
             with col:
                 if st.button(
