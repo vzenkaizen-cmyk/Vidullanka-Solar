@@ -1482,6 +1482,11 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
+            /* Clear green outline for all sign-in and create-account fields */
+            [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stNumberInput"] input{{border:1.5px solid #16a765!important;border-radius:8px!important;box-shadow:0 0 0 1px rgba(22,167,101,.08)!important}}
+            [data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{{border-color:#07894b!important;box-shadow:0 0 0 2px rgba(22,167,101,.16)!important}}
+            [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
+            [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
@@ -1516,7 +1521,7 @@ def login_page():
         st.markdown(
             """
             <div class="login-card-anchor"></div>
-            <div class="login-form-title">☀️ Sign In</div>
+            <div class="login-form-title">Sign In</div>
             <div class="login-form-sub">Access your solar plant management system</div>
             <div class="login-accent"></div>
             """,
@@ -2562,22 +2567,33 @@ MTR_EMPLOYEES = [
     "Minidu Gawesh",
 ]
 
-def worker_options_for_plant(plant, db):
+def worker_options_for_plant(plant, db, first_names_only=False):
+    """Return actual site workers; optionally show first names in compact dropdowns."""
     code = (plant.code or "").upper()
     if code == "MTR":
-        return MTR_EMPLOYEES
-    supervisor = (db.query(PlantOperationsProfile)
-                  .filter(PlantOperationsProfile.plant_id == plant.id).first())
-    supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
-    users = [u.full_name for u in db.query(User).filter(
-        User.active == True, User.plant_id == plant.id,
-        User.role.in_(["supervisor", "staff"])
-    ).order_by(User.full_name).all()]
-    values = []
-    if supervisor_name:
-        values.append(f"{supervisor_name} — Supervisor")
-    values.extend(users)
-    values.extend(["Worker 1", "Worker 2", "Worker 3", "Other worker"])
+        values = list(MTR_EMPLOYEES)
+    else:
+        supervisor = (db.query(PlantOperationsProfile)
+                      .filter(PlantOperationsProfile.plant_id == plant.id).first())
+        supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
+        users = [u.full_name.strip() for u in db.query(User).filter(
+            User.active == True, User.plant_id == plant.id,
+            User.role.in_(["supervisor", "staff"])
+        ).order_by(User.full_name).all() if (u.full_name or "").strip()]
+        values = []
+        if supervisor_name:
+            values.append(f"{supervisor_name} — Supervisor")
+        values.extend(users)
+    # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
+    values = [v.strip() for v in values if v and v.strip().upper() != "R"]
+    if first_names_only:
+        cleaned = []
+        for value in values:
+            name = value.split(" — ", 1)[0].strip()
+            first = name.split()[0] if name else ""
+            if first:
+                cleaned.append(first)
+        values = cleaned
     return list(dict.fromkeys(values))
 
 def panel_cleaning_page(db, user, plant):
@@ -2604,6 +2620,8 @@ def panel_cleaning_page(db, user, plant):
         r = panel_records.get(asset)
         done = bool(r and r.status == "Completed")
         saved_worker_name = (r.remarks or "").strip() if r else ""
+        if saved_worker_name.upper() == "R":
+            saved_worker_name = ""
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
@@ -2654,14 +2672,17 @@ def grass_cutting_page(db, user, plant):
         r = grass_records.get(zone)
         done = bool(r and r.status == "Completed")
         saved_worker_name = (r.remarks or "").strip() if r else ""
+        if saved_worker_name.upper() == "R":
+            saved_worker_name = ""
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_options = worker_options_for_plant(plant, db)
-            worker_choices = list(dict.fromkeys(([saved_worker_name] if saved_worker_name else []) + worker_options))
+            worker_options = worker_options_for_plant(plant, db, first_names_only=True)
+            saved_first_name = saved_worker_name.split()[0] if saved_worker_name else ""
+            worker_choices = list(dict.fromkeys(([saved_first_name] if saved_first_name and saved_first_name.upper() != "R" else []) + worker_options))
             worker_name = st.selectbox(
                 "Worker / Supervisor", worker_choices,
-                index=worker_choices.index(saved_worker_name) if saved_worker_name in worker_choices else 0,
+                index=worker_choices.index(saved_first_name) if saved_first_name in worker_choices else 0,
                 label_visibility="collapsed",
                 key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
             ).strip()
@@ -3690,6 +3711,13 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     )
 
     total = len(df)
+    # Current selected-end-date progress, consistent with the live site maps.
+    progress_db = SessionLocal()
+    try:
+        panel_pct, panel_done, panel_total = panel_cleaning_percent(progress_db, plant.id, end)
+        grass_pct, grass_done, grass_total = grass_cutting_percent(progress_db, plant.id, end)
+    finally:
+        progress_db.close()
     green = int((df["Status"] == "Completed").sum()) if total else 0
     red = int((df["Status"] != "Completed").sum()) if total else 0
     pending = int((df["Status"] == "Pending").sum()) if total else 0
@@ -3723,19 +3751,24 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     ]))
     story += [kpi_table, Spacer(1, 2*mm)]
 
-    # Simple visual summary charts using tables (no image dependencies).
-    status_counts = [("Green - Completed", green), ("Red - Not Completed", red), ("Pending", pending), ("Approved", approved)]
-    max_status = max([v for _, v in status_counts] or [1])
+    # Graphical summary focuses on the actual site work areas: tables and zones.
     status_rows = []
-    for label, value in status_counts:
-        width = 100 if max_status == 0 else max(2, int(value / max_status * 100))
-        bar = Table([[""]], colWidths=[max(4, width)*0.75*mm], rowHeights=[4*mm])
+    work_summary = [
+        ("Panel Cleaning", panel_pct, "tables"),
+        ("Grass Cutting", grass_pct, "zones"),
+    ]
+    for label, pct_value, unit in work_summary:
+        bar_width = max(2, min(100, float(pct_value)))
+        bar = Table([[""]], colWidths=[bar_width * 0.75 * mm], rowHeights=[4 * mm])
         bar.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if label == "Green - Completed" else "#e55353" if label == "Red - Not Completed" else "#94a3b8" if label == "Pending" else "#3b82f6")),
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if pct_value >= 100 else "#e55353")),
             ("BOX", (0,0), (-1,-1), 0, colors.white),
         ]))
-        status_rows.append([Paragraph(label, small), bar, Paragraph(str(value), small)])
-    status_table = Table(status_rows, colWidths=[25*mm, 78*mm, 18*mm])
+        done_count = panel_done if label == "Panel Cleaning" else grass_done
+        total_count = panel_total if label == "Panel Cleaning" else grass_total
+        state = "1 cycle completed" if total_count > 0 and done_count >= total_count else "Pending"
+        status_rows.append([Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small), Paragraph(f"{done_count}/{total_count} {unit} • {state}", small)])
+    status_table = Table(status_rows, colWidths=[27*mm, 55*mm, 17*mm, 42*mm])
     status_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (2,0), (2,-1), "RIGHT"), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
 
     category_counts = df["Category"].value_counts().head(8).to_dict() if total else {}
@@ -3758,14 +3791,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         [Paragraph("Category Activity", h2), cat_table],
     ]], colWidths=[110*mm, 110*mm])
     # Instead of nested headings being awkward, build a two-column section manually.
-    summary_table = Table([[status_table, cat_table]], colWidths=[120*mm, 100*mm])
+    summary_table = Table([[status_table, cat_table]], colWidths=[145*mm, 75*mm])
     summary_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
     story += [Paragraph("Graphical Status Summary", h2), summary_table, Spacer(1, 2*mm)]
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.0f}%", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.0f}%", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'1 cycle completed' if panel_total > 0 and panel_done >= panel_total else 'Pending'}", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'1 cycle completed' if grass_total > 0 and grass_done >= grass_total else 'Pending'}", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -3866,6 +3899,10 @@ def reports_page(db,user,plant):
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.caption(f"{grass_done} of {grass_total} zones completed; {grass_left} left ({gc:.1f}% complete).")
+
+    panel_cycle = "1 cycle completed" if panel_total > 0 and panel_done >= panel_total else "Pending"
+    grass_cycle = "1 cycle completed" if grass_total > 0 and grass_done >= grass_total else "Pending"
+    st.markdown(f"**Panel cleaning cycle:** {panel_cycle}  ·  **Grass cutting cycle:** {grass_cycle}")
 
     st.markdown("### 📈 Overall maintenance summary")
     left,right=st.columns(2)
