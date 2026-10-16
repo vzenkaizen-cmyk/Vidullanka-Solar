@@ -1814,8 +1814,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # the panel-array area is enlarged and fills the zone map.
                 rw, rh = rotated.size
                 rotated = rotated.crop((
-                    int(rw * 0.04), int(rh * 0.08),
-                    int(rw * 0.96), int(rh * 0.92),
+                    int(rw * 0.10), int(rh * 0.12),
+                    int(rw * 0.90), int(rh * 0.88),
                 ))
             img_width, img_height = rotated.size
             image_buffer = io.BytesIO()
@@ -2050,6 +2050,22 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.465, .715, .805, .985),  # Zone 8: lower-centre section
             (.805, .020, .995, .500),  # Zone 9: upper-right section
             (.805, .500, .995, .985),  # Zone 10: lower-right section
+        ]
+        zone_blocks = [
+            ((l * img_width, t * img_height), (r * img_width, t * img_height),
+             (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
+            for l, t, r, b in zone_rects
+        ]
+    elif plant_code in {"MDP", "MTR", "MTR-I", "MTR-II"} and zone_assets:
+        # MDP and MTR: use a clean, non-overlapping 5-column x 2-row
+        # zone layout. Shared edges meet exactly, so zone outlines cannot
+        # cross over one another as in the previous overlapping footprints.
+        zone_rects = [
+            (col * 0.20 + 0.008, 0.035, (col + 1) * 0.20 - 0.008, 0.495)
+            for col in range(5)
+        ] + [
+            (col * 0.20 + 0.008, 0.505, (col + 1) * 0.20 - 0.008, 0.965)
+            for col in range(5)
         ]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
