@@ -49,7 +49,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Power Plant Maintenance System"
+APP_TITLE = "Solar Plant Maintenance System"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
@@ -1420,7 +1420,7 @@ def login_page():
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
             <div class="login-brand-sub">Building on renewable energy sources</div>
-            <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
+            <div class="login-hero-title">Solar Plant<br>Maintenance System</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
                 <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
@@ -1793,9 +1793,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 (.365, .420),  # Z4 — middle-left zone
                 (.600, .515),  # Z5 — centre-right zone
                 (.365, .665),  # Z6 — lower-left zone
-                (.705, .355),  # Z7 — upper-right zone
-                (.720, .575),  # Z8 — lower-centre/right zone
-                (.865, .640),  # Z9 — right-side zone
+                (.665, .625),  # Z7 — inside the green centre-right zone
+                (.355, .815),  # Z8 — inside the blue lower-left zone
+                (.600, .875),  # Z9 — inside the pink bottom-centre zone
                 (.870, .850),  # Z10 — bottom-right zone
             ]
             dot_x, dot_y, dot_colors, dot_text = [], [], [], []
@@ -2936,7 +2936,7 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="medium")
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="large")
     for col, category in zip(tab_cols, categories):
         with col:
             if st.button(
