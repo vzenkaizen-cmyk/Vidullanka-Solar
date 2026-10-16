@@ -43,13 +43,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ============================================================
 
 st.set_page_config(
-    page_title="Solar Operation and Maintenance Platform",
+    page_title="Solar Operation and Maintenance System",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Operation and Maintenance Platform"
+APP_TITLE = "Solar Operation and Maintenance System"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
@@ -331,13 +331,13 @@ initialize_database(engine)
 def hash_password(password: str) -> str:
     """Return a consistently formatted PBKDF2-SHA256 password hash.
 
-    Format: pbkdf2_sha256$<iterations>$<salt hex>$<digest hex>
+    Format: pbkdf2_sha256<iterations><salt hex>$<digest hex>
     Keep this format stable because it is stored in the existing users table.
     """
     salt = os.urandom(16)
     iterations = 180_000
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+    return f"pbkdf2_sha256iterations{salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -3602,7 +3602,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         topMargin=12 * mm,
         bottomMargin=12 * mm,
         title=f"{plant.name} - Solar Maintenance Report",
-        author="Solar Operation and Maintenance Platform",
+        author="Solar Operation and Maintenance System",
     )
 
     styles = getSampleStyleSheet()
@@ -3908,6 +3908,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
