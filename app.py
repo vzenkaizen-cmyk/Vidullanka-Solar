@@ -1166,11 +1166,23 @@ def css():
         /* Clear, readable tables and form fields */
         [data-testid="stDataFrame"] thead, [data-testid="stTable"] thead {background:#d9ecfb!important;color:#123b63!important}
         [data-testid="stDataFrame"] th, [data-testid="stTable"] th {background:#d9ecfb!important;color:#123b63!important;font-weight:750!important}
+        [data-testid="stDataFrame"] th,[data-testid="stTable"] th{font-size:13px!important}
+        [data-testid="stDataFrame"] td,[data-testid="stTable"] td{font-size:12px!important}
         [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stNumberInput"] input,[data-testid="stDateInput"] input {color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:15px!important;caret-color:#14213d!important}
         [data-testid="stTextInput"] input::placeholder,[data-testid="stTextArea"] textarea::placeholder {color:#718096!important;opacity:1!important}
         [data-testid="stMainBlockContainer"]{padding-top:1.1rem!important}
         [data-testid="stHeader"]{background:transparent!important}
         .login-form-title,.login-form-sub{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}
+        /* Improve welcome and sign-in readability without changing the layout. */
+        .login-hero-title{font-size:clamp(42px,4.6vw,68px)!important;line-height:1.08!important}
+        .login-hero-sub{font-size:22px!important}
+        .login-hero-point{font-size:15px!important}
+        .login-hero-point b{font-size:18px!important}
+        .login-form-title{font-size:40px!important}
+        .login-form-sub{font-size:16px!important}
+        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] button,
+        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] button p{font-size:16px!important}
+        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{font-size:17px!important}
         .login-form-title{font-weight:750!important}
         [data-testid="stMain"] h1,[data-testid="stMain"] h2{scroll-margin-top:1rem}
         [data-testid="stSidebar"]{display:block!important;min-width:250px!important}
@@ -1714,8 +1726,8 @@ def render_solar_layout(db, plant, task_date):
     html = [
         '<div class="solar-map">',
         '<div class="solar-map-title">🛰️ Solar Plant Map • Live Status</div>',
-        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = Completed</span><br><span style="color:#ff4e59">● RED = Pending</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
-        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>Completed &nbsp;&nbsp; <span class="legend-dot legend-red"></span>Pending / Pending</div>'
+        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = Completed</span><br><span style="color:#ff4e59">● RED = Not Completed</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
+        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>Completed &nbsp;&nbsp; <span class="legend-dot legend-red"></span>Not Completed</div>'
     ]
     for z in range(zones):
         items = assets[z*per_zone:(z+1)*per_zone]
@@ -2543,11 +2555,11 @@ def overview_page(db, user, plant):
 
 MTR_EMPLOYEES = [
     "Sudheera Athukorala — Assistant Supervisor",
-    "VIraj Samarasinghe — Operator",
-    "Alaththuge Gunarathne — Plant Assistant",
-    "Saman Kumara — Plant Assistant",
-    "Chiwantha Dahanayake — Plant Assistant",
-    "Minidu Gawesh — Plant Assistant",
+    "VIraj Samarasinghe",
+    "Alaththuge Gunarathne",
+    "Saman Kumara",
+    "Chiwantha Dahanayake",
+    "Minidu Gawesh",
 ]
 
 def worker_options_for_plant(plant, db):
@@ -3634,7 +3646,15 @@ def _records_dataframe(db,plant_id,start,end):
 
 def _excel_bytes(df,sheet_name="Maintenance Report"):
     output=io.BytesIO()
-    with pd.ExcelWriter(output,engine="openpyxl") as writer: df.to_excel(writer,index=False,sheet_name=sheet_name[:31])
+    export_df = df.copy()
+    if "Status" in export_df.columns:
+        export_df["Status"] = export_df["Status"].replace({
+            "Completed": "Green - Completed",
+            "Failed": "Red - Not Completed",
+            "Pending": "Red - Not Completed",
+        })
+    with pd.ExcelWriter(output,engine="openpyxl") as writer:
+        export_df.to_excel(writer,index=False,sheet_name=sheet_name[:31])
     return output.getvalue()
 
 
@@ -3644,10 +3664,10 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     doc = SimpleDocTemplate(
         output,
         pagesize=landscape(A4),
-        rightMargin=12 * mm,
-        leftMargin=12 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
+        rightMargin=7 * mm,
+        leftMargin=7 * mm,
+        topMargin=6 * mm,
+        bottomMargin=6 * mm,
         title=f"{plant.name} - Solar Maintenance Report",
         author="Solar Operation and Maintenance Platform",
     )
@@ -3655,23 +3675,23 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         "ReportTitle", parent=styles["Title"], alignment=TA_CENTER,
-        fontSize=20, leading=24, spaceAfter=6
+        fontSize=16, leading=18, spaceAfter=3
     )
     subtitle_style = ParagraphStyle(
         "ReportSubtitle", parent=styles["Normal"], alignment=TA_CENTER,
-        fontSize=9, textColor=colors.HexColor("#5b6573"), spaceAfter=12
+        fontSize=7, textColor=colors.HexColor("#5b6573"), spaceAfter=4
     )
     h2 = ParagraphStyle(
-        "ReportH2", parent=styles["Heading2"], fontSize=13, leading=16,
-        textColor=colors.HexColor("#123b63"), spaceBefore=8, spaceAfter=6
+        "ReportH2", parent=styles["Heading2"], fontSize=9, leading=11,
+        textColor=colors.HexColor("#123b63"), spaceBefore=3, spaceAfter=2
     )
     small = ParagraphStyle(
-        "ReportSmall", parent=styles["Normal"], fontSize=8, leading=10
+        "ReportSmall", parent=styles["Normal"], fontSize=6, leading=7
     )
 
     total = len(df)
     green = int((df["Status"] == "Completed").sum()) if total else 0
-    red = int((df["Status"] == "Failed").sum()) if total else 0
+    red = int((df["Status"] != "Completed").sum()) if total else 0
     pending = int((df["Status"] == "Pending").sum()) if total else 0
     approved = int((df["Approval"] == "Approved").sum()) if total else 0
 
@@ -3686,14 +3706,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     # KPI cards represented as a compact table in the PDF.
     kpi_data = [[
         Paragraph(f"<b>{total}</b><br/><font size='8'>Activities</font>", small),
-        Paragraph(f"<b>{green}</b><br/><font size='8'>GREEN</font>", small),
-        Paragraph(f"<b>{red}</b><br/><font size='8'>RED</font>", small),
+        Paragraph(f"<b>{green}</b><br/><font size='8'>Green - Completed</font>", small),
+        Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
         Paragraph(f"<b>{pending}</b><br/><font size='8'>Pending</font>", small),
         Paragraph(f"<b>{approved}</b><br/><font size='8'>Approved</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font>", small),
     ]]
-    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[18*mm])
+    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[12*mm])
     kpi_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
         ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#d7e0ea")),
@@ -3701,17 +3721,17 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
     ]))
-    story += [kpi_table, Spacer(1, 7*mm)]
+    story += [kpi_table, Spacer(1, 2*mm)]
 
     # Simple visual summary charts using tables (no image dependencies).
-    status_counts = [("GREEN", green), ("RED", red), ("Pending", pending), ("Approved", approved)]
+    status_counts = [("Green - Completed", green), ("Red - Not Completed", red), ("Pending", pending), ("Approved", approved)]
     max_status = max([v for _, v in status_counts] or [1])
     status_rows = []
     for label, value in status_counts:
         width = 100 if max_status == 0 else max(2, int(value / max_status * 100))
         bar = Table([[""]], colWidths=[max(4, width)*0.75*mm], rowHeights=[4*mm])
         bar.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if label == "GREEN" else "#e55353" if label == "RED" else "#94a3b8" if label == "Pending" else "#3b82f6")),
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if label == "Green - Completed" else "#e55353" if label == "Red - Not Completed" else "#94a3b8" if label == "Pending" else "#3b82f6")),
             ("BOX", (0,0), (-1,-1), 0, colors.white),
         ]))
         status_rows.append([Paragraph(label, small), bar, Paragraph(str(value), small)])
@@ -3740,7 +3760,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     # Instead of nested headings being awkward, build a two-column section manually.
     summary_table = Table([[status_table, cat_table]], colWidths=[120*mm, 100*mm])
     summary_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
-    story += [Paragraph("Graphical Status Summary", h2), summary_table, Spacer(1, 6*mm)]
+    story += [Paragraph("Graphical Status Summary", h2), summary_table, Spacer(1, 2*mm)]
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
@@ -3753,13 +3773,16 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#d7e0ea")),
         ("ALIGN", (1,0), (1,-1), "CENTER"),
     ]))
-    story += [progress_table, Spacer(1, 6*mm)]
+    story += [progress_table, Spacer(1, 2*mm)]
 
     story += [Paragraph("Current Activities", h2)]
     if total:
         columns = ["Date", "Category", "Asset", "Worker", "Status", "Approval", "Remarks"]
         activity_rows = [[Paragraph(f"<b>{c}</b>", small) for c in columns]]
-        for _, row in df.iterrows():
+        # Keep the PDF management summary to one landscape A4 page.
+        # The complete activity dataset remains available in the Excel export.
+        pdf_rows = df.head(12)
+        for _, row in pdf_rows.iterrows():
             vals = [
                 row.get("Date", ""), row.get("Category", ""), row.get("Asset", ""),
                 row.get("Worker", ""), row.get("Status", ""), row.get("Approval", ""),
@@ -3771,10 +3794,10 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
                 if hasattr(v, "strftime"): v = v.strftime("%d %b %Y")
                 formatted.append(Paragraph(str(v)[:120], small))
             activity_rows.append(formatted)
-        activity_table = Table(activity_rows, colWidths=[22*mm, 32*mm, 23*mm, 28*mm, 22*mm, 25*mm, 78*mm], repeatRows=1)
+        activity_table = Table(activity_rows, colWidths=[18*mm, 29*mm, 18*mm, 25*mm, 25*mm, 22*mm, 70*mm], repeatRows=1)
         activity_table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#123b63")),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#d9ecfb")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#123b63")),
             ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#d7e0ea")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
             ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7fafc")]),
@@ -3784,10 +3807,15 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
             ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ]))
         story.append(activity_table)
+        if total > len(pdf_rows):
+            story.append(Paragraph(
+                f"Showing the latest {len(pdf_rows)} of {total} activities on this one-page PDF. Export to Excel for the complete report.",
+                small,
+            ))
     else:
         story.append(Paragraph("No activities found for the selected period.", small))
 
-    story += [Spacer(1, 8*mm), Paragraph("Prepared for operational management review. This report contains maintenance activity information only; database and software configuration details are intentionally excluded.", small)]
+    story += [Spacer(1, 2*mm), Paragraph("Prepared for operational management review. Maintenance activity information only.", small)]
 
     doc.build(story)
     return output.getvalue()
@@ -3806,11 +3834,11 @@ def reports_page(db,user,plant):
     df=_records_dataframe(db,plant.id,start,end)
     total=len(df)
     completed=int((df["Status"]=="Completed").sum()) if total else 0
-    failed=int((df["Status"]=="Failed").sum()) if total else 0
+    failed=int((df["Status"]!="Completed").sum()) if total else 0
     pending=int((df["Status"]=="Pending").sum()) if total else 0
     approved=int((df["Approval"]=="Approved").sum()) if total else 0
     c1,c2,c3,c4,c5=st.columns(5)
-    c1.metric("Activities",total); c2.metric("GREEN",completed); c3.metric("RED",failed)
+    c1.metric("Activities",total); c2.metric("Green - Completed",completed); c3.metric("Red - Not Completed",failed)
     c4.metric("Pending",pending); c5.metric("Approved",approved)
 
     import plotly.express as px
@@ -3845,7 +3873,7 @@ def reports_page(db,user,plant):
         with left:
             d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count")
             fig=px.bar(d,x="Status",y="Count",title="Maintenance status",text="Count",
-                       color="Status",color_discrete_map={"Completed":"#16a66a","Failed":"#e5484d","Pending":"#d9a400"})
+                       color="Status",color_discrete_map={"Completed":"#16a66a","Failed":"#e5484d","Pending":"#e5484d"})
             fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
             st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
         with right:
@@ -3856,7 +3884,13 @@ def reports_page(db,user,plant):
 
     st.markdown("### 📋 Overall activity report")
     if total:
-        st.dataframe(df,use_container_width=True,hide_index=True)
+        report_df = df.copy()
+        report_df["Status"] = report_df["Status"].replace({
+            "Completed": "Green - Completed",
+            "Failed": "Red - Not Completed",
+            "Pending": "Red - Not Completed",
+        })
+        st.dataframe(report_df,use_container_width=True,hide_index=True)
     else:
         st.info("No activities found for the selected period.")
 
