@@ -1163,6 +1163,16 @@ def css():
         :root{--bg:#f6f8fb;--surface:#fff;--surface2:#f8fafc;--text:#14213d;--muted:#61748a;--border:#dfe6ef;--green:#16a66a;--red:#e5484d;--yellow:#d9a400;--shadow:0 4px 16px rgba(25,42,70,.07)}
         @media (prefers-color-scheme:dark){:root{--bg:#0f1724;--surface:#172233;--surface2:#1d2a3b;--text:#f4f7fb;--muted:#b2bfd0;--border:#304055;--green:#20c77a;--red:#ff6268;--yellow:#f2c14e;--shadow:0 4px 18px rgba(0,0,0,.25)}}
         .stApp{background:var(--bg);color:var(--text)}
+        /* Clear, readable tables and form fields */
+        [data-testid="stDataFrame"] thead, [data-testid="stTable"] thead {background:#d9ecfb!important;color:#123b63!important}
+        [data-testid="stDataFrame"] th, [data-testid="stTable"] th {background:#d9ecfb!important;color:#123b63!important;font-weight:750!important}
+        [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stNumberInput"] input,[data-testid="stDateInput"] input {color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:15px!important;caret-color:#14213d!important}
+        [data-testid="stTextInput"] input::placeholder,[data-testid="stTextArea"] textarea::placeholder {color:#718096!important;opacity:1!important}
+        [data-testid="stMainBlockContainer"]{padding-top:1.1rem!important}
+        [data-testid="stHeader"]{background:transparent!important}
+        .login-form-title,.login-form-sub{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}
+        .login-form-title{font-weight:750!important}
+        [data-testid="stMain"] h1,[data-testid="stMain"] h2{scroll-margin-top:1rem}
         [data-testid="stSidebar"]{display:block!important;min-width:250px!important}
         [data-testid="stSidebar"]>div{background:var(--surface);border-right:1px solid var(--border)}
         .sidebar-brand{font-size:20px;font-weight:850;color:var(--text);padding:8px 0 2px}
@@ -1459,6 +1469,12 @@ def login_page():
             .login-form-sub{{font-size:13px;color:#67809b;margin-top:3px}}
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
+            [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
+            [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
+            [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
+            .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
+            [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
+            
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -1636,9 +1652,11 @@ def top_nav(db, user):
     else:
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
-        pages += ["📊 Reports", "✅ Approvals & Sign-off"]
+        pages += ["📊 Reports", "✅ Approvals & Sign-off", "⏰ Reminders"]
+    if user.role == "engineer":
+        pages += ["👥 Users", "🏭 Plants"]
     if user.role == "admin":
-        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin"]
+        pages += ["👥 Users", "🏭 Plants", "⚙️ Admin"]
 
     # No radio buttons/circles.  Each navigation item is a normal Streamlit
     # button; the active page uses the primary button style like the reference UI.
@@ -2523,6 +2541,33 @@ def overview_page(db, user, plant):
     render_plant_details_and_specs(db, plant)
 
 
+MTR_EMPLOYEES = [
+    "Sudheera Athukorala — Assistant Supervisor",
+    "VIraj Samarasinghe — Operator",
+    "Alaththuge Gunarathne — Plant Assistant",
+    "Saman Kumara — Plant Assistant",
+    "Chiwantha Dahanayake — Plant Assistant",
+    "Minidu Gawesh — Plant Assistant",
+]
+
+def worker_options_for_plant(plant, db):
+    code = (plant.code or "").upper()
+    if code == "MTR":
+        return MTR_EMPLOYEES
+    supervisor = (db.query(PlantOperationsProfile)
+                  .filter(PlantOperationsProfile.plant_id == plant.id).first())
+    supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
+    users = [u.full_name for u in db.query(User).filter(
+        User.active == True, User.plant_id == plant.id,
+        User.role.in_(["supervisor", "staff"])
+    ).order_by(User.full_name).all()]
+    values = []
+    if supervisor_name:
+        values.append(f"{supervisor_name} — Supervisor")
+    values.extend(users)
+    values.extend(["Worker 1", "Worker 2", "Worker 3", "Other worker"])
+    return list(dict.fromkeys(values))
+
 def panel_cleaning_page(db, user, plant):
     header(plant)
     st.markdown("## 🧹 Panel Cleaning")
@@ -2550,12 +2595,13 @@ def panel_cleaning_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
+            worker_options = worker_options_for_plant(plant, db)
+            worker_choices = list(dict.fromkeys(([saved_worker_name] if saved_worker_name else []) + worker_options))
+            worker_name = st.selectbox(
+                "Worker / Supervisor", worker_choices,
+                index=worker_choices.index(saved_worker_name) if saved_worker_name in worker_choices else 0,
                 label_visibility="collapsed",
                 key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
-                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
@@ -2599,12 +2645,13 @@ def grass_cutting_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_name = st.text_input(
-                "Worker / Supervisor",
-                value=saved_worker_name,
+            worker_options = worker_options_for_plant(plant, db)
+            worker_choices = list(dict.fromkeys(([saved_worker_name] if saved_worker_name else []) + worker_options))
+            worker_name = st.selectbox(
+                "Worker / Supervisor", worker_choices,
+                index=worker_choices.index(saved_worker_name) if saved_worker_name in worker_choices else 0,
                 label_visibility="collapsed",
                 key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
-                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
@@ -3746,32 +3793,101 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     return output.getvalue()
 
 def reports_page(db,user,plant):
-    header(plant); st.title("📊 Management Reports"); st.caption("Management reports are available to Engineers and Administrators. No technical database or software configuration is shown.")
+    header(plant)
+    st.title("📊 Management Reports")
+    st.caption("Readable operational reports for panel cleaning, grass cutting, and overall maintenance.")
     c1,c2=st.columns(2)
     with c1: start=st.date_input("From",date.today()-timedelta(days=30),key="report_start")
     with c2: end=st.date_input("To",date.today(),key="report_end")
-    if start>end: st.error("The start date cannot be after the end date."); return
-    df=_records_dataframe(db,plant.id,start,end); total=len(df); completed=int((df["Status"]=="Completed").sum()) if total else 0; failed=int((df["Status"]=="Failed").sum()) if total else 0; pending=int((df["Status"]=="Pending").sum()) if total else 0; approved=int((df["Approval"]=="Approved").sum()) if total else 0
-    c1,c2,c3,c4,c5=st.columns(5); c1.metric("Activities",total); c2.metric("GREEN",completed); c3.metric("RED",failed); c4.metric("Pending",pending); c5.metric("Approved",approved)
+    if start>end:
+        st.error("The start date cannot be after the end date.")
+        return
+
+    df=_records_dataframe(db,plant.id,start,end)
+    total=len(df)
+    completed=int((df["Status"]=="Completed").sum()) if total else 0
+    failed=int((df["Status"]=="Failed").sum()) if total else 0
+    pending=int((df["Status"]=="Pending").sum()) if total else 0
+    approved=int((df["Approval"]=="Approved").sum()) if total else 0
+    c1,c2,c3,c4,c5=st.columns(5)
+    c1.metric("Activities",total); c2.metric("GREEN",completed); c3.metric("RED",failed)
+    c4.metric("Pending",pending); c5.metric("Approved",approved)
+
     import plotly.express as px
+    pc, panel_done, panel_total = panel_cleaning_percent(db,plant.id,end)
+    gc, grass_done, grass_total = grass_cutting_percent(db,plant.id,end)
+    panel_left=max(0,panel_total-panel_done)
+    grass_left=max(0,grass_total-grass_done)
+    st.markdown("### 🧹 Panel Cleaning and 🌿 Grass Cutting")
+    pcol,gcol=st.columns(2)
+    with pcol:
+        st.markdown("**Panel cleaning status**")
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[panel_done,panel_left]}),
+                   names="Status",values="Count",hole=.38,
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
+        pie.update_traces(textinfo="label+value+percent")
+        pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
+        st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
+        st.caption(f"{panel_done} of {panel_total} tables completed; {panel_left} left ({pc:.1f}% complete).")
+    with gcol:
+        st.markdown("**Grass cutting status**")
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[grass_done,grass_left]}),
+                   names="Status",values="Count",hole=.38,
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
+        pie.update_traces(textinfo="label+value+percent")
+        pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
+        st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
+        st.caption(f"{grass_done} of {grass_total} zones completed; {grass_left} left ({gc:.1f}% complete).")
+
+    st.markdown("### 📈 Overall maintenance summary")
     left,right=st.columns(2)
     if total:
         with left:
-            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count"); fig=px.bar(d,x="Status",y="Count",title="Current maintenance status",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count")
+            fig=px.bar(d,x="Status",y="Count",title="Maintenance status",text="Count",
+                       color="Status",color_discrete_map={"Completed":"#16a66a","Failed":"#e5484d","Pending":"#d9a400"})
+            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
         with right:
-            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count"); fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count"); fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=330); st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
-    st.markdown("### 🧹🌿 Current work progress"); pc,_,_=panel_cleaning_percent(db,plant.id,end); gc,_,_=grass_cutting_percent(db,plant.id,end); a,b=st.columns(2); a.metric("Panel cleaning",f"{pc:.0f}%"); b.metric("Grass cutting",f"{gc:.0f}%"); st.progress(pc/100,text=f"Panel cleaning • {pc:.0f}%"); st.progress(gc/100,text=f"Grass cutting • {gc:.0f}%")
-    st.markdown("### 📋 Current activity report")
+            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count")
+            fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count")
+            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+
+    st.markdown("### 📋 Overall activity report")
     if total:
         st.dataframe(df,use_container_width=True,hide_index=True)
-        b1,b2=st.columns(2)
-        with b1:
-            st.download_button("⬇️ Export current activities to Excel",_excel_bytes(df),"solar_maintenance_current_activities.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
-        with b2:
-            pdf_bytes=_pdf_report_bytes(df,plant,start,end,pc,gc)
-            st.download_button("📄 Export management report to PDF",pdf_bytes,"solar_maintenance_management_report.pdf","application/pdf",use_container_width=True)
     else:
         st.info("No activities found for the selected period.")
+
+    st.markdown("### 📄 Separate Panel Cleaning and Grass Cutting Reports")
+    for category, label, pct in [
+        ("Panel Cleaning","Panel Cleaning",pc),
+        ("Grass Cutting","Grass Cutting",gc),
+    ]:
+        cat_df=df[df["Category"]==category].copy() if total else pd.DataFrame(columns=df.columns)
+        with st.container(border=True):
+            st.markdown(f"**{label} report** — {len(cat_df)} recorded activities in the selected period")
+            x1,x2=st.columns(2)
+            x1.download_button(
+                f"⬇️ {label} Excel", _excel_bytes(cat_df, label),
+                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"excel_{category}", use_container_width=True)
+            x2.download_button(
+                f"📄 {label} PDF",
+                _pdf_report_bytes(cat_df,plant,start,end,pc,gc),
+                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.pdf",
+                "application/pdf", key=f"pdf_{category}", use_container_width=True)
+
+    st.markdown("### 📚 Overall Summary Downloads")
+    x1,x2=st.columns(2)
+    x1.download_button("⬇️ Export overall report to Excel",_excel_bytes(df,"Overall Summary"),
+        f"{plant.code.lower()}_overall_maintenance_summary.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    x2.download_button("📄 Export overall summary to PDF",
+        _pdf_report_bytes(df,plant,start,end,pc,gc),
+        f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
 
 def approvals_page(db,user,plant):
     header(plant)
@@ -3890,15 +4006,15 @@ def main():
         loss_repair_page(db, user, plant)
     elif page == "📋 Activity Log":
         activity_page(db, user, plant)
-    elif page == "👥 Users" and user.role == "admin":
+    elif page == "👥 Users" and user.role in ("admin", "engineer"):
         users_page(db, user, plant)
-    elif page == "🏭 Plants" and user.role == "admin":
+    elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
         plants_page(db)
     elif page == "📊 Reports" and user.role in ("admin", "engineer"):
         reports_page(db, user, plant)
     elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
         approvals_page(db, user, plant)
-    elif page == "⏰ Reminders" and user.role == "admin":
+    elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
         reminders_page(db)
     elif page == "⚙️ Admin" and user.role == "admin":
         admin_page(db)
