@@ -1160,6 +1160,46 @@ def dashboard_metrics(db, plant, records, start_date, end_date):
 def css():
     st.markdown(
         """<style>
+
+/* Strong black outlines for Streamlit form fields across Sign In and Create Account.
+   Streamlit/BaseWeb draws the visible border on the outer wrapper. */
+div[data-testid="stTextInput"] [data-baseweb="input"] > div,
+div[data-testid="stNumberInput"] [data-baseweb="input"] > div,
+div[data-testid="stDateInput"] [data-baseweb="input"] > div,
+div[data-testid="stTimeInput"] [data-baseweb="input"] > div,
+div[data-testid="stTextArea"] [data-baseweb="textarea"] > div,
+div[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+    border: 2px solid #111111 !important;
+    border-color: #111111 !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+}
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stDateInput"] input,
+div[data-testid="stTimeInput"] input,
+div[data-testid="stTextArea"] textarea {
+    border: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
+}
+div[data-testid="stTextInput"] [data-baseweb="input"]:focus-within > div,
+div[data-testid="stNumberInput"] [data-baseweb="input"]:focus-within > div,
+div[data-testid="stDateInput"] [data-baseweb="input"]:focus-within > div,
+div[data-testid="stTimeInput"] [data-baseweb="input"]:focus-within > div,
+div[data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within > div,
+div[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+div[data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within {
+    border: 2px solid #000000 !important;
+    border-color: #000000 !important;
+    box-shadow: 0 0 0 1px #000000 !important;
+}
+
         :root{--bg:#f6f8fb;--surface:#fff;--surface2:#f8fafc;--text:#14213d;--muted:#61748a;--border:#dfe6ef;--green:#16a66a;--red:#e5484d;--yellow:#d9a400;--shadow:0 4px 16px rgba(25,42,70,.07)}
         @media (prefers-color-scheme:dark){:root{--bg:#0f1724;--surface:#172233;--surface2:#1d2a3b;--text:#f4f7fb;--muted:#b2bfd0;--border:#304055;--green:#20c77a;--red:#ff6268;--yellow:#f2c14e;--shadow:0 4px 18px rgba(0,0,0,.25)}}
         .stApp{background:var(--bg);color:var(--text)}
@@ -1482,48 +1522,29 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Strong, visible green border on the actual Streamlit/BaseWeb field wrappers. */
-            [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stTextArea"] [data-baseweb="textarea"],
-            [data-testid="stNumberInput"] [data-baseweb="input"],
-            [data-testid="stDateInput"] [data-baseweb="input"],
-            [data-testid="stSelectbox"] [data-baseweb="select"],
-            [data-testid="stMultiSelect"] [data-baseweb="select"] {{
-                border: 2px solid #16a765 !important;
-                border-radius: 8px !important;
-                background: #ffffff !important;
-                box-shadow: none !important;
-                outline: none !important;
+            /* Full green outline around the complete input boxes on Sign In and Create Account */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]>div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]>div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]>div{{
+                border:1.5px solid #16a765!important;
+                border-radius:8px!important;
+                box-shadow:none!important;
+                background:#fff!important;
             }}
-            [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
-            [data-testid="stNumberInput"] [data-baseweb="input"] > div,
-            [data-testid="stDateInput"] [data-baseweb="input"] > div,
-            [data-testid="stSelectbox"] [data-baseweb="select"] > div,
-            [data-testid="stMultiSelect"] [data-baseweb="select"] > div {{
-                border: 0 !important;
-                box-shadow: none !important;
-                background: transparent !important;
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]>div:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]>div:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]>div:focus-within{{
+                border-color:#07894b!important;
+                box-shadow:0 0 0 2px rgba(22,167,101,.16)!important;
             }}
-            [data-testid="stTextInput"] input,
-            [data-testid="stTextArea"] textarea,
-            [data-testid="stNumberInput"] input,
-            [data-testid="stDateInput"] input {{
-                border: 0 !important;
-                border-radius: 6px !important;
-                background: #ffffff !important;
-                color: #14213d !important;
-                -webkit-text-fill-color: #14213d !important;
-                box-shadow: none !important;
-            }}
-            [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
-            [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within,
-            [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
-            [data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
-            [data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
-            [data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within {{
-                border: 2px solid #07894b !important;
-                box-shadow: 0 0 0 2px rgba(22,167,101,.18) !important;
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input{{
+                border:0!important;
+                box-shadow:none!important;
+                outline:none!important;
+                border-radius:8px!important;
+                background:transparent!important;
             }}
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
             [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
