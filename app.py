@@ -1460,47 +1460,6 @@ def login_page():
     if bg_uri:
         st.markdown(
             f"""<style>
-
-/* Visible light-grey borders on Streamlit's actual BaseWeb input wrappers */
-[data-testid="stTextInput"] [data-baseweb="input"],
-[data-testid="stNumberInput"] [data-baseweb="input"],
-[data-testid="stDateInput"] [data-baseweb="input"],
-[data-testid="stTimeInput"] [data-baseweb="input"],
-[data-testid="stTextArea"] [data-baseweb="textarea"],
-[data-testid="stSelectbox"] [data-baseweb="select"],
-[data-testid="stMultiSelect"] [data-baseweb="select"] {{
-    border: 1.5px solid #cfd4dc !important;
-    border-color: #cfd4dc !important;
-    border-radius: 7px !important;
-    background: #ffffff !important;
-    box-shadow: none !important;
-    outline: none !important;
-    outline-offset: 0 !important;
-}}
-[data-testid="stTextInput"] input,
-[data-testid="stNumberInput"] input,
-[data-testid="stDateInput"] input,
-[data-testid="stTimeInput"] input,
-[data-testid="stTextArea"] textarea {{
-    border: 0 !important;
-    outline: none !important;
-    box-shadow: none !important;
-    background: #ffffff !important;
-    color: #111111 !important;
-    -webkit-text-fill-color: #111111 !important;
-}}
-[data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
-[data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
-[data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
-[data-testid="stTimeInput"] [data-baseweb="input"]:focus-within,
-[data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within,
-[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
-[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within {{
-    border: 1.5px solid #16a765 !important;
-    border-color: #16a765 !important;
-    box-shadow: 0 0 0 1px rgba(22,167,101,.12) !important;
-}}
-
             .stApp{{
                 background-image:linear-gradient(90deg,rgba(255,255,255,.78) 0%,rgba(255,255,255,.62) 38%,rgba(247,250,253,.28) 65%,rgba(247,250,253,.92) 100%),url('{bg_uri}');
                 background-size:cover;
@@ -1534,48 +1493,6 @@ def login_page():
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
             
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
-
-            /* Top-layer light-grey outline ensures all four sides remain visible */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"] {{
-                position: relative !important; box-sizing: border-box !important;
-                border: 0 !important; border-radius: 7px !important;
-                overflow: visible !important; background: #fff !important;
-            }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] [data-baseweb="input"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"]::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"]::after {{
-                content: "" !important; position: absolute !important; inset: 0 !important;
-                display: block !important; border: 1.5px solid #cfd4dc !important;
-                border-radius: 7px !important; box-sizing: border-box !important;
-                pointer-events: none !important; z-index: 20 !important;
-            }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] [data-baseweb="input"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"]:focus-within::after,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within::after {
-                border-color: #16a765 !important;
-            }
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea {{
-                border: 0 !important; outline: 0 !important;
-                box-shadow: none !important; background: transparent !important;
-            }}
             </style>""",
             unsafe_allow_html=True,
         )
