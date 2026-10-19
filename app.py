@@ -1534,6 +1534,39 @@ def login_page():
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
             
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
+
+            /* Top-layer outline ensures all four sides remain visible */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"] {{
+                position: relative !important; box-sizing: border-box !important;
+                border: 0 !important; border-radius: 7px !important;
+                overflow: visible !important; background: #fff !important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] [data-baseweb="input"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"]::after,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"]::after {{
+                content: "" !important; position: absolute !important; inset: 0 !important;
+                display: block !important; border: 2px solid #111 !important;
+                border-radius: 7px !important; box-sizing: border-box !important;
+                pointer-events: none !important; z-index: 20 !important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTimeInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea {{
+                border: 0 !important; outline: 0 !important;
+                box-shadow: none !important; background: transparent !important;
+            }}
             </style>""",
             unsafe_allow_html=True,
         )
