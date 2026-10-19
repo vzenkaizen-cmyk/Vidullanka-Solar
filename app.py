@@ -1506,6 +1506,34 @@ def login_page():
                 border-radius:8px!important;
                 background:transparent!important;
             }}
+            /* Keep every login and account input visibly outlined on all four sides */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]{{
+                border:1.5px solid #16a765!important;
+                border-radius:8px!important;
+                box-shadow:none!important;
+                outline:none!important;
+                background:#fff!important;
+                box-sizing:border-box!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]:focus-within{{
+                border-color:#07894b!important;
+                box-shadow:0 0 0 2px rgba(22,167,101,.16)!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] input{{
+                border:0!important;
+                background:transparent!important;
+                box-shadow:none!important;
+                outline:none!important;
+            }}
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
             [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
