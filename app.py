@@ -2351,8 +2351,7 @@ def render_plant_details_and_specs(db, plant):
     staff_count = int(profile.operating_staff_count or 0) if profile else 0
     supervisors = {
         "ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan",
-        "MTR": "Sudheera", "MTR-I": "Sudheera", "MTR-II": "Sudheera",
-        "MDP": "Sansala", "HOF": "Not provided",
+        "MTR": "Sudheera", "MDP": "Sansala", "HOF": "Not provided",
     }
     supervisor = (profile.supervisor_name.strip() if profile and profile.supervisor_name else "") or supervisors.get(plant.code, "Not provided")
     engineers = {
