@@ -1522,20 +1522,30 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Full green outline around the complete input boxes on Sign In and Create Account */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]>div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]>div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]>div{{
-                border:1.5px solid #16a765!important;
+            /* Clearly visible black borders on every Sign In and Create Account input */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"] {{
+                border:2px solid #000000!important;
+                border-color:#000000!important;
                 border-radius:8px!important;
                 box-shadow:none!important;
-                background:#fff!important;
+                background:#ffffff!important;
+                box-sizing:border-box!important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]>div:focus-within,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]>div:focus-within,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]>div:focus-within{{
-                border-color:#07894b!important;
-                box-shadow:0 0 0 2px rgba(22,167,101,.16)!important;
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]>div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]>div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]>div {{
+                border:0!important;
+                box-shadow:none!important;
+                background:transparent!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within {{
+                border:2px solid #000000!important;
+                border-color:#000000!important;
+                box-shadow:0 0 0 1px #000000!important;
             }}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea,
