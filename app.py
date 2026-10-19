@@ -1482,24 +1482,33 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Make the FULL outline visible on every Sign In / Create Account field.
-               Streamlit draws most input borders on the BaseWeb wrapper, not the input itself. */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"] > div {{
+            /* Strong, visible green border on the actual Streamlit/BaseWeb field wrappers. */
+            [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stTextArea"] [data-baseweb="textarea"],
+            [data-testid="stNumberInput"] [data-baseweb="input"],
+            [data-testid="stDateInput"] [data-baseweb="input"],
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stMultiSelect"] [data-baseweb="select"] {{
                 border: 2px solid #16a765 !important;
                 border-radius: 8px !important;
-                box-shadow: 0 0 0 1px rgba(22,167,101,.10) !important;
                 background: #ffffff !important;
+                box-shadow: none !important;
                 outline: none !important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] input {{
+            [data-testid="stTextInput"] [data-baseweb="input"] > div,
+            [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
+            [data-testid="stNumberInput"] [data-baseweb="input"] > div,
+            [data-testid="stDateInput"] [data-baseweb="input"] > div,
+            [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+            [data-testid="stMultiSelect"] [data-baseweb="select"] > div {{
+                border: 0 !important;
+                box-shadow: none !important;
+                background: transparent !important;
+            }}
+            [data-testid="stTextInput"] input,
+            [data-testid="stTextArea"] textarea,
+            [data-testid="stNumberInput"] input,
+            [data-testid="stDateInput"] input {{
                 border: 0 !important;
                 border-radius: 6px !important;
                 background: #ffffff !important;
@@ -1507,12 +1516,13 @@ def login_page():
                 -webkit-text-fill-color: #14213d !important;
                 box-shadow: none !important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:focus-within > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"]:focus-within > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {{
-                border-color: #07894b !important;
+            [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within,
+            [data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
+            [data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
+            [data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within {{
+                border: 2px solid #07894b !important;
                 box-shadow: 0 0 0 2px rgba(22,167,101,.18) !important;
             }}
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
