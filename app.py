@@ -1485,8 +1485,19 @@ def login_page():
             /* Clear green outline for all sign-in and create-account fields */
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stNumberInput"] input{{border:1.5px solid #16a765!important;border-radius:8px!important;box-shadow:0 0 0 1px rgba(22,167,101,.08)!important}}
             [data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{{border-color:#07894b!important;box-shadow:0 0 0 2px rgba(22,167,101,.16)!important}}
-            [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
-            [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
+            /* Give the Sign In and Create Account tabs a complete green border on every side. */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] [role="tab"]{{
+                color:#183b2c!important;
+                border:1.5px solid #16a765!important;
+                border-radius:8px!important;
+                box-sizing:border-box!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{
+                border:1.5px solid #16a765!important;
+                border-bottom-color:#16a765!important;
+                color:#087443!important;
+                background:#effaf4!important;
+            }}
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
