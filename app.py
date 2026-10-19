@@ -331,13 +331,13 @@ initialize_database(engine)
 def hash_password(password: str) -> str:
     """Return a consistently formatted PBKDF2-SHA256 password hash.
 
-    Format: pbkdf2_sha256$<iterations>$<salt hex>$<digest hex>
+    Format: pbkdf2_sha256<iterations><salt hex>$<digest hex>
     Keep this format stable because it is stored in the existing users table.
     """
     salt = os.urandom(16)
     iterations = 180_000
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+    return f"pbkdf2_sha256iterations{salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -1482,52 +1482,36 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Visible full black outline on the OUTER Streamlit/BaseWeb field wrapper.
-               The old CSS targeted an inner child, which can leave top/bottom edges invisible. */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"] {{
-                position: relative !important;
-                box-sizing: border-box !important;
-                border: 2px solid #111111 !important;
-                border-color: #111111 !important;
-                border-radius: 7px !important;
-                background: #ffffff !important;
-                box-shadow: inset 0 0 0 1px #111111 !important;
-                outline: 1px solid #111111 !important;
-                outline-offset: -1px !important;
-                overflow: visible !important;
+            /* Keep the full green outline visible on every empty and filled login/register field. */
+            [data-testid="stTextInput"],
+            [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stTextInput"] [data-baseweb="input"] > div,
+            [data-testid="stTextArea"] [data-baseweb="textarea"],
+            [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
+            [data-testid="stNumberInput"] [data-baseweb="input"],
+            [data-testid="stNumberInput"] [data-baseweb="input"] > div{{
+                border:1.5px solid #16a765!important;
+                border-radius:8px!important;
+                box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
+                background:#fff!important;
+                box-sizing:border-box!important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stSelectbox"] [data-baseweb="select"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stMultiSelect"] [data-baseweb="select"] > div {{
-                border: 0 !important;
-                box-shadow: none !important;
-                background: transparent !important;
+            [data-testid="stTextInput"] input,
+            [data-testid="stTextArea"] textarea,
+            [data-testid="stNumberInput"] input{{
+                border:0!important;
+                outline:0!important;
+                box-shadow:none!important;
+                background:transparent!important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextArea"] textarea,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stNumberInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stDateInput"] input {{
-                border: 0 !important;
-                box-shadow: none !important;
-                outline: none !important;
-                background: transparent !important;
-                color: #14213d !important;
-                -webkit-text-fill-color: #14213d !important;
-            }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-baseweb="input"]:focus-within,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-baseweb="textarea"]:focus-within,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-baseweb="select"]:focus-within {{
-                border: 2px solid #000000 !important;
-                border-color: #000000 !important;
-                box-shadow: inset 0 0 0 1px #000000 !important;
+            [data-testid="stTextInput"]:focus-within [data-baseweb="input"],
+            [data-testid="stTextInput"]:focus-within [data-baseweb="input"] > div,
+            [data-testid="stTextArea"]:focus-within [data-baseweb="textarea"],
+            [data-testid="stTextArea"]:focus-within [data-baseweb="textarea"] > div,
+            [data-testid="stNumberInput"]:focus-within [data-baseweb="input"],
+            [data-testid="stNumberInput"]:focus-within [data-baseweb="input"] > div{{
+                border-color:#07894b!important;
+                box-shadow:inset 0 0 0 1px rgba(22,167,101,.18)!important;
             }}
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
             [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
@@ -2395,8 +2379,7 @@ def render_plant_details_and_specs(db, plant):
     staff_count = int(profile.operating_staff_count or 0) if profile else 0
     supervisors = {
         "ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan",
-        "MTR": "Sudheera", "MTR-I": "Sudheera", "MTR-II": "Sudheera",
-        "MDP": "Sansala", "HOF": "Not provided",
+        "MTR": "Sudheera", "MDP": "Sansala", "HOF": "Not provided",
     }
     supervisor = (profile.supervisor_name.strip() if profile and profile.supervisor_name else "") or supervisors.get(plant.code, "Not provided")
     engineers = {
@@ -2611,34 +2594,26 @@ MTR_EMPLOYEES = [
     "Minidu Gawesh",
 ]
 
-def worker_options_for_plant(plant, db, first_names_only=False, grass_cutting=False):
-    """Return the requested worker choices for each site and task."""
+def worker_options_for_plant(plant, db, first_names_only=False):
+    """Return the supervisor and two worker choices for each non-MTR site."""
     code = (plant.code or "").strip().upper()
-    identity = " ".join([
-        code,
-        str(getattr(plant, "name", "") or "").strip().upper(),
-        str(getattr(plant, "display_name", "") or "").strip().upper(),
-    ])
-    is_hrn1 = code in {"HS1", "HRN1", "HRN 1"} or "HRN1" in identity or "HRN 1" in identity
-    is_hrn2 = code in {"HS2", "HRN2", "HRN 2"} or "HRN2" in identity or "HRN 2" in identity
-
-    if code == "MTR" or " MTR " in f" {identity} ":
+    if code == "MTR":
         values = list(MTR_EMPLOYEES)
-    elif grass_cutting and (is_hrn1 or is_hrn2):
-        values = ["Roshan-Supervisor"]
     else:
-        values = ["Worker 1", "Worker 2"]
+        # HRN 1 and HRN 2 use the requested supervisor label consistently.
+        if code in {"HS1", "HRN1", "HRN", "HRN 1", "HS2", "HRN2", "HRN 2"}:
+            supervisor_label = "Roshan - Supervisor"
+        else:
+            supervisor = (db.query(PlantOperationsProfile)
+                          .filter(PlantOperationsProfile.plant_id == plant.id).first())
+            supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
+            supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
+        values = [supervisor_label, "Worker 1", "Worker 2"]
 
     # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
     values = [v.strip() for v in values if v and v.strip().upper() != "R"]
-    if first_names_only and not (grass_cutting and (is_hrn1 or is_hrn2)):
-        cleaned = []
-        for value in values:
-            name = value.split(" — ", 1)[0].strip()
-            first = name.split()[0] if name else ""
-            if first:
-                cleaned.append(first)
-        values = cleaned
+    # Grass Cutting uses this helper with first_names_only=True. Preserve the
+    # complete supervisor label and numbered worker options in that dropdown.
     return list(dict.fromkeys(values))
 
 def panel_cleaning_page(db, user, plant):
@@ -2722,7 +2697,7 @@ def grass_cutting_page(db, user, plant):
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_options = worker_options_for_plant(plant, db, first_names_only=True, grass_cutting=True)
+            worker_options = worker_options_for_plant(plant, db, first_names_only=True)
             saved_first_name = saved_worker_name.split()[0] if saved_worker_name else ""
             worker_choices = list(dict.fromkeys(([saved_first_name] if saved_first_name and saved_first_name.upper() != "R" else []) + worker_options))
             worker_name = st.selectbox(
@@ -4140,6 +4115,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
