@@ -1384,7 +1384,7 @@ def display_site_code(plant):
 def header(plant):
     st.markdown(
         f"""
-        <div class="top-title">☀️ {display_plant_name(plant)} <span style="color:#16a66a;">Maintenance Dashboard</span></div>
+        <div class="top-title">{display_plant_name(plant)} <span style="color:#16a66a;">Maintenance Dashboard</span></div>
         <div class="top-subtitle">
             Capacity {plant.capacity_mw:g} MW &nbsp; • &nbsp;
             {plant.inverter_count} Inverters &nbsp; • &nbsp;
@@ -1516,6 +1516,11 @@ def login_page():
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
             [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
+            /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:38px!important;height:38px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:34px!important;min-height:34px!important;padding-top:5px!important;padding-bottom:5px!important;font-size:14px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
@@ -1672,7 +1677,7 @@ def top_nav(db, user):
         ),
     )
     if not plants:
-        st.sidebar.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="sidebar-brand">Solar Maintenance</div>', unsafe_allow_html=True)
         st.sidebar.error("No plant is assigned to this account. Ask an administrator to assign a plant.")
         if st.sidebar.button("🚪 Sign out", key="sidebar_signout_unassigned"):
             st.session_state.clear(); st.rerun()
@@ -1685,7 +1690,7 @@ def top_nav(db, user):
     st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
-        st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-brand">Solar Maintenance</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sidebar-sub">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
@@ -1699,9 +1704,9 @@ def top_nav(db, user):
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "✅ Approvals & Sign-off", "⏰ Reminders"]
     if user.role == "engineer":
-        pages += ["👥 Users", "🏭 Plants"]
+        pages += ["👥 Users"]
     if user.role == "admin":
-        pages += ["👥 Users", "🏭 Plants", "⚙️ Admin"]
+        pages += ["👥 Users", "⚙️ Admin"]
 
     # No radio buttons/circles.  Each navigation item is a normal Streamlit
     # button; the active page uses the primary button style like the reference UI.
@@ -1806,7 +1811,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
 
     if not embedded:
         header(plant)
-        st.markdown("## 🛰️ Solar Plant Map")
+        st.markdown("## Solar Plant Map")
         st.caption("Each solar-table strip is coloured by panel-cleaning status. Zone outlines show grass-cutting status.")
 
     if task_date is None:
@@ -1994,6 +1999,50 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.275, .53, .405, .91, "y"),  # Group 6: 10 rows
             (.435, .53, .575, .91, "y"),  # Group 7: 10 rows
             (.615, .53, .785, .91, "y"),  # Group 8: 10 rows
+        ]
+    elif plant_code == "MDP":
+        # MDP panel rows follow the supplied hand-drawn site plan: the large
+        # upper-left bank, smaller banks across the upper/middle rows, and the
+        # three lower banks. Coordinates are normalized to the MDP satellite.
+        block_specs = [
+            (.035, .285, .485, .470, "y"),  # main upper-left bank
+            (.500, .300, .585, .430, "y"),  # 9-row bank
+            (.610, .300, .700, .480, "y"),  # 11-row bank
+            (.715, .300, .785, .385, "y"),  # 5-row bank
+            (.800, .300, .895, .480, "y"),  # 11-row bank
+            (.905, .300, .985, .480, "y"),  # 11-row bank
+            (.925, .490, .985, .620, "y"),  # 8-row bank
+            (.025, .510, .115, .565, "y"),  # short left bank
+            (.145, .500, .220, .660, "y"),  # lower-left bank
+            (.245, .500, .320, .660, "y"),  # lower bank
+            (.345, .500, .420, .660, "y"),  # lower bank
+            (.435, .500, .500, .610, "y"),  # 7-row bank
+            (.515, .500, .575, .610, "y"),  # 7-row bank
+            (.590, .500, .650, .610, "y"),  # 7-row bank
+            (.665, .500, .725, .610, "y"),  # 7-row bank
+            (.740, .500, .800, .590, "y"),  # 5-row bank
+            (.810, .500, .870, .590, "y"),  # 5-row bank
+            (.880, .500, .940, .590, "y"),  # 5-row bank
+            (.150, .720, .245, .900, "y"),  # lower-left 9-row bank
+            (.270, .720, .365, .940, "y"),  # lower-middle 11-row bank
+            (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
+        ]
+    elif plant_code == "MTR":
+        # MTR panel rows follow the hand-drawn layout: small banks at the
+        # upper-left, three short horizontal strips beneath them, four tall
+        # banks across the centre/right, and a small upper-right bank.
+        block_specs = [
+            (.035, .180, .170, .235, "y"),  # 5 rows
+            (.205, .180, .340, .235, "y"),  # 5 rows
+            (.375, .180, .510, .235, "y"),  # 5 rows
+            (.080, .250, .240, .275, "y"),  # short strip
+            (.280, .250, .440, .275, "y"),  # short strip
+            (.180, .285, .340, .310, "y"),  # short strip
+            (.555, .220, .680, .700, "y"),  # 15-row tall bank
+            (.700, .150, .820, .780, "y"),  # 20-row tall bank
+            (.825, .120, .945, .900, "y"),  # 23-row tall bank
+            (.450, .190, .550, .820, "y"),  # 21-row tall bank
+            (.940, .120, .995, .220, "y"),  # 5-row upper-right bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
@@ -3740,8 +3789,22 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         progress_db.close()
     green = int((df["Status"] == "Completed").sum()) if total else 0
     red = int((df["Status"] != "Completed").sum()) if total else 0
-    pending = int((df["Status"] == "Pending").sum()) if total else 0
-    approved = int((df["Approval"] == "Approved").sum()) if total else 0
+    approval_db = SessionLocal()
+    try:
+        inspection_filter = [
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
+            MaintenanceRecord.task_date >= start,
+            MaintenanceRecord.task_date <= end,
+        ]
+        pending = approval_db.query(MaintenanceRecord).filter(
+            *inspection_filter, MaintenanceRecord.approval_status == "Pending"
+        ).count()
+        approved = approval_db.query(MaintenanceRecord).filter(
+            *inspection_filter, MaintenanceRecord.approval_status == "Approved"
+        ).count()
+    finally:
+        approval_db.close()
 
     story = [
         Paragraph("Solar Plant Maintenance Management Report", title_style),
@@ -3875,7 +3938,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
 
 def reports_page(db,user,plant):
     header(plant)
-    st.title("📊 Management Reports")
+    st.title("Management Reports")
     st.caption("Readable operational reports for panel cleaning, grass cutting, and overall maintenance.")
     c1,c2=st.columns(2)
     with c1: start=st.date_input("From",date.today()-timedelta(days=30),key="report_start")
@@ -3888,15 +3951,30 @@ def reports_page(db,user,plant):
     total=len(df)
     completed=int((df["Status"]=="Completed").sum()) if total else 0
     failed=int((df["Status"]!="Completed").sum()) if total else 0
-    pending=int((df["Status"]=="Pending").sum()) if total else 0
-    approved=int((df["Approval"]=="Approved").sum()) if total else 0
-    c1,c2,c3,c4,c5=st.columns(5)
-    c1.metric("Activities",total); c2.metric("Green - Completed",completed); c3.metric("Red - Not Completed",failed)
-    c4.metric("Pending",pending); c5.metric("Approved",approved)
-
+    # Approval KPIs refer only to inspection records, never panel-cleaning or grass-cutting work.
+    inspection_filter = [
+        MaintenanceRecord.plant_id == plant.id,
+        MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
+        MaintenanceRecord.task_date >= start,
+        MaintenanceRecord.task_date <= end,
+    ]
+    pending_approvals = db.query(MaintenanceRecord).filter(
+        *inspection_filter, MaintenanceRecord.approval_status == "Pending"
+    ).count()
+    approved_approvals = db.query(MaintenanceRecord).filter(
+        *inspection_filter, MaintenanceRecord.approval_status == "Approved"
+    ).count()
     import plotly.express as px
     pc, panel_done, panel_total = panel_cleaning_percent(db,plant.id,end)
     gc, grass_done, grass_total = grass_cutting_percent(db,plant.id,end)
+    c1,c2,c3,c4,c5,c6,c7=st.columns(7)
+    c1.metric("Activities",total)
+    c2.metric("Green - Completed",completed)
+    c3.metric("Red - Not Completed",failed)
+    c4.metric("Pending inspection approvals",pending_approvals)
+    c5.metric("Approved approvals",approved_approvals)
+    c6.metric("Panel Cleaning", f"{pc:.0f}%")
+    c7.metric("Grass Cutting", f"{gc:.0f}%")
     panel_left=max(0,panel_total-panel_done)
     grass_left=max(0,grass_total-grass_done)
     st.markdown("### 🧹 Panel Cleaning and 🌿 Grass Cutting")
@@ -3956,6 +4034,7 @@ def reports_page(db,user,plant):
         ("Panel Cleaning","Panel Cleaning",pc),
         ("Grass Cutting","Grass Cutting",gc),
     ]:
+        # Dedicated work reports intentionally exclude all inspection/approval records.
         cat_df=df[df["Category"]==category].copy() if total else pd.DataFrame(columns=df.columns)
         with st.container(border=True):
             st.markdown(f"**{label} report** — {len(cat_df)} recorded activities in the selected period")
