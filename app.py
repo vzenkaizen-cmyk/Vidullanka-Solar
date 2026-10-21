@@ -43,13 +43,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ============================================================
 
 st.set_page_config(
-    page_title="Solar Operation and Maintenance Platform",
+    page_title="Solar Plant Maintenance System",
     page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_TITLE = "Solar Operation and Maintenance Platform"
+APP_TITLE = "Solar Power Plant Maintenance System"
 DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
@@ -279,45 +279,6 @@ def initialize_database(_engine):
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_signature TEXT DEFAULT ''"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_comment TEXT DEFAULT ''"))
-
-            # Older versions of this app may have created a CHECK constraint on
-            # users.role that does not allow the current role values. The seed
-            # routine updates existing users to admin/engineer/supervisor, which
-            # would then fail during SQLAlchemy autoflush with CheckViolation.
-            # Replace only role-related CHECK constraints and keep the supported
-            # roles consistent with the application.
-            conn.execute(text("""
-                DO $$
-                DECLARE constraint_row RECORD;
-                BEGIN
-                    FOR constraint_row IN
-                        SELECT c.conname
-                        FROM pg_constraint c
-                        JOIN pg_class t ON t.oid = c.conrelid
-                        JOIN pg_namespace n ON n.oid = t.relnamespace
-                        WHERE t.relname = 'users'
-                          AND n.nspname = current_schema()
-                          AND c.contype = 'c'
-                          AND pg_get_constraintdef(c.oid) ILIKE '%role%'
-                    LOOP
-                        EXECUTE format(
-                            'ALTER TABLE %I.%I DROP CONSTRAINT %I',
-                            current_schema(), 'users', constraint_row.conname
-                        );
-                    END LOOP;
-                END $$;
-            """))
-            conn.execute(text("""
-                UPDATE users
-                SET role = 'staff'
-                WHERE role IS NULL
-                   OR role NOT IN ('admin', 'engineer', 'supervisor', 'staff')
-            """))
-            conn.execute(text("""
-                ALTER TABLE users
-                ADD CONSTRAINT users_role_allowed_check
-                CHECK (role IN ('admin', 'engineer', 'supervisor', 'staff'))
-            """))
     return True
 
 
@@ -329,34 +290,24 @@ initialize_database(engine)
 # ============================================================
 
 def hash_password(password: str) -> str:
-    """Return a consistently formatted PBKDF2-SHA256 password hash.
-
-    Format: pbkdf2_sha256<iterations><salt hex>$<digest hex>
-    Keep this format stable because it is stored in the existing users table.
-    """
     salt = os.urandom(16)
-    iterations = 180_000
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256iterations{salt.hex()}${digest.hex()}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 180_000)
+    return f"pbkdf2_sha256$180000${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """Verify the current format and safely reject malformed/legacy broken hashes."""
     try:
-        parts = (stored or "").split("$")
-        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
-            # Older app versions wrote a malformed string without the required
-            # separators. It cannot be reliably verified; reset that account's
-            # password through the configured admin password or account recovery.
+        scheme, iterations, salt_hex, digest_hex = stored.split("$")
+        if scheme != "pbkdf2_sha256":
             return False
-        iterations = int(parts[1])
-        salt = bytes.fromhex(parts[2])
-        expected = parts[3]
-        if iterations < 1 or not salt or not expected:
-            return False
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return hmac.compare_digest(digest.hex(), expected)
-    except (TypeError, ValueError, OverflowError):
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations),
+        )
+        return hmac.compare_digest(digest.hex(), digest_hex)
+    except Exception:
         return False
 
 
@@ -543,7 +494,6 @@ def seed_database():
             ("MDP", "MDP Solar Power Plant"),
             ("MTR", "MTR Solar Power Plant"),
             ("ORK", "ORK Solar Power Plant"),
-            ("DPV", "DPV Solar Power Plant (Ranna)"),
         ]
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
@@ -645,18 +595,14 @@ def seed_database():
             )
             db.add(admin)
         else:
-            # Keep the configured administrator active without rewriting its
-            # password hash on every app startup. Rewriting hashes on every run
-            # is unnecessary and can violate constraints in an existing schema.
+            # Always synchronize the configured administrator account.
+            # This fixes existing Neon accounts whose password, role, or
+            # approval state does not match the current admin configuration.
             admin.full_name = "System Administrator"
             admin.role = "admin"
             admin.approved = True
             admin.active = True
-            # Only replace the password if the stored value is not verifiable
-            # against the currently configured ADMIN_PASSWORD. This also repairs
-            # older malformed hashes when the configured password is known.
-            if not verify_password(ADMIN_PASSWORD, admin.password_hash):
-                admin.password_hash = hash_password(ADMIN_PASSWORD)
+            admin.password_hash = hash_password(ADMIN_PASSWORD)
 
         # Keep the named Vidullanka accounts on their intended least-privilege role/scope.
         # Passwords are never changed here; each person sets their own during registration.
@@ -1163,28 +1109,6 @@ def css():
         :root{--bg:#f6f8fb;--surface:#fff;--surface2:#f8fafc;--text:#14213d;--muted:#61748a;--border:#dfe6ef;--green:#16a66a;--red:#e5484d;--yellow:#d9a400;--shadow:0 4px 16px rgba(25,42,70,.07)}
         @media (prefers-color-scheme:dark){:root{--bg:#0f1724;--surface:#172233;--surface2:#1d2a3b;--text:#f4f7fb;--muted:#b2bfd0;--border:#304055;--green:#20c77a;--red:#ff6268;--yellow:#f2c14e;--shadow:0 4px 18px rgba(0,0,0,.25)}}
         .stApp{background:var(--bg);color:var(--text)}
-        /* Clear, readable tables and form fields */
-        [data-testid="stDataFrame"] thead, [data-testid="stTable"] thead {background:#d9ecfb!important;color:#123b63!important}
-        [data-testid="stDataFrame"] th, [data-testid="stTable"] th {background:#d9ecfb!important;color:#123b63!important;font-weight:750!important}
-        [data-testid="stDataFrame"] th,[data-testid="stTable"] th{font-size:13px!important}
-        [data-testid="stDataFrame"] td,[data-testid="stTable"] td{font-size:12px!important}
-        [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stNumberInput"] input,[data-testid="stDateInput"] input {color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:15px!important;caret-color:#14213d!important}
-        [data-testid="stTextInput"] input::placeholder,[data-testid="stTextArea"] textarea::placeholder {color:#718096!important;opacity:1!important}
-        [data-testid="stMainBlockContainer"]{padding-top:1.1rem!important}
-        [data-testid="stHeader"]{background:transparent!important}
-        .login-form-title,.login-form-sub{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}
-        /* Improve welcome and sign-in readability without changing the layout. */
-        .login-hero-title{font-size:clamp(42px,4.6vw,68px)!important;line-height:1.08!important}
-        .login-hero-sub{font-size:22px!important}
-        .login-hero-point{font-size:15px!important}
-        .login-hero-point b{font-size:18px!important}
-        .login-form-title{font-size:40px!important}
-        .login-form-sub{font-size:16px!important}
-        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] button,
-        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"] button p{font-size:16px!important}
-        [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{font-size:17px!important}
-        .login-form-title{font-weight:750!important}
-        [data-testid="stMain"] h1,[data-testid="stMain"] h2{scroll-margin-top:1rem}
         [data-testid="stSidebar"]{display:block!important;min-width:250px!important}
         [data-testid="stSidebar"]>div{background:var(--surface);border-right:1px solid var(--border)}
         .sidebar-brand{font-size:20px;font-weight:850;color:var(--text);padding:8px 0 2px}
@@ -1238,19 +1162,24 @@ def css():
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(3):has(input:checked){color:#fff!important;border-color:var(--red)!important;background:var(--red)!important;font-weight:900!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:nth-child(3):has(input:checked) p{color:#fff!important}
         [data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] p{margin:0!important;font-size:17px!important;line-height:1!important;font-weight:900!important}
-        [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:12px!important}
+        [data-testid="stMain"] [data-testid="stTextInput"] input{font-size:15px!important;min-height:34px!important;padding-top:4px!important;padding-bottom:4px!important}
+        [data-testid="stMain"] [data-testid="stDateInput"] input,
+        [data-testid="stMain"] [data-testid="stSelectbox"] [role="combobox"],
+        [data-testid="stMain"] [data-testid="stTextArea"] textarea{font-size:15px!important;min-height:34px!important}
+        [data-testid="stMain"] [data-testid="stTextInput"] label,
+        [data-testid="stMain"] [data-testid="stDateInput"] label,
+        [data-testid="stMain"] [data-testid="stSelectbox"] label{font-size:14px!important}
 
-        /* Main action buttons: preserve the full label without ellipses. */
+        /* Compact maintenance process navigation. Full names stay on one line. */
+        /* Main action buttons: the entire box is clickable; never show an underline/focus line. */
         [data-testid="stMain"] [data-testid="stButton"]>button{
-            white-space:normal!important;
+            white-space:nowrap!important;
             overflow:visible!important;
             text-overflow:clip!important;
-            font-size:12px!important;
-            line-height:1.2!important;
-            padding:7px 8px!important;
-            min-width:0!important;
+            font-size:13px!important;
+            padding:8px 10px!important;
+            min-width:max-content!important;
             min-height:38px!important;
-            height:auto!important;
             width:100%!important;
             border:1px solid var(--border)!important;
             border-radius:9px!important;
@@ -1260,40 +1189,11 @@ def css():
             outline:none!important;
             transition:none!important;
         }
-        /* Inspection labels wrap onto a second line when needed, rather than truncating. */
-        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{
-            gap:.8rem!important;
-            align-items:stretch!important;
-        }
-        .st-key-inspection_tabs [data-testid="stButton"]>button{
-            min-width:0!important;
-            white-space:normal!important;
-            overflow:visible!important;
-            overflow-wrap:normal!important;
-            word-break:normal!important;
-            height:auto!important;
-            min-height:40px!important;
-            padding:7px 6px!important;
-        }
-        .st-key-inspection_tabs [data-testid="stButton"]>button p,
-        .st-key-inspection_tabs [data-testid="stButton"]>button span,
-        .st-key-inspection_tabs [data-testid="stButton"]>button div{
-            white-space:normal!important;
-            overflow:visible!important;
-            text-overflow:clip!important;
-            overflow-wrap:normal!important;
-            word-break:normal!important;
-            text-align:center!important;
-            font-size:12px!important;
-            line-height:1.2!important;
-            margin:0!important;
-        }
         [data-testid="stMain"] [data-testid="stButton"]>button p{
-            white-space:normal!important;
+            white-space:nowrap!important;
             overflow:visible!important;
             text-overflow:clip!important;
-            font-size:12px!important;
-            line-height:1.2!important;
+            font-size:13px!important;
             text-decoration:none!important;
             margin:0!important;
         }
@@ -1313,30 +1213,7 @@ def css():
         .inspection-item-divider{height:1px;background:var(--border);margin:6px 0 3px}
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
-        .inspection-tabs-line{height:1px;background:var(--border);margin:8px 0 10px}
-        /* Keep inspection process buttons separated; labels must stay within each tab. */
-        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]){
-            gap:10px!important;
-            align-items:stretch!important;
-        }
-        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]) [data-testid="column"]{
-            min-width:0!important;
-        }
-        [data-testid="stMain"] button[key^="inspection_tab_"]{
-            min-width:0!important;
-            width:100%!important;
-            white-space:normal!important;
-            overflow-wrap:anywhere!important;
-            padding:6px 7px!important;
-            font-size:11px!important;
-            line-height:1.2!important;
-        }
-        [data-testid="stMain"] button[key^="inspection_tab_"] p{
-            white-space:normal!important;
-            overflow-wrap:anywhere!important;
-            font-size:11px!important;
-            line-height:1.2!important;
-        }
+        .inspection-tabs-line{height:1px;background:var(--border);margin:-1px 0 10px}
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
             border:1px solid #16a66a!important;
@@ -1384,7 +1261,7 @@ def display_site_code(plant):
 def header(plant):
     st.markdown(
         f"""
-        <div class="top-title">{display_plant_name(plant)} <span style="color:#16a66a;">Maintenance Dashboard</span></div>
+        <div class="top-title">☀️ {display_plant_name(plant)} <span style="color:#16a66a;">Maintenance Dashboard</span></div>
         <div class="top-subtitle">
             Capacity {plant.capacity_mw:g} MW &nbsp; • &nbsp;
             {plant.inverter_count} Inverters &nbsp; • &nbsp;
@@ -1481,50 +1358,6 @@ def login_page():
             .login-form-sub{{font-size:13px;color:#67809b;margin-top:3px}}
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
-            [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Keep the full green outline visible on every empty and filled login/register field. */
-            [data-testid="stTextInput"],
-            [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            [data-testid="stTextArea"] [data-baseweb="textarea"],
-            [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
-            [data-testid="stNumberInput"] [data-baseweb="input"],
-            [data-testid="stNumberInput"] [data-baseweb="input"] > div{{
-                border:1.5px solid #16a765!important;
-                border-radius:8px!important;
-                box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
-                background:#fff!important;
-                box-sizing:border-box!important;
-            }}
-            [data-testid="stTextInput"] input,
-            [data-testid="stTextArea"] textarea,
-            [data-testid="stNumberInput"] input{{
-                border:0!important;
-                outline:0!important;
-                box-shadow:none!important;
-                background:transparent!important;
-            }}
-            [data-testid="stTextInput"]:focus-within [data-baseweb="input"],
-            [data-testid="stTextInput"]:focus-within [data-baseweb="input"] > div,
-            [data-testid="stTextArea"]:focus-within [data-baseweb="textarea"],
-            [data-testid="stTextArea"]:focus-within [data-baseweb="textarea"] > div,
-            [data-testid="stNumberInput"]:focus-within [data-baseweb="input"],
-            [data-testid="stNumberInput"]:focus-within [data-baseweb="input"] > div{{
-                border-color:#07894b!important;
-                box-shadow:inset 0 0 0 1px rgba(22,167,101,.18)!important;
-            }}
-            [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
-            [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
-            [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
-            /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:38px!important;height:38px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:34px!important;min-height:34px!important;padding-top:5px!important;padding-bottom:5px!important;font-size:14px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
-            [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
-            .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
-            [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
-            
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -1539,7 +1372,8 @@ def login_page():
         st.markdown(
             f"""
             <img class="login-logo" src="{logo_uri}" alt="VIDULLANKA">
-            <div class="login-hero-title">Solar Operation and<br>Maintenance Platform</div>
+            <div class="login-brand-sub">Building on renewable energy sources</div>
+            <div class="login-hero-title">Solar Power Plant<br>Maintenance Dashboard</div>
             <div class="login-hero-sub">Monitor &nbsp; • &nbsp; Maintain &nbsp; • &nbsp; Sustain</div>
             <div class="login-hero-points">
                 <div class="login-hero-point"><b>📊 Monitor</b>Track performance in real-time</div>
@@ -1554,7 +1388,7 @@ def login_page():
         st.markdown(
             """
             <div class="login-card-anchor"></div>
-            <div class="login-form-title">Sign In</div>
+            <div class="login-form-title">☀️ Sign In</div>
             <div class="login-form-sub">Access your solar plant management system</div>
             <div class="login-accent"></div>
             """,
@@ -1668,16 +1502,8 @@ def notification_center(db, user):
 def top_nav(db, user):
     """Render the sidebar using clickable buttons instead of radio controls."""
     plants = allowed_plants(db, user)
-    # Keep DPV (Ranna) as the final item in the site selector.
-    plants = sorted(
-        plants,
-        key=lambda p: (
-            "DPV" in f"{getattr(p, 'code', '')} {getattr(p, 'name', '')}".upper(),
-            display_plant_name(p).casefold(),
-        ),
-    )
     if not plants:
-        st.sidebar.markdown('<div class="sidebar-brand">Solar Maintenance</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
         st.sidebar.error("No plant is assigned to this account. Ask an administrator to assign a plant.")
         if st.sidebar.button("🚪 Sign out", key="sidebar_signout_unassigned"):
             st.session_state.clear(); st.rerun()
@@ -1690,7 +1516,7 @@ def top_nav(db, user):
     st.markdown(f'<div class="top-user" style="text-align:left">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
-        st.markdown('<div class="sidebar-brand">Solar Maintenance</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-brand">☀️ Solar Maintenance</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sidebar-sub">{user.full_name} • {user.role.title()}</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("Plant", list(plant_options.keys()), index=list(plant_options.keys()).index(current_name), key="top_plant")
         st.session_state.selected_plant_id = plant_options[selected_name]
@@ -1702,11 +1528,9 @@ def top_nav(db, user):
     else:
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
-        pages += ["📊 Reports", "✅ Approvals & Sign-off", "⏰ Reminders"]
-    if user.role == "engineer":
-        pages += ["👥 Users"]
+        pages += ["📊 Reports", "✅ Approvals & Sign-off"]
     if user.role == "admin":
-        pages += ["👥 Users", "⚙️ Admin"]
+        pages += ["👥 Users", "🏭 Plants", "⏰ Reminders", "⚙️ Admin"]
 
     # No radio buttons/circles.  Each navigation item is a normal Streamlit
     # button; the active page uses the primary button style like the reference UI.
@@ -1764,8 +1588,8 @@ def render_solar_layout(db, plant, task_date):
     html = [
         '<div class="solar-map">',
         '<div class="solar-map-title">🛰️ Solar Plant Map • Live Status</div>',
-        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = Completed</span><br><span style="color:#ff4e59">● RED = Not Completed</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
-        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>Completed &nbsp;&nbsp; <span class="legend-dot legend-red"></span>Not Completed</div>'
+        '<div class="map-controls"><b>Live Status</b><span style="color:#16e879">● GREEN = Completed</span><br><span style="color:#ff4e59">● RED = Pending</span><br>Table = panel cleaning<br>Border = grass cutting</div>',
+        '<div class="solar-map-legend"><span class="legend-dot legend-green"></span>Completed &nbsp;&nbsp; <span class="legend-dot legend-red"></span>Pending / Pending</div>'
     ]
     for z in range(zones):
         items = assets[z*per_zone:(z+1)*per_zone]
@@ -1835,21 +1659,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     elif "HRN 2" in plant_identity or "HRN2" in plant_identity or "HS2" in plant_identity:
         plant_code = "HRN2"
     satellite_files = {
-        "HS1": "HRN1.jpg",
+        "HS1": "HRN1.jpg",   # HRN 1: first supplied site image
         "HRN1": "HRN1.jpg",
         "HRN": "HRN1.jpg",
-        "HS2": "HRN2.jpg",
+        "HS2": "HRN2.jpg",   # HRN 2: second supplied site image
         "HRN2": "HRN2.jpg",
-        "DPV": "DPV.jpeg",
-        "ORK": "ORK.jpg",
-        "MDP": "MDP view .png",
-        "MTR": "MTR view .png",
+        "DPV": "DPV.jpeg",   # DPV (Ranna): supplied clean aerial photo
+        "ORK": "ORK.jpg",    # ORK: third supplied site image
+        "MDP": "MDP view .png",  # MDP: use the supplied MDP satellite image
+        "MTR": "MTR view .png",  # MTR: use the supplied MTR satellite image
         "MTR-I": "MTR view .png",
         "MTR-II": "MTR view .png",
     }
-    # ORK Panel Cleaning keeps its dedicated panel layout; Grass Cutting uses
-    # the separate supplied aerial reference without added table/zone overlays.
-    # DPV uses the same supplied clean satellite image for both map modes.
+    # ORK Grass Cutting uses the supplied clean aerial zone-map image only.
+    # It is intentionally shown without any status polygons, table outlines, or labels.
     ork_grass_reference = plant_code == "ORK" and map_mode == "grass"
     dpv_reference = plant_code == "DPV"
     if ork_grass_reference:
@@ -1876,14 +1699,6 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if rotate_hrn2_map:
             # Rotate the HRN 2 satellite image 90 degrees anti-clockwise.
             rotated = im.convert("RGB").rotate(90, expand=True)
-            if map_mode == "grass":
-                # Grass-cutting view: crop away the outer ground/road margins so
-                # the panel-array area is enlarged and fills the zone map.
-                rw, rh = rotated.size
-                rotated = rotated.crop((
-                    int(rw * 0.10), int(rh * 0.12),
-                    int(rw * 0.90), int(rh * 0.88),
-                ))
             img_width, img_height = rotated.size
             image_buffer = io.BytesIO()
             rotated.save(image_buffer, format="PNG")
@@ -1898,53 +1713,15 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     image_uri = f"data:{image_mime};base64,{encoded}"
 
     if ork_grass_reference or dpv_reference:
-        # ORK Grass Cutting uses its separate clean aerial photo without added
-        # status overlays. DPV uses its supplied aerial photo for both work maps,
-        # without guessed table/zone overlays.
+        # ORK Grass Cutting uses the supplied zone-map image without markings.
+        # DPV uses its supplied aerial photograph on Overview, Panel Cleaning,
+        # and Grass Cutting, also without guessed table/zone overlays.
         import plotly.graph_objects as go
         clean_fig = go.Figure()
         clean_fig.add_layout_image(dict(
             source=image_uri, xref="x", yref="y", x=0, y=img_height,
             sizex=img_width, sizey=img_height, sizing="stretch", layer="below"
         ))
-        if ork_grass_reference:
-            # Show a large, high-contrast status dot in each of ORK's 10 zones.
-            # Positions follow the visible zone layout on the supplied aerial image.
-            grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
-            zone_assets = asset_list(plant, "Zone")
-            # Circle positions are aligned to the corresponding coloured zone,
-            # rather than the old positions which placed several labels in the
-            # neighbouring zone. Coordinates are normalized to the ORK image.
-            zone_centres = [
-                (.505, .105),  # Z1 — top-centre zone
-                (.315, .245),  # Z2 — upper-left zone
-                (.590, .285),  # Z3 — upper-centre/right zone
-                (.365, .420),  # Z4 — middle-left zone
-                (.590, .485),  # Z5 — positioned inside the blue Zone 5 area
-                (.355, .610),  # Z6 — moved inside the red/orange lower-left zone
-                (.665, .625),  # Z7 — inside the green centre-right zone
-                (.355, .815),  # Z8 — inside the blue lower-left zone
-                (.600, .875),  # Z9 — inside the pink bottom-centre zone
-                (.870, .850),  # Z10 — bottom-right zone
-            ]
-            dot_x, dot_y, dot_colors, dot_text = [], [], [], []
-            for idx, (cx, cy) in enumerate(zone_centres):
-                if idx >= len(zone_assets):
-                    break
-                zone_name = zone_assets[idx]
-                rec = grass_records.get(zone_name)
-                done = bool(rec and rec.status == "Completed")
-                dot_x.append(cx * img_width)
-                dot_y.append((1 - cy) * img_height)
-                dot_colors.append("#00e676" if done else "#ff2638")
-                dot_text.append(f"{zone_name} — Grass cutting: {'Completed' if done else 'Pending'}")
-            clean_fig.add_trace(go.Scatter(
-                x=dot_x, y=dot_y, mode="markers+text",
-                marker=dict(size=19, color=dot_colors, line=dict(color="#ffffff", width=2)),
-                text=[f"Z{i+1}" for i in range(len(dot_x))],
-                textposition="middle center", textfont=dict(size=8, color="#07131f"),
-                hovertext=dot_text, hoverinfo="text", showlegend=False,
-            ))
         clean_fig.update_xaxes(range=[0, img_width], visible=False, fixedrange=True, constrain="domain")
         clean_fig.update_yaxes(range=[0, img_height], visible=False, fixedrange=True)
         clean_fig.update_layout(
@@ -1978,12 +1755,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # solar-table groups traced from the supplied HRN1 satellite image.
         # Each table row is coloured from top to bottom ("y").
         block_specs = [
-            # Trace/table order starts at the upper-right solar-panel group,
-            # so Trace 0 is on the right-side top array as requested.
-            (.738, .081, .992, .438, "y"),  # Group 1: upper-right array
-            (.512, .114, .738, .438, "y"),  # Group 2: upper-middle array
-            (.258, .139, .512, .847, "y"),  # Group 3: tall centre array
-            (.014, .201, .258, .889, "y"),  # Group 4: left array, including lower rows
+            (.014, .201, .258, .889, "y"),  # Group 1: left array, including lower rows
+            (.258, .139, .512, .847, "y"),  # Group 2: tall centre array
+            (.512, .114, .738, .438, "y"),  # Group 3: short upper-middle array
+            (.738, .081, .992, .438, "y"),  # Group 4: upper-right array
         ]
     elif plant_code in {"HS2", "HRN2"}:
         # HRN 2 panel-cleaning layout: eight separate panel groups matching
@@ -2000,62 +1775,32 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.435, .53, .575, .91, "y"),  # Group 7: 10 rows
             (.615, .53, .785, .91, "y"),  # Group 8: 10 rows
         ]
-    elif plant_code == "MDP":
-        # MDP panel rows follow the supplied hand-drawn site plan: the large
-        # upper-left bank, smaller banks across the upper/middle rows, and the
-        # three lower banks. Coordinates are normalized to the MDP satellite.
+    elif plant_code in {"MTR", "MTR-I", "MTR-II"}:
+        # MTR layout follows the supplied hand-drawn arrangement.
         block_specs = [
-            (.035, .285, .485, .470, "y"),  # main upper-left bank
-            (.500, .300, .585, .430, "y"),  # 9-row bank
-            (.610, .300, .700, .480, "y"),  # 11-row bank
-            (.715, .300, .785, .385, "y"),  # 5-row bank
-            (.800, .300, .895, .480, "y"),  # 11-row bank
-            (.905, .300, .985, .480, "y"),  # 11-row bank
-            (.925, .490, .985, .620, "y"),  # 8-row bank
-            (.025, .510, .115, .565, "y"),  # short left bank
-            (.145, .500, .220, .660, "y"),  # lower-left bank
-            (.245, .500, .320, .660, "y"),  # lower bank
-            (.345, .500, .420, .660, "y"),  # lower bank
-            (.435, .500, .500, .610, "y"),  # 7-row bank
-            (.515, .500, .575, .610, "y"),  # 7-row bank
-            (.590, .500, .650, .610, "y"),  # 7-row bank
-            (.665, .500, .725, .610, "y"),  # 7-row bank
-            (.740, .500, .800, .590, "y"),  # 5-row bank
-            (.810, .500, .870, .590, "y"),  # 5-row bank
-            (.880, .500, .940, .590, "y"),  # 5-row bank
-            (.150, .720, .245, .900, "y"),  # lower-left 9-row bank
-            (.270, .720, .365, .940, "y"),  # lower-middle 11-row bank
-            (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
-        ]
-    elif plant_code == "MTR":
-        # MTR panel rows follow the hand-drawn layout: small banks at the
-        # upper-left, three short horizontal strips beneath them, four tall
-        # banks across the centre/right, and a small upper-right bank.
-        block_specs = [
-            (.035, .180, .170, .235, "y"),  # 5 rows
-            (.205, .180, .340, .235, "y"),  # 5 rows
-            (.375, .180, .510, .235, "y"),  # 5 rows
-            (.080, .250, .240, .275, "y"),  # short strip
-            (.280, .250, .440, .275, "y"),  # short strip
-            (.180, .285, .340, .310, "y"),  # short strip
-            (.555, .220, .680, .700, "y"),  # 15-row tall bank
-            (.700, .150, .820, .780, "y"),  # 20-row tall bank
-            (.825, .120, .945, .900, "y"),  # 23-row tall bank
-            (.450, .190, .550, .820, "y"),  # 21-row tall bank
-            (.940, .120, .995, .220, "y"),  # 5-row upper-right bank
+            (.045, .25, .165, .38, "y"),
+            (.185, .25, .305, .38, "y"),
+            (.325, .25, .445, .38, "y"),
+            (.095, .405, .205, .445, "y"),
+            (.235, .405, .345, .445, "y"),
+            (.175, .465, .285, .505, "y"),
+            (.505, .30, .625, .76, "y"),
+            (.635, .25, .755, .83, "y"),
+            (.765, .22, .885, .91, "y"),
+            (.895, .29, .985, .76, "y"),
+            (.895, .19, .975, .27, "y"),
         ]
     elif plant_code == "ORK":
-        # ORK panel-cleaning footprints follow the user's hand-drawn layout.
-        # These seven groups cover all visible panel rows; their row counts are
-        # 1 + 6 + 7 + 13 + 14 + 2 + 9 = 52 tables.
+        # ORK: irregular array layout, matching the supplied ORK satellite image.
         block_specs = [
-            (.095, .555, .235, .590, "y"),  # Group 1: far-left single row
-            (.160, .265, .300, .405, "y"),  # Group 2: left group, 6 rows
-            (.300, .205, .430, .395, "y"),  # Group 3: upper-middle group, 7 rows
-            (.430, .200, .565, .720, "y"),  # Group 4: central tall group, 13 rows
-            (.565, .185, .705, .720, "y"),  # Group 5: right tall group, 14 rows
-            (.420, .085, .555, .155, "y"),  # Group 6: top group, 2 rows
-            (.700, .500, .835, .895, "y"),  # Group 7: lower-right group, 9 rows
+            (.37, .08, .55, .17, "y"),
+            (.21, .18, .39, .47, "y"),
+            (.38, .18, .56, .48, "y"),
+            (.56, .18, .74, .48, "y"),
+            (.20, .50, .39, .72, "y"),
+            (.39, .49, .57, .78, "y"),
+            (.57, .49, .75, .78, "y"),
+            (.70, .77, .86, .94, "y"),
         ]
     else:
         # Preserve the original map overlay geometry for other sites.
@@ -2100,9 +1845,6 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # four upper groups with 9, 6, 7, and 8 rows, followed by four
             # lower groups with 10 rows each (70 rows total).
             counts = [9, 6, 7, 8, 10, 10, 10, 10]
-        elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
-            # Match the user's ORK table-row counts exactly.
-            counts = [1, 6, 7, 13, 14, 2, 9]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
@@ -2147,37 +1889,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # zones 1-4 cover the left-side panel groups, zones 5-8 cover the
         # right-side panel groups, and zones 9-10 cover the two open-ground
         # sections on the far right. Coordinates are normalized to HRN2.jpg.
-        # Non-overlapping zones are defined in the *displayed* (rotated)
-        # image coordinate system. Each zone has a shared edge at most; no
-        # zone rectangle crosses into another zone.
         zone_rects = [
-            (.015, .020, .465, .250),  # Zone 1: upper-left section
-            (.015, .250, .465, .480),  # Zone 2: upper-middle-left section
-            (.015, .480, .465, .715),  # Zone 3: lower-middle-left section
-            (.015, .715, .465, .985),  # Zone 4: lower-left section
-            (.465, .020, .805, .250),  # Zone 5: upper-centre section
-            (.465, .250, .805, .480),  # Zone 6: upper-middle-centre section
-            (.465, .480, .805, .715),  # Zone 7: lower-middle-centre section
-            (.465, .715, .805, .985),  # Zone 8: lower-centre section
-            (.805, .020, .995, .500),  # Zone 9: upper-right section
-            (.805, .500, .995, .985),  # Zone 10: lower-right section
+            (.015, .155, .465, .405),  # Zone 1: upper-left panel block (7 rows)
+            (.035, .405, .465, .605),  # Zone 2: middle-left panel block
+            (.065, .605, .490, .795),  # Zone 3: lower-left panel block
+            (.085, .795, .515, .985),  # Zone 4: bottom-left panel block
+            (.445, .125, .900, .385),  # Zone 5: upper-right panel block (6 rows)
+            (.455, .385, .710, .555),  # Zone 6: middle upper-right panel block
+            (.480, .555, .755, .735),  # Zone 7: middle lower-right panel block
+            (.515, .735, .825, .925),  # Zone 8: bottom-right panel block
+            (.805, .385, .995, .665),  # Zone 9: upper open-ground area
+            (.825, .665, .995, .965),  # Zone 10: lower open-ground area
         ]
-        zone_blocks = [
-            ((l * img_width, t * img_height), (r * img_width, t * img_height),
-             (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
-            for l, t, r, b in zone_rects
-        ]
-    elif plant_code in {"MDP", "MTR", "MTR-I", "MTR-II"} and zone_assets:
-        # MDP and MTR: use a clean, non-overlapping 5-column x 2-row
-        # zone layout. Shared edges meet exactly, so zone outlines cannot
-        # cross over one another as in the previous overlapping footprints.
-        zone_rects = [
-            (col * 0.20 + 0.008, 0.035, (col + 1) * 0.20 - 0.008, 0.495)
-            for col in range(5)
-        ] + [
-            (col * 0.20 + 0.008, 0.505, (col + 1) * 0.20 - 0.008, 0.965)
-            for col in range(5)
-        ]
+        if rotate_hrn2_map:
+            zone_rects = [(top, 1 - right, bottom, 1 - left) for left, top, right, bottom in zone_rects]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
              (l * img_width, b * img_height), (r * img_width, b * img_height), "y")
@@ -2228,12 +1953,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             ))
 
     # A table is represented by a narrow polygon matching one real panel row.
-    # On the Grass Cutting map, omit table polygons entirely: even transparent
-    # fills retain dark outline strokes and made black borders appear over zones.
     asset_index = 0
     for block_idx, (block, count) in enumerate(zip(blocks, counts)):
-        if map_mode == "grass":
-            break
         if count <= 0:
             continue
         top_left, top_right, bottom_left, bottom_right, direction = block
@@ -2340,7 +2061,7 @@ def operations_staff_section(db, user, plant, embedded=False):
         db.refresh(profile)
 
     if not embedded:
-        st.markdown("### 👷 Operating Staff & Site Contacts")
+        st.markdown("### Operating Staff & Site Contacts")
         st.caption("Headcount and contact details are site-specific. This section is maintained from User Management.")
 
     leadership = [
@@ -2428,7 +2149,8 @@ def render_plant_details_and_specs(db, plant):
     staff_count = int(profile.operating_staff_count or 0) if profile else 0
     supervisors = {
         "ORK": "Pasindu", "HS1": "Roshan", "HS2": "Roshan",
-        "MTR": "Sudheera", "MDP": "Sansala", "HOF": "Not provided",
+        "MTR": "Sudheera", "MTR-I": "Sudheera", "MTR-II": "Sudheera",
+        "MDP": "Sansala", "HOF": "Not provided",
     }
     supervisor = (profile.supervisor_name.strip() if profile and profile.supervisor_name else "") or supervisors.get(plant.code, "Not provided")
     engineers = {
@@ -2439,7 +2161,7 @@ def render_plant_details_and_specs(db, plant):
     }
     engineer = (profile.engineer_name.strip() if profile and profile.engineer_name else "") or engineers.get(plant.code, "Not provided")
 
-    st.markdown("## 🏭 Power Plant Details")
+    st.markdown("## Power Plant Details")
     detail_rows = [
         ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
@@ -2525,7 +2247,7 @@ def render_plant_details_and_specs(db, plant):
 
     spec = specs.get(spec_key, {}) if spec_key else {}
 
-    st.markdown("## ⚙️ Technical Specifications")
+    st.markdown("## Technical Specifications")
     if spec:
         st.dataframe(pd.DataFrame([{"Specification": k, "Value": v} for k, v in spec.items()]),
                      use_container_width=True, hide_index=True)
@@ -2542,7 +2264,7 @@ def _overview_target_label(done, total, target_days, unit):
 
 def _render_overview_card(title, icon, pct, done, total, target_text, map_renderer=None):
     st.markdown(
-        f'<div class="overview-work-card"><div class="overview-work-title">{icon} {title}</div>'
+        f'<div class="overview-work-card"><div class="overview-work-title">{title}</div>'
         f'<div class="overview-work-percent">{pct:.0f}%</div>'
         f'<div class="small-muted">{done} / {total} completed</div>'
         f'<div class="overview-work-target">⏱️ {target_text}</div></div>',
@@ -2586,14 +2308,14 @@ def overview_page(db, user, plant):
     ).group_by(RepairItem.asset_id).all()
     repair_counts = {a: int(c) for a, c in repair_rows}
 
-    st.markdown("## ⚡ Maintenance Productivity")
+    st.markdown("## Maintenance Productivity")
     st.caption("Compact operational view — cleaning, grass cutting and repair/maintenance status.")
 
     panel_col, grass_col, repair_col = st.columns(3, gap="medium")
 
     with panel_col:
         _render_overview_card(
-            "Panel Cleaning", "🧹", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
+            "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
@@ -2601,7 +2323,7 @@ def overview_page(db, user, plant):
 
     with grass_col:
         _render_overview_card(
-            "Grass Cutting", "🌿", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
+            "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
@@ -2609,7 +2331,7 @@ def overview_page(db, user, plant):
 
     with repair_col:
         _render_overview_card(
-            "Repair & Maintenance", "🔧",
+            "Repair & Maintenance", "",
             100 if metrics["open_repairs"] == 0 else 0,
             plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
             plant.inverter_count,
@@ -2634,40 +2356,9 @@ def overview_page(db, user, plant):
     render_plant_details_and_specs(db, plant)
 
 
-MTR_EMPLOYEES = [
-    "Sudheera Athukorala — Assistant Supervisor",
-    "VIraj Samarasinghe",
-    "Alaththuge Gunarathne",
-    "Saman Kumara",
-    "Chiwantha Dahanayake",
-    "Minidu Gawesh",
-]
-
-def worker_options_for_plant(plant, db, first_names_only=False):
-    """Return the supervisor and two worker choices for each non-MTR site."""
-    code = (plant.code or "").strip().upper()
-    if code == "MTR":
-        values = list(MTR_EMPLOYEES)
-    else:
-        # HRN 1 and HRN 2 use the requested supervisor label consistently.
-        if code in {"HS1", "HRN1", "HRN", "HRN 1", "HS2", "HRN2", "HRN 2"}:
-            supervisor_label = "Roshan - Supervisor"
-        else:
-            supervisor = (db.query(PlantOperationsProfile)
-                          .filter(PlantOperationsProfile.plant_id == plant.id).first())
-            supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
-            supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
-        values = [supervisor_label, "Worker 1", "Worker 2"]
-
-    # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
-    values = [v.strip() for v in values if v and v.strip().upper() != "R"]
-    # Grass Cutting uses this helper with first_names_only=True. Preserve the
-    # complete supervisor label and numbered worker options in that dropdown.
-    return list(dict.fromkeys(values))
-
 def panel_cleaning_page(db, user, plant):
     header(plant)
-    st.markdown("## 🧹 Panel Cleaning")
+    st.markdown("## Panel Cleaning")
 
     task_date = st.date_input("Work date", value=date.today(), key="panel_date")
     # Compact map — same size as the Grass Cutting map.
@@ -2689,18 +2380,15 @@ def panel_cleaning_page(db, user, plant):
         r = panel_records.get(asset)
         done = bool(r and r.status == "Completed")
         saved_worker_name = (r.remarks or "").strip() if r else ""
-        if saved_worker_name.upper() == "R":
-            saved_worker_name = ""
 
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_options = worker_options_for_plant(plant, db)
-            worker_choices = list(dict.fromkeys(([saved_worker_name] if saved_worker_name else []) + worker_options))
-            worker_name = st.selectbox(
-                "Worker / Supervisor", worker_choices,
-                index=worker_choices.index(saved_worker_name) if saved_worker_name in worker_choices else 0,
+            worker_name = st.text_input(
+                "Worker / Supervisor",
+                value=saved_worker_name,
                 label_visibility="collapsed",
                 key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
+                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
@@ -2725,7 +2413,7 @@ def panel_cleaning_page(db, user, plant):
 
 def grass_cutting_page(db, user, plant):
     header(plant)
-    st.markdown("## 🌿 Grass Cutting")
+    st.markdown("## Grass Cutting")
 
     task_date = st.date_input("Work date", value=date.today(), key="grass_date")
     # Compact map — same size as the Panel Cleaning map.
@@ -2741,19 +2429,15 @@ def grass_cutting_page(db, user, plant):
         r = grass_records.get(zone)
         done = bool(r and r.status == "Completed")
         saved_worker_name = (r.remarks or "").strip() if r else ""
-        if saved_worker_name.upper() == "R":
-            saved_worker_name = ""
 
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_options = worker_options_for_plant(plant, db, first_names_only=True)
-            saved_first_name = saved_worker_name.split()[0] if saved_worker_name else ""
-            worker_choices = list(dict.fromkeys(([saved_first_name] if saved_first_name and saved_first_name.upper() != "R" else []) + worker_options))
-            worker_name = st.selectbox(
-                "Worker / Supervisor", worker_choices,
-                index=worker_choices.index(saved_first_name) if saved_first_name in worker_choices else 0,
+            worker_name = st.text_input(
+                "Worker / Supervisor",
+                value=saved_worker_name,
                 label_visibility="collapsed",
                 key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
+                placeholder="Enter name",
             ).strip()
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
@@ -2800,41 +2484,55 @@ def _inspection_saved_item(old_record, item):
     return status, str(items.get(f"{item}__reason", "") or "")
 
 
-def _inspection_display_item(item):
-    """Clean checklist labels for display only; preserve original database keys."""
-    label = str(item or "").strip()
-    if label.startswith("Outdoor -"):
-        label = label[len("Outdoor -"):].strip()
-    elif label.startswith("Indoor -"):
-        label = label[len("Indoor -"):].strip()
-
-    if label.startswith("CT "):
-        label = "Current Transformers " + label[3:]
-    elif label == "CT":
-        label = "Current Transformers"
-    return label
-
-
 def _inspection_groups(category, assets):
-    """Return compact visual groups without changing saved checklist keys."""
+    """Return the intended visual groups without changing the underlying checklist."""
     cfg = PROCESS_CATEGORIES[category]
 
     if category == "Daily Inspection":
+        primary_assets = list(assets)
         one_inverter = [assets[0]] if assets else ["INV-01"]
+        # Keep the original two high-level Daily Inspection tabs.
+        # CCTV, Lightning Arresters and Fire Extinguisher remain separate
+        # checks inside Site Safety & Security Checks, using only INV-01.
         return [
-            ("🔌 Inverter Checks", cfg["items"][:3], list(assets)),
-            ("🛡️ Safety Checks", cfg["items"][3:], one_inverter),
+            ("🔌 Inverter Health Checks", cfg["items"][:3], primary_assets),
+            ("🛡️ Site Safety & Security Checks", cfg["items"][3:], one_inverter),
+        ]
+
+    if category == "MDB Inspection":
+        item_map = {item: i for i, item in enumerate(cfg["items"])}
+        groups = [
+            ("ACB", cfg["items"][0:2]),
+            ("Bus Bar / Switch Gear", cfg["items"][2:5]),
+            ("MCCB", cfg["items"][5:7]),
+            ("CT", cfg["items"][7:9]),
+            ("Auto Transformer", cfg["items"][9:10]),
+            ("Multi-Function Meter", cfg["items"][10:11]),
+            ("Fans / Ventilation", cfg["items"][11:12]),
+            ("Thermo", cfg["items"][12:13]),
+            ("Enclosure", cfg["items"][13:14]),
+            ("Surge Protection", cfg["items"][14:15]),
+            ("Fuse", cfg["items"][15:16]),
+            ("Meter Panel Battery", cfg["items"][16:17]),
+            ("Protection Module", cfg["items"][17:18]),
+        ]
+        return [(title, items, assets) for title, items in groups]
+
+    if category == "Switch Yard Inspection":
+        return [
+            ("🔌 Transformers", cfg["items"][0:5], assets),
+            ("⚡ OCB", cfg["items"][5:8], assets),
+            ("🛡️ Other Switch Yard Checks", cfg["items"][8:], assets),
         ]
 
     if category == "AC Inspection":
+        outdoor = [item for item in cfg["items"] if item.strip().startswith("Outdoor -")]
+        indoor = [item for item in cfg["items"] if item.strip().startswith("Indoor -")]
         return [
-            ("🌤️ Outdoor Unit Checks", cfg["items"][:7], assets),
-            ("❄️ Indoor Unit Checks", cfg["items"][7:], assets),
+            ("🌤️ Outdoor Unit Checks", outdoor, assets),
+            ("❄️ Indoor Unit Checks", indoor, assets),
         ]
 
-    # MDB and Switch Yard inspections use a single continuous checklist.
-    # Category headers such as ACB, MCCB, Transformers, OCB, Outdoor and Indoor
-    # are not rendered as separate sections.
     return [("Checklist", cfg["items"], assets)]
 
 
@@ -2932,7 +2630,7 @@ def _render_inspection_category(db, user, plant, category):
 
     # Daily inspection gets separate tabs so CCTV, Lightning Arresters and Fire
     # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
-    if category in ("Daily Inspection", "AC Inspection"):
+    if category == "Daily Inspection":
         tabs = st.tabs([title for title, _, _ in groups])
         group_contexts = list(zip(tabs, groups))
     else:
@@ -2942,65 +2640,17 @@ def _render_inspection_category(db, user, plant, category):
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
-            if category == "AC Inspection":
-                st.markdown(f"### {group_title}")
-                row_size = 4
-                for row_start in range(0, len(group_items), row_size):
-                    row_items = group_items[row_start:row_start + row_size]
-                    cols = st.columns(len(row_items), gap="small")
-                    for col, item in zip(cols, row_items):
-                        with col:
-                            asset = group_assets[0] if group_assets else "AC-01"
-                            old_record = old_records.get(asset)
-                            st.markdown(
-                                f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">'
-                                f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
-                                unsafe_allow_html=True,
-                            )
-                            _render_inspection_status(
-                                db, user, plant, category, task_date, item,
-                                item_number_map[item] - 1, asset, old_record,
-                                values, reason_widgets,
-                            )
-                            st.markdown('</div>', unsafe_allow_html=True)
-                continue
+            if category != "Daily Inspection":
+                st.markdown(
+                    f'<div class="inspection-check-title">'
+                    f'<span>{group_title}</span>'
+                    f'<span class="inspection-check-hint">✓ / ✗</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
-            if category == "Daily Inspection":
-                # Each inverter is shown once, with its applicable checks beneath it.
-                # Site Safety & Security checks intentionally apply only to INV-01.
-                if group_title.startswith("🛡️"):
-                    st.caption("Site Safety & Security Checks are recorded against INV-01 only.")
-                    asset_rows = [group_assets[0] if group_assets else "INV-01"]
-                else:
-                    asset_rows = group_assets
-
-                cards_per_row = 3
-                for row_start in range(0, len(asset_rows), cards_per_row):
-                    row_assets = asset_rows[row_start:row_start + cards_per_row]
-                    cols = st.columns(len(row_assets), gap="small")
-                    for col, asset in zip(cols, row_assets):
-                        with col:
-                            st.markdown(
-                                f'<div class="inspection-asset-box">{asset}</div>',
-                                unsafe_allow_html=True,
-                            )
-                            old_record = old_records.get(asset)
-                            for item in group_items:
-                                item_index = item_number_map[item] - 1
-                                st.markdown(
-                                    f'<div class="inspection-item-name" style="margin-top:8px;">'
-                                    f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
-                                    unsafe_allow_html=True,
-                                )
-                                _render_inspection_status(
-                                    db, user, plant, category, task_date, item,
-                                    item_index, asset, old_record, values, reason_widgets,
-                                )
-                            st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
-                continue
-
-            # All other inspections are displayed as one continuous checklist.
+            # For grouped single-asset inspections (MDB, Switch Yard, AC), place
+            # related checklist items beside one another rather than vertically.
             if single_asset:
                 row_size = 4
                 for row_start in range(0, len(group_items), row_size):
@@ -3008,30 +2658,34 @@ def _render_inspection_category(db, user, plant, category):
                     cols = st.columns(len(row_items), gap="small")
                     for col, item in zip(cols, row_items):
                         with col:
-                            asset = group_assets[0] if group_assets else "SITE-01"
-                            old_record = old_records.get(asset)
+                            old_record = old_records.get(group_assets[0] if group_assets else "SITE-01")
                             st.markdown(
                                 f'<div class="inspection-group-item">'
-                                f'<div class="inspection-item-name">'
-                                f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
+                                f'<div class="inspection-item-name">{item_number_map[item]}. {item}</div>',
                                 unsafe_allow_html=True,
                             )
                             _render_inspection_status(
                                 db, user, plant, category, task_date, item,
-                                item_number_map[item] - 1, asset, old_record,
-                                values, reason_widgets,
+                                item_number_map[item] - 1,
+                                group_assets[0] if group_assets else "SITE-01",
+                                old_record, values, reason_widgets,
                             )
                             st.markdown('</div>', unsafe_allow_html=True)
-                    if row_start + row_size < len(group_items):
-                        st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+                    st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
+
             else:
                 st.caption("Each checklist item is checked asset-by-asset. ○ = Not recorded, ✓ = OK, ✗ = Not OK.")
-                grid_cols = 5
+                # Site Safety & Security Checks uses one inverter only and keeps
+                # CCTV / Lightning / Fire as three compact, separate boxes.
+                if category == "Daily Inspection" and group_title.startswith("🛡️"):
+                    grid_cols = 3
+                else:
+                    grid_cols = 5
                 for item in group_items:
                     item_index = item_number_map[item] - 1
                     st.markdown(
                         f'<div class="inspection-check-title">'
-                        f'<span>{item_number_map[item]}. {_inspection_display_item(item)}</span>'
+                        f'<span>{item_number_map[item]}. {item}</span>'
                         f'<span class="inspection-check-hint">{asset_label}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -3050,6 +2704,8 @@ def _render_inspection_category(db, user, plant, category):
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
                                 )
+                                if values[asset].get(f"{item}__reason", ""):
+                                    pass
                     st.markdown('<div class="inspection-item-divider"></div>', unsafe_allow_html=True)
 
     if st.button(
@@ -3141,9 +2797,10 @@ def _render_inspection_category(db, user, plant, category):
 
 def inspection_page(db, user, plant):
     header(plant)
-    st.markdown("## 🔧 Maintenance Inspections")
+    st.markdown("## Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Inverter and safety checks are separated, and AC inspections are split into outdoor and indoor units."
+        "Select a maintenance process tab. Daily, inverter, panel and DC cable inspections "
+        "are checked asset-by-asset."
     )
 
     categories = list(PROCESS_CATEGORIES.keys())
@@ -3154,7 +2811,7 @@ def inspection_page(db, user, plant):
     # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
     # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
-        "Daily Inspection": "Inverter & Safety Checks",
+        "Daily Inspection": "Daily Inspection",
         "Inverter Inspection": "Inverter Inspection",
         "Panel Inspection": "Panel Inspection",
         "DC Cable Inspection": "DC Cable Inspection",
@@ -3162,25 +2819,24 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    with st.container(key="inspection_tabs"):
-        tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85], gap="small")
-        for col, category in zip(tab_cols, categories):
-            with col:
-                if st.button(
-                    tab_labels[category],
-                    key=f"inspection_tab_{category}",
-                    use_container_width=True,
-                    type="primary" if category == selected else "secondary",
-                ):
-                    st.session_state.inspection_category = category
-                    st.rerun()
+    tab_cols = st.columns([1.05, 1.15, 1.05, 1.15, .95, 1.25, .85], gap="small")
+    for col, category in zip(tab_cols, categories):
+        with col:
+            if st.button(
+                tab_labels[category],
+                key=f"inspection_tab_{category}",
+                use_container_width=True,
+                type="primary" if category == selected else "secondary",
+            ):
+                st.session_state.inspection_category = category
+                st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
 
 def loss_repair_page(db, user, plant):
     header(plant)
-    st.markdown("## 🔧 Repair & Maintenance")
+    st.markdown("## Repair & Maintenance")
 
     tab1, tab2 = st.tabs(["Open Repair Items", "Create Repair Item"])
 
@@ -3314,7 +2970,7 @@ def loss_repair_page(db, user, plant):
 
 def activity_page(db, user, plant):
     header(plant)
-    st.markdown("## 📋 Activity Log")
+    st.markdown("## Activity Log")
 
     f1, f2, f3 = st.columns(3)
     with f1:
@@ -3346,7 +3002,7 @@ def activity_page(db, user, plant):
         st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode("utf-8"), "maintenance_activity.csv", "text/csv", use_container_width=True)
 
     if user.role in ("admin", "engineer"):
-        st.markdown("### ✏️ Edit / 🗑️ Delete activity")
+        st.markdown("### Edit / 🗑️ Delete activity")
         st.caption("Use the action controls below when a record needs correction or removal.")
         for r in records[:50]:
             with st.expander(f"{r.task_date:%d %b %Y} • {r.category} • {r.asset_id} • {r.status}"):
@@ -3413,7 +3069,7 @@ def users_page(db, user, selected_plant=None):
                     st.rerun()
 
     with staff_tab:
-        st.markdown("### 👷 Operating Staff & Site Contacts")
+        st.markdown("### Operating Staff & Site Contacts")
         st.caption("Manage site headcount, supervisor and immediate reportee details here. This replaces the separate navigation page.")
         if selected_plant is None:
             st.info("No plant is selected. Select a plant from the left navigation bar.")
@@ -3427,7 +3083,7 @@ def users_page(db, user, selected_plant=None):
 # ============================================================
 
 def plants_page(db):
-    st.title("🏭 Plant Management")
+    st.title("Plant Management")
     st.caption("Configure all solar plants.")
 
     plants = db.query(Plant).order_by(Plant.name).all()
@@ -3586,16 +3242,9 @@ def plants_page(db):
 # ============================================================
 
 def reminders_page(db):
-    st.title("⏰ Automatic Maintenance Reminders")
+    st.title("Automatic Maintenance Reminders")
 
-    plants = db.query(Plant).filter(Plant.active == True).all()
-    plants = sorted(
-        plants,
-        key=lambda p: (
-            "DPV" in f"{getattr(p, 'code', '')} {getattr(p, 'name', '')}".upper(),
-            (p.name or "").casefold(),
-        ),
-    )
+    plants = db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
     plant_map = {p.name: p.id for p in plants}
 
     selected_name = st.selectbox("Plant", list(plant_map.keys()))
@@ -3636,7 +3285,7 @@ def reminders_page(db):
 # ============================================================
 
 def powerbi_page(db):
-    st.title("📊 Power BI Integration")
+    st.title("Power BI Integration")
 
     st.markdown(
         """
@@ -3736,15 +3385,7 @@ def _records_dataframe(db,plant_id,start,end):
 
 def _excel_bytes(df,sheet_name="Maintenance Report"):
     output=io.BytesIO()
-    export_df = df.copy()
-    if "Status" in export_df.columns:
-        export_df["Status"] = export_df["Status"].replace({
-            "Completed": "Green - Completed",
-            "Failed": "Red - Not Completed",
-            "Pending": "Red - Not Completed",
-        })
-    with pd.ExcelWriter(output,engine="openpyxl") as writer:
-        export_df.to_excel(writer,index=False,sheet_name=sheet_name[:31])
+    with pd.ExcelWriter(output,engine="openpyxl") as writer: df.to_excel(writer,index=False,sheet_name=sheet_name[:31])
     return output.getvalue()
 
 
@@ -3754,57 +3395,36 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     doc = SimpleDocTemplate(
         output,
         pagesize=landscape(A4),
-        rightMargin=7 * mm,
-        leftMargin=7 * mm,
-        topMargin=6 * mm,
-        bottomMargin=6 * mm,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
         title=f"{plant.name} - Solar Maintenance Report",
-        author="Solar Operation and Maintenance Platform",
+        author="Solar Plant Maintenance System",
     )
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         "ReportTitle", parent=styles["Title"], alignment=TA_CENTER,
-        fontSize=16, leading=18, spaceAfter=3
+        fontSize=20, leading=24, spaceAfter=6
     )
     subtitle_style = ParagraphStyle(
         "ReportSubtitle", parent=styles["Normal"], alignment=TA_CENTER,
-        fontSize=7, textColor=colors.HexColor("#5b6573"), spaceAfter=4
+        fontSize=9, textColor=colors.HexColor("#5b6573"), spaceAfter=12
     )
     h2 = ParagraphStyle(
-        "ReportH2", parent=styles["Heading2"], fontSize=9, leading=11,
-        textColor=colors.HexColor("#123b63"), spaceBefore=3, spaceAfter=2
+        "ReportH2", parent=styles["Heading2"], fontSize=13, leading=16,
+        textColor=colors.HexColor("#123b63"), spaceBefore=8, spaceAfter=6
     )
     small = ParagraphStyle(
-        "ReportSmall", parent=styles["Normal"], fontSize=6, leading=7
+        "ReportSmall", parent=styles["Normal"], fontSize=8, leading=10
     )
 
     total = len(df)
-    # Current selected-end-date progress, consistent with the live site maps.
-    progress_db = SessionLocal()
-    try:
-        panel_pct, panel_done, panel_total = panel_cleaning_percent(progress_db, plant.id, end)
-        grass_pct, grass_done, grass_total = grass_cutting_percent(progress_db, plant.id, end)
-    finally:
-        progress_db.close()
     green = int((df["Status"] == "Completed").sum()) if total else 0
-    red = int((df["Status"] != "Completed").sum()) if total else 0
-    approval_db = SessionLocal()
-    try:
-        inspection_filter = [
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
-            MaintenanceRecord.task_date >= start,
-            MaintenanceRecord.task_date <= end,
-        ]
-        pending = approval_db.query(MaintenanceRecord).filter(
-            *inspection_filter, MaintenanceRecord.approval_status == "Pending"
-        ).count()
-        approved = approval_db.query(MaintenanceRecord).filter(
-            *inspection_filter, MaintenanceRecord.approval_status == "Approved"
-        ).count()
-    finally:
-        approval_db.close()
+    red = int((df["Status"] == "Failed").sum()) if total else 0
+    pending = int((df["Status"] == "Pending").sum()) if total else 0
+    approved = int((df["Approval"] == "Approved").sum()) if total else 0
 
     story = [
         Paragraph("Solar Plant Maintenance Management Report", title_style),
@@ -3817,14 +3437,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
     # KPI cards represented as a compact table in the PDF.
     kpi_data = [[
         Paragraph(f"<b>{total}</b><br/><font size='8'>Activities</font>", small),
-        Paragraph(f"<b>{green}</b><br/><font size='8'>Green - Completed</font>", small),
-        Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
+        Paragraph(f"<b>{green}</b><br/><font size='8'>GREEN</font>", small),
+        Paragraph(f"<b>{red}</b><br/><font size='8'>RED</font>", small),
         Paragraph(f"<b>{pending}</b><br/><font size='8'>Pending</font>", small),
         Paragraph(f"<b>{approved}</b><br/><font size='8'>Approved</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font>", small),
     ]]
-    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[12*mm])
+    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[18*mm])
     kpi_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
         ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#d7e0ea")),
@@ -3832,26 +3452,21 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
     ]))
-    story += [kpi_table, Spacer(1, 2*mm)]
+    story += [kpi_table, Spacer(1, 7*mm)]
 
-    # Graphical summary focuses on the actual site work areas: tables and zones.
+    # Simple visual summary charts using tables (no image dependencies).
+    status_counts = [("GREEN", green), ("RED", red), ("Pending", pending), ("Approved", approved)]
+    max_status = max([v for _, v in status_counts] or [1])
     status_rows = []
-    work_summary = [
-        ("Panel Cleaning", panel_pct, "tables"),
-        ("Grass Cutting", grass_pct, "zones"),
-    ]
-    for label, pct_value, unit in work_summary:
-        bar_width = max(2, min(100, float(pct_value)))
-        bar = Table([[""]], colWidths=[bar_width * 0.75 * mm], rowHeights=[4 * mm])
+    for label, value in status_counts:
+        width = 100 if max_status == 0 else max(2, int(value / max_status * 100))
+        bar = Table([[""]], colWidths=[max(4, width)*0.75*mm], rowHeights=[4*mm])
         bar.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if pct_value >= 100 else "#e55353")),
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if label == "GREEN" else "#e55353" if label == "RED" else "#94a3b8" if label == "Pending" else "#3b82f6")),
             ("BOX", (0,0), (-1,-1), 0, colors.white),
         ]))
-        done_count = panel_done if label == "Panel Cleaning" else grass_done
-        total_count = panel_total if label == "Panel Cleaning" else grass_total
-        state = "1 cycle completed" if total_count > 0 and done_count >= total_count else "Pending"
-        status_rows.append([Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small), Paragraph(f"{done_count}/{total_count} {unit} • {state}", small)])
-    status_table = Table(status_rows, colWidths=[27*mm, 55*mm, 17*mm, 42*mm])
+        status_rows.append([Paragraph(label, small), bar, Paragraph(str(value), small)])
+    status_table = Table(status_rows, colWidths=[25*mm, 78*mm, 18*mm])
     status_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (2,0), (2,-1), "RIGHT"), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
 
     category_counts = df["Category"].value_counts().head(8).to_dict() if total else {}
@@ -3874,14 +3489,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         [Paragraph("Category Activity", h2), cat_table],
     ]], colWidths=[110*mm, 110*mm])
     # Instead of nested headings being awkward, build a two-column section manually.
-    summary_table = Table([[status_table, cat_table]], colWidths=[145*mm, 75*mm])
+    summary_table = Table([[status_table, cat_table]], colWidths=[120*mm, 100*mm])
     summary_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
-    story += [Paragraph("Graphical Status Summary", h2), summary_table, Spacer(1, 2*mm)]
+    story += [Paragraph("Graphical Status Summary", h2), summary_table, Spacer(1, 6*mm)]
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'1 cycle completed' if panel_total > 0 and panel_done >= panel_total else 'Pending'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'1 cycle completed' if grass_total > 0 and grass_done >= grass_total else 'Pending'}", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.0f}%", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.0f}%", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -3889,16 +3504,13 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
         ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#d7e0ea")),
         ("ALIGN", (1,0), (1,-1), "CENTER"),
     ]))
-    story += [progress_table, Spacer(1, 2*mm)]
+    story += [progress_table, Spacer(1, 6*mm)]
 
     story += [Paragraph("Current Activities", h2)]
     if total:
         columns = ["Date", "Category", "Asset", "Worker", "Status", "Approval", "Remarks"]
         activity_rows = [[Paragraph(f"<b>{c}</b>", small) for c in columns]]
-        # Keep the PDF management summary to one landscape A4 page.
-        # The complete activity dataset remains available in the Excel export.
-        pdf_rows = df.head(12)
-        for _, row in pdf_rows.iterrows():
+        for _, row in df.iterrows():
             vals = [
                 row.get("Date", ""), row.get("Category", ""), row.get("Asset", ""),
                 row.get("Worker", ""), row.get("Status", ""), row.get("Approval", ""),
@@ -3910,10 +3522,10 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
                 if hasattr(v, "strftime"): v = v.strftime("%d %b %Y")
                 formatted.append(Paragraph(str(v)[:120], small))
             activity_rows.append(formatted)
-        activity_table = Table(activity_rows, colWidths=[18*mm, 29*mm, 18*mm, 25*mm, 25*mm, 22*mm, 70*mm], repeatRows=1)
+        activity_table = Table(activity_rows, colWidths=[22*mm, 32*mm, 23*mm, 28*mm, 22*mm, 25*mm, 78*mm], repeatRows=1)
         activity_table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#d9ecfb")),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#123b63")),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#123b63")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
             ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#d7e0ea")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
             ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7fafc")]),
@@ -3923,146 +3535,157 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
             ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ]))
         story.append(activity_table)
-        if total > len(pdf_rows):
-            story.append(Paragraph(
-                f"Showing the latest {len(pdf_rows)} of {total} activities on this one-page PDF. Export to Excel for the complete report.",
-                small,
-            ))
     else:
         story.append(Paragraph("No activities found for the selected period.", small))
 
-    story += [Spacer(1, 2*mm), Paragraph("Prepared for operational management review. Maintenance activity information only.", small)]
+    story += [Spacer(1, 8*mm), Paragraph("Prepared for operational management review. This report contains maintenance activity information only; database and software configuration details are intentionally excluded.", small)]
 
     doc.build(story)
     return output.getvalue()
 
-def reports_page(db,user,plant):
+def reports_page(db, user, plant):
     header(plant)
     st.title("Management Reports")
-    st.caption("Readable operational reports for panel cleaning, grass cutting, and overall maintenance.")
-    c1,c2=st.columns(2)
-    with c1: start=st.date_input("From",date.today()-timedelta(days=30),key="report_start")
-    with c2: end=st.date_input("To",date.today(),key="report_end")
-    if start>end:
+    st.caption("Select a reporting view and period. Panel cleaning and grass cutting show cycle progress; the overall summary includes activity, status, approval, charts, and exportable reports.")
+
+    report_view = st.radio(
+        "Report type",
+        ["Panel Cleaning Progress", "Grass Cutting Progress", "Overall Summary Report"],
+        horizontal=True,
+        key="management_report_view",
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        start = st.date_input("From", date.today() - timedelta(days=30), key="report_start")
+    with c2:
+        end = st.date_input("To", date.today(), key="report_end")
+    if start > end:
         st.error("The start date cannot be after the end date.")
         return
 
-    df=_records_dataframe(db,plant.id,start,end)
-    total=len(df)
-    completed=int((df["Status"]=="Completed").sum()) if total else 0
-    failed=int((df["Status"]!="Completed").sum()) if total else 0
-    # Approval KPIs refer only to inspection records, never panel-cleaning or grass-cutting work.
-    inspection_filter = [
-        MaintenanceRecord.plant_id == plant.id,
-        MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
-        MaintenanceRecord.task_date >= start,
-        MaintenanceRecord.task_date <= end,
-    ]
-    pending_approvals = db.query(MaintenanceRecord).filter(
-        *inspection_filter, MaintenanceRecord.approval_status == "Pending"
-    ).count()
-    approved_approvals = db.query(MaintenanceRecord).filter(
-        *inspection_filter, MaintenanceRecord.approval_status == "Approved"
-    ).count()
+    if report_view == "Panel Cleaning Progress":
+        pct, done, total_cycles = panel_cleaning_period_progress(db, plant, start, end)
+        st.subheader("Panel Cleaning Progress")
+        a, b, c = st.columns(3)
+        a.metric("Cycles Completed", f"{done} / {total_cycles}")
+        b.metric("Completion", f"{pct:.0f}%")
+        c.metric("Cycles Remaining", max(0, total_cycles - done))
+        st.progress(pct / 100, text=f"Panel cleaning completion: {pct:.0f}%")
+        return
+
+    if report_view == "Grass Cutting Progress":
+        pct, done, total_cycles = grass_cutting_period_progress(db, plant, start, end)
+        st.subheader("Grass Cutting Progress")
+        a, b, c = st.columns(3)
+        a.metric("Cycles Completed", f"{done} / {total_cycles}")
+        b.metric("Completion", f"{pct:.0f}%")
+        c.metric("Cycles Remaining", max(0, total_cycles - done))
+        st.progress(pct / 100, text=f"Grass cutting completion: {pct:.0f}%")
+        return
+
+    df = _records_dataframe(db, plant.id, start, end)
+    total = len(df)
+    completed = int((df["Status"] == "Completed").sum()) if total else 0
+    failed = int((df["Status"] == "Failed").sum()) if total else 0
+    pending = int((df["Status"] == "Pending").sum()) if total else 0
+    approved = int((df["Approval"] == "Approved").sum()) if total else 0
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Activities", total)
+    c2.metric("Completed", completed)
+    c3.metric("Not Completed", failed)
+    c4.metric("Pending", pending)
+    c5.metric("Approved", approved)
+
     import plotly.express as px
-    pc, panel_done, panel_total = panel_cleaning_percent(db,plant.id,end)
-    gc, grass_done, grass_total = grass_cutting_percent(db,plant.id,end)
-    c1,c2,c3,c4,c5,c6,c7=st.columns(7)
-    c1.metric("Activities",total)
-    c2.metric("Green - Completed",completed)
-    c3.metric("Red - Not Completed",failed)
-    c4.metric("Pending inspection approvals",pending_approvals)
-    c5.metric("Approved approvals",approved_approvals)
-    c6.metric("Panel Cleaning", f"{pc:.0f}%")
-    c7.metric("Grass Cutting", f"{gc:.0f}%")
-    panel_left=max(0,panel_total-panel_done)
-    grass_left=max(0,grass_total-grass_done)
-    st.markdown("### 🧹 Panel Cleaning and 🌿 Grass Cutting")
-    pcol,gcol=st.columns(2)
-    with pcol:
-        st.markdown("**Panel cleaning status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[panel_done,panel_left]}),
-                   names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
-        pie.update_traces(textinfo="label+value+percent")
-        pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
-        st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.caption(f"{panel_done} of {panel_total} tables completed; {panel_left} left ({pc:.1f}% complete).")
-    with gcol:
-        st.markdown("**Grass cutting status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[grass_done,grass_left]}),
-                   names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
-        pie.update_traces(textinfo="label+value+percent")
-        pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
-        st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.caption(f"{grass_done} of {grass_total} zones completed; {grass_left} left ({gc:.1f}% complete).")
-
-    panel_cycle = "1 cycle completed" if panel_total > 0 and panel_done >= panel_total else "Pending"
-    grass_cycle = "1 cycle completed" if grass_total > 0 and grass_done >= grass_total else "Pending"
-    st.markdown(f"**Panel cleaning cycle:** {panel_cycle}  ·  **Grass cutting cycle:** {grass_cycle}")
-
-    st.markdown("### 📈 Overall maintenance summary")
-    left,right=st.columns(2)
+    left, right = st.columns(2)
     if total:
         with left:
-            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count")
-            fig=px.bar(d,x="Status",y="Count",title="Maintenance status",text="Count",
-                       color="Status",color_discrete_map={"Completed":"#16a66a","Failed":"#e5484d","Pending":"#e5484d"})
-            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
-            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            d = df["Status"].value_counts().rename_axis("Status").reset_index(name="Count")
+            fig = px.bar(d, x="Status", y="Count", title="Maintenance Status", text="Count")
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=330)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         with right:
-            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count")
-            fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count")
-            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
-            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            d = df["Category"].value_counts().rename_axis("Category").reset_index(name="Count")
+            fig = px.bar(d, x="Count", y="Category", orientation="h", title="Activities by Category", text="Count")
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=330)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    st.markdown("### 📋 Overall activity report")
+    st.subheader("Operational Progress")
+    pc, panel_done, panel_total = panel_cleaning_period_progress(db, plant, start, end)
+    gc, grass_done, grass_total = grass_cutting_period_progress(db, plant, start, end)
+    a, b = st.columns(2)
+    a.metric("Panel Cleaning Cycles", f"{panel_done} / {panel_total}")
+    b.metric("Grass Cutting Cycles", f"{grass_done} / {grass_total}")
+    a.progress(pc / 100, text=f"Panel cleaning: {pc:.0f}%")
+    b.progress(gc / 100, text=f"Grass cutting: {gc:.0f}%")
+
+    st.subheader("Maintenance Activity Summary")
     if total:
-        report_df = df.copy()
-        report_df["Status"] = report_df["Status"].replace({
-            "Completed": "Green - Completed",
-            "Failed": "Red - Not Completed",
-            "Pending": "Red - Not Completed",
-        })
-        st.dataframe(report_df,use_container_width=True,hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        b1, b2 = st.columns(2)
+        with b1:
+            st.download_button(
+                "Export Activity Summary to Excel",
+                _excel_bytes(df),
+                "solar_maintenance_current_activities.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with b2:
+            pdf_bytes = _pdf_report_bytes(df, plant, start, end, pc, gc)
+            st.download_button(
+                "Export Management Report to PDF",
+                pdf_bytes,
+                "solar_maintenance_management_report.pdf",
+                "application/pdf",
+                use_container_width=True,
+            )
     else:
         st.info("No activities found for the selected period.")
 
-    st.markdown("### 📄 Separate Panel Cleaning and Grass Cutting Reports")
-    for category, label, pct in [
-        ("Panel Cleaning","Panel Cleaning",pc),
-        ("Grass Cutting","Grass Cutting",gc),
-    ]:
-        # Dedicated work reports intentionally exclude all inspection/approval records.
-        cat_df=df[df["Category"]==category].copy() if total else pd.DataFrame(columns=df.columns)
-        with st.container(border=True):
-            st.markdown(f"**{label} report** — {len(cat_df)} recorded activities in the selected period")
-            x1,x2=st.columns(2)
-            x1.download_button(
-                f"⬇️ {label} Excel", _excel_bytes(cat_df, label),
-                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"excel_{category}", use_container_width=True)
-            x2.download_button(
-                f"📄 {label} PDF",
-                _pdf_report_bytes(cat_df,plant,start,end,pc,gc),
-                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.pdf",
-                "application/pdf", key=f"pdf_{category}", use_container_width=True)
 
-    st.markdown("### 📚 Overall Summary Downloads")
-    x1,x2=st.columns(2)
-    x1.download_button("⬇️ Export overall report to Excel",_excel_bytes(df,"Overall Summary"),
-        f"{plant.code.lower()}_overall_maintenance_summary.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
-    x2.download_button("📄 Export overall summary to PDF",
-        _pdf_report_bytes(df,plant,start,end,pc,gc),
-        f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
+def panel_cleaning_period_progress(db, plant, start, end):
+    records = db.query(MaintenanceRecord).filter(
+        MaintenanceRecord.plant_id == plant.id,
+        MaintenanceRecord.category == "Panel Cleaning",
+        MaintenanceRecord.task_date >= start,
+        MaintenanceRecord.task_date <= end,
+    ).all()
+    by_date = {}
+    for rec in records:
+        by_date.setdefault(rec.task_date, []).append(rec)
+    completed_dates = {
+        task_date for task_date, items in by_date.items()
+        if items and all(item.status == "Completed" for item in items)
+    }
+    total_cycles = len(by_date)
+    done = len(completed_dates)
+    return (done / total_cycles * 100 if total_cycles else 0), done, total_cycles
+
+
+def grass_cutting_period_progress(db, plant, start, end):
+    records = db.query(MaintenanceRecord).filter(
+        MaintenanceRecord.plant_id == plant.id,
+        MaintenanceRecord.category == "Grass Cutting",
+        MaintenanceRecord.task_date >= start,
+        MaintenanceRecord.task_date <= end,
+    ).all()
+    by_date = {}
+    for rec in records:
+        by_date.setdefault(rec.task_date, []).append(rec)
+    completed_dates = {
+        task_date for task_date, items in by_date.items()
+        if items and all(item.status == "Completed" for item in items)
+    }
+    total_cycles = len(by_date)
+    done = len(completed_dates)
+    return (done / total_cycles * 100 if total_cycles else 0), done, total_cycles
 
 def approvals_page(db,user,plant):
     header(plant)
-    st.title("✅ Approvals & Sign-off")
-    st.caption("Engineers and administrators can approve or decline maintenance inspections and record an electronic signature.")
+    st.title("Approved Inspection Approvals")
+    st.caption("Review submitted inspections, record approval decisions, and maintain electronic sign-off records.")
     base_filter = [MaintenanceRecord.plant_id == plant.id, MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys()))]
     pending = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status == "Pending").order_by(MaintenanceRecord.task_date.desc()).limit(100).all()
     reviewed = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status.in_(["Approved", "Declined"])).order_by(MaintenanceRecord.approved_at.desc()).limit(100).all()
@@ -4072,7 +3695,7 @@ def approvals_page(db,user,plant):
 
     workers={u.id:u.full_name for u in db.query(User).all()}
     if pending:
-        st.markdown("### 🔎 Awaiting review")
+        st.markdown("### Awaiting review")
         for rec in pending:
             details=parse_details(rec); items=details.get("items",{}); red_items=[k for k,v in items.items() if not k.endswith("__reason") and v=="RED"]
             with st.container(border=True):
@@ -4095,7 +3718,7 @@ def approvals_page(db,user,plant):
     else:
         st.success("No maintenance inspections are waiting for approval.")
 
-    st.markdown("### ✏️ Reviewed inspections")
+    st.markdown("### Reviewed inspections")
     if not reviewed:
         st.caption("No approved or declined inspection records yet.")
         return
@@ -4123,12 +3746,12 @@ def approvals_page(db,user,plant):
 # ============================================================
 
 def admin_page(db):
-    st.title("⚙️ Administration")
+    st.title("Administration")
     pending_records=db.query(MaintenanceRecord).filter(MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),MaintenanceRecord.approval_status=="Pending").count()
     c1,c2,c3=st.columns(3); c1.metric("Users",db.query(User).count()); c2.metric("Plants",db.query(Plant).count()); c3.metric("Inspection approvals",pending_records)
     st.markdown("### 👥 User access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
-    st.markdown("### ✅ Maintenance sign-off"); st.write("Engineers and administrators can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
-    st.markdown("### 📊 Management reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
+    st.markdown("### Maintenance sign-off"); st.write("Engineers and administrators can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
+    st.markdown("### Management reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
 
 
 # ============================================================
@@ -4176,15 +3799,15 @@ def main():
         loss_repair_page(db, user, plant)
     elif page == "📋 Activity Log":
         activity_page(db, user, plant)
-    elif page == "👥 Users" and user.role in ("admin", "engineer"):
+    elif page == "👥 Users" and user.role == "admin":
         users_page(db, user, plant)
-    elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
+    elif page == "🏭 Plants" and user.role == "admin":
         plants_page(db)
     elif page == "📊 Reports" and user.role in ("admin", "engineer"):
         reports_page(db, user, plant)
     elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
         approvals_page(db, user, plant)
-    elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
+    elif page == "⏰ Reminders" and user.role == "admin":
         reminders_page(db)
     elif page == "⚙️ Admin" and user.role == "admin":
         admin_page(db)
@@ -4194,10 +3817,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
