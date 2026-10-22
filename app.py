@@ -1881,7 +1881,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         "HRN": "HRN1.jpg",
         "HS2": "HRN2.jpg",
         "HRN2": "HRN2.jpg",
-        "DPV": "DPV.jpeg",
+        "DPV": "DPV Image.jpg",
         "ORK": "ORK.jpg",
         "MDP": "MDP view .png",
         "MTR": "MTR view .png",
