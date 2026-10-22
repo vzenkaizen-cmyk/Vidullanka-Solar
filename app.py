@@ -1489,18 +1489,19 @@ def login_page():
                 background:transparent!important;
                 margin-bottom:.35rem!important;
             }}
-            /* Force a visible green border on the actual BaseWeb input shell.
-               Keep inner wrappers borderless so they cannot cover the outline. */
-            html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"]{{
+            /* Keep a green outline visible on every sign-in/create-account field, even before focus. */
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] > div > div,
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input:not([type="checkbox"]) {{
                 border:2px solid #16a765!important;
                 border-radius:7px!important;
-                box-shadow:0 0 0 1px rgba(22,167,101,.14)!important;
+                box-shadow:0 0 0 1px rgba(22,167,101,.12)!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
-                outline:1px solid rgba(22,167,101,.45)!important;
-                outline-offset:-1px!important;
+                outline:0!important;
             }}
-            html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"] > div{{
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div {{
                 border:0!important;
                 box-shadow:none!important;
                 background:transparent!important;
@@ -1546,15 +1547,20 @@ def login_page():
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{
                 display:block!important;font-size:12px!important;margin-bottom:3px!important;line-height:14px!important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
-                height:34px!important;min-height:34px!important;max-height:34px!important;
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{
+                height:40px!important;min-height:40px!important;max-height:40px!important;
                 padding:0 8px!important;box-sizing:border-box!important;align-items:center!important;
+                border:2px solid #16a765!important;border-radius:7px!important;background:#fff!important;
             }}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{
-                height:32px!important;min-height:32px!important;max-height:32px!important;
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
+                height:36px!important;min-height:36px!important;max-height:36px!important;
+                padding:0!important;box-sizing:border-box!important;align-items:center!important;
+                border:0!important;box-shadow:none!important;background:transparent!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
+                height:36px!important;min-height:36px!important;max-height:36px!important;
                 padding:0!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important;
+                border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;
             }}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
