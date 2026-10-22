@@ -554,6 +554,10 @@ def seed_database():
         ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
         if ork_plant and ork_plant.table_count != 52:
             ork_plant.table_count = 52
+        dpv_plant = db.query(Plant).filter(Plant.code == "DPV").first()
+        if dpv_plant:
+            dpv_plant.zone_count = 15
+            dpv_plant.table_count = 366
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -1951,6 +1955,43 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             source=image_uri, xref="x", yref="y", x=0, y=img_height,
             sizex=img_width, sizey=img_height, sizing="stretch", layer="below"
         ))
+        if dpv_reference:
+            # DPV: show 15 zones on grass map and table-status markers on panel map.
+            grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+            zone_assets = asset_list(plant, "Zone")
+            zone_centres = [(.13,.31),(.25,.30),(.37,.29),(.49,.28),(.61,.28),
+                            (.73,.30),(.83,.34),(.17,.45),(.29,.44),(.41,.43),
+                            (.53,.43),(.65,.43),(.77,.45),(.27,.58),(.48,.58)]
+            if map_mode == "grass":
+                dx, dy, dtext = [], [], []
+                for idx, (cx, cy) in enumerate(zone_centres[:len(zone_assets)]):
+                    asset = zone_assets[idx]
+                    rec = grass_records.get(asset)
+                    done = bool(rec and rec.status == "Completed")
+                    dx.append(cx * img_width); dy.append((1-cy) * img_height)
+                    dtext.append(f"{asset} — Grass cutting: {'Completed' if done else 'Pending'}")
+                clean_fig.add_trace(go.Scatter(
+                    x=dx, y=dy, mode="markers+text",
+                    marker=dict(size=22, color=["#16e879" if "Completed" in t else "#ff2638" for t in dtext],
+                                line=dict(color="#ffffff", width=2)),
+                    text=[f"Z{i+1}" for i in range(len(dx))], textposition="middle center",
+                    textfont=dict(size=9, color="#07131f"), hovertext=dtext, hoverinfo="text",
+                    showlegend=False))
+            else:
+                panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+                pxs, pys, pcolors, ptext = [], [], [], []
+                for idx, asset in enumerate(asset_list(plant, "Table")):
+                    row, col = divmod(idx, 26)
+                    cx, cy = .105 + col * (.79 / 25), .29 + row * (.34 / 13)
+                    if cy > .66: break
+                    rec = panel_records.get(asset)
+                    done = bool(rec and rec.status == "Completed")
+                    pxs.append(cx * img_width); pys.append((1-cy) * img_height)
+                    pcolors.append("#16e879" if done else "#ff2638")
+                    ptext.append(f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}")
+                clean_fig.add_trace(go.Scatter(x=pxs, y=pys, mode="markers",
+                    marker=dict(size=5, color=pcolors, symbol="square"),
+                    hovertext=ptext, hoverinfo="text", showlegend=False))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
@@ -3892,7 +3933,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         if len(df):
             columns = ["Date", "Category", "Asset", "Worker", "Status", "Remarks"]
             rows = [[Paragraph(f"<b>{c}</b>", small) for c in columns]]
-            for _, row in df.head(22).iterrows():
+            for _, row in df.head(12).iterrows():
                 vals = [row.get("Date", ""), row.get("Category", ""), row.get("Asset", ""),
                         row.get("Worker", ""), row.get("Status", ""), row.get("Remarks", "") or ""]
                 formatted = []
@@ -3912,8 +3953,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
                 ("TOPPADDING", (0,0), (-1,-1), 3), ("BOTTOMPADDING", (0,0), (-1,-1), 3),
             ]))
             story.append(activity)
-            if len(df) > 22:
-                story.append(Paragraph(f"Showing the latest 22 of {len(df)} activities. Export to Excel for the complete report.", small))
+            if len(df) > 12:
+                story.append(Paragraph(f"Showing the latest 12 of {len(df)} activities. Export to Excel for the complete report.", small))
         else:
             story.append(Paragraph("No activities found for the selected period.", small))
         story += [Spacer(1, 4*mm), Paragraph("Prepared for operational management review.", small)]
@@ -3988,8 +4029,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<b>{total}</b><br/><font size='8'>Activities</font>", small),
         Paragraph(f"<b>{green}</b><br/><font size='8'>Green - Completed</font>", small),
         Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
-        Paragraph(f"<b>{pending}</b><br/><font size='8'>Pending Inspection Approvals</font>", small),
-        Paragraph(f"<b>{approved}</b><br/><font size='8'>Approved Inspection Approvals</font>", small),
+        Paragraph(f"<font size='16'><b>{pending}</b></font><br/><font size='7'>Pending Inspection Approvals</font>", small),
+        Paragraph(f"<font size='16'><b>{approved}</b></font><br/><font size='7'>Approved Inspection Approvals</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font>", small),
     ]]
@@ -4018,7 +4059,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         ]))
         done_count = panel_done if label == "Panel Cleaning" else grass_done
         total_count = panel_total if label == "Panel Cleaning" else grass_total
-        state = "1 cycle completed" if total_count > 0 and done_count >= total_count else "Pending"
+        cycles_per_year = 3 if label == "Panel Cleaning" else 4
+        state = f"{cycles_per_year}/{cycles_per_year} cycles completed" if total_count > 0 and done_count >= total_count else f"0/{cycles_per_year} cycles completed"
         status_rows.append([Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small), Paragraph(f"{done_count}/{total_count} {unit} • {state}", small)])
     status_table = Table(status_rows, colWidths=[27*mm, 55*mm, 17*mm, 42*mm])
     status_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (2,0), (2,-1), "RIGHT"), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
@@ -4049,8 +4091,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'1 cycle completed' if panel_total > 0 and panel_done >= panel_total else 'Pending'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'1 cycle completed' if grass_total > 0 and grass_done >= grass_total else 'Pending'}", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/3 cycles completed'}", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'4/4 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/4 cycles completed'}", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -4066,7 +4108,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         activity_rows = [[Paragraph(f"<b>{c}</b>", small) for c in columns]]
         # Keep the PDF management summary to one landscape A4 page.
         # The complete activity dataset remains available in the Excel export.
-        pdf_rows = df.head(12)
+        pdf_rows = df.head(7)
         for _, row in pdf_rows.iterrows():
             vals = [
                 row.get("Date", ""), row.get("Category", ""), row.get("Asset", ""),
@@ -4100,7 +4142,32 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     else:
         story.append(Paragraph("No activities found for the selected period.", small))
 
-    story += [Spacer(1, 2*mm), Paragraph("Prepared for operational management review. Maintenance activity information only.", small)]
+    issue_db = SessionLocal()
+    try:
+        open_issues = issue_db.query(RepairItem).filter(
+            RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
+        ).order_by(RepairItem.created_at.desc()).limit(4).all()
+    finally:
+        issue_db.close()
+    story += [Paragraph("Current Maintenance Inspection Issues", h2)]
+    if open_issues:
+        issue_rows = [[Paragraph("<b>Asset</b>", small), Paragraph("<b>Component / Issue</b>", small),
+                       Paragraph("<b>Status</b>", small), Paragraph("<b>Reason / Remarks</b>", small)]]
+        for issue in open_issues:
+            issue_rows.append([Paragraph(str(issue.asset_id or ""), small),
+                Paragraph(str(issue.component or ""), small), Paragraph(str(issue.status or "Open"), small),
+                Paragraph(str(issue.issue or issue.reason_not_completed or "Not specified")[:180], small)])
+        issue_table = Table(issue_rows, colWidths=[25*mm, 48*mm, 25*mm, 120*mm], repeatRows=1)
+        issue_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#d9ecfb")),
+            ("GRID",(0,0),(-1,-1),.3,colors.HexColor("#d7e0ea")),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+            ("LEFTPADDING",(0,0),(-1,-1),3),("RIGHTPADDING",(0,0),(-1,-1),3),
+            ("TOPPADDING",(0,0),(-1,-1),2),("BOTTOMPADDING",(0,0),(-1,-1),2)]))
+        story.append(issue_table)
+    else:
+        story.append(Paragraph("No open maintenance issues recorded.", small))
+    story += [Spacer(1, 1*mm), Paragraph("Prepared for operational management review. Maintenance activity information only.", small)]
 
     doc.build(story)
     return output.getvalue()
@@ -4156,7 +4223,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.caption(f"{panel_done} of {panel_total} tables completed; {panel_left} left ({pc:.1f}% complete).")
+        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} remaining ({pc:.1f}% complete) · {'3/3 cycles completed' if panel_total and panel_done >= panel_total else '0/3 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
         pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[grass_done,grass_left]}),
@@ -4165,11 +4232,11 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.caption(f"{grass_done} of {grass_total} zones completed; {grass_left} left ({gc:.1f}% complete).")
+        st.markdown(f"<div style='font-size:15px;font-weight:600'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
 
-    panel_cycle = "1 cycle completed" if panel_total > 0 and panel_done >= panel_total else "Pending"
-    grass_cycle = "1 cycle completed" if grass_total > 0 and grass_done >= grass_total else "Pending"
-    st.markdown(f"**Panel cleaning cycle:** {panel_cycle}  ·  **Grass cutting cycle:** {grass_cycle}")
+    panel_cycle = "3/3 cycles completed" if panel_total > 0 and panel_done >= panel_total else "0/3 cycles completed"
+    grass_cycle = "4/4 cycles completed" if grass_total > 0 and grass_done >= grass_total else "0/4 cycles completed"
+    st.markdown(f"<div style='font-size:17px;font-weight:700'>Panel cleaning cycles: {panel_cycle} &nbsp; · &nbsp; Grass cutting cycles: {grass_cycle}</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Maintenance Summary")
     left,right=st.columns(2)
