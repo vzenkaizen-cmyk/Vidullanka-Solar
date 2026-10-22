@@ -1518,8 +1518,9 @@ def login_page():
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:26px!important;height:26px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:24px!important;min-height:24px!important;padding-top:2px!important;padding-bottom:2px!important;font-size:17px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:38px!important;height:38px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{min-height:38px!important;height:38px!important;padding:0 9px!important;box-sizing:border-box!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important;font-size:17px!important;box-sizing:border-box!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
@@ -2005,13 +2006,13 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # upper-left bank, smaller banks across the upper/middle rows, and the
         # three lower banks. Coordinates are normalized to the MDP satellite.
         block_specs = [
-            (.035, .285, .485, .470, "y"),  # main upper-left bank
-            (.500, .300, .585, .430, "y"),  # 9-row bank
-            (.610, .300, .700, .480, "y"),  # 11-row bank
-            (.715, .300, .785, .385, "y"),  # 5-row bank
-            (.800, .300, .895, .480, "y"),  # 11-row bank
-            (.905, .300, .985, .480, "y"),  # 11-row bank
-            (.925, .490, .985, .620, "y"),  # 8-row bank
+            (.035, .135, .485, .335, "y"),  # main upper-left bank
+            (.500, .170, .585, .300, "y"),  # 9-row bank
+            (.610, .200, .700, .380, "y"),  # 11-row bank
+            (.715, .200, .785, .285, "y"),  # 5-row bank
+            (.800, .200, .895, .380, "y"),  # 11-row bank
+            (.905, .200, .985, .380, "y"),  # 11-row bank
+            (.925, .405, .985, .535, "y"),  # 8-row bank
             (.025, .510, .115, .565, "y"),  # short left bank
             (.145, .500, .220, .660, "y"),  # lower-left bank
             (.245, .500, .320, .660, "y"),  # lower bank
@@ -2032,17 +2033,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # upper-left, three short horizontal strips beneath them, four tall
         # banks across the centre/right, and a small upper-right bank.
         block_specs = [
-            (.035, .180, .170, .235, "y"),  # 5 rows
-            (.205, .180, .340, .235, "y"),  # 5 rows
-            (.375, .180, .510, .235, "y"),  # 5 rows
-            (.080, .250, .240, .275, "y"),  # short strip
-            (.280, .250, .440, .275, "y"),  # short strip
-            (.180, .285, .340, .310, "y"),  # short strip
-            (.500, .220, .615, .700, "y"),  # 15-row tall bank
-            (.620, .150, .730, .780, "y"),  # 20-row tall bank
-            (.735, .120, .845, .900, "y"),  # 23-row tall bank
-            (.850, .190, .955, .820, "y"),  # 21-row tall bank
-            (.945, .120, .995, .220, "y"),  # 5-row upper-right bank
+            (.065, .555, .180, .620, "y"),  # 5-row upper-left bank
+            (.205, .555, .340, .620, "y"),  # 5-row upper-middle bank
+            (.365, .555, .500, .620, "y"),  # 5-row upper-right bank
+            (.100, .635, .245, .660, "y"),  # short strip
+            (.280, .635, .430, .660, "y"),  # short strip
+            (.180, .675, .335, .700, "y"),  # short lower strip
+            (.500, .600, .610, .875, "y"),  # 15-row tall bank
+            (.620, .575, .725, .900, "y"),  # 20-row tall bank
+            (.735, .575, .840, .955, "y"),  # 23-row tall bank
+            (.850, .590, .950, .900, "y"),  # 21-row tall bank
+            (.945, .555, .995, .635, "y"),  # 5-row upper-right bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
