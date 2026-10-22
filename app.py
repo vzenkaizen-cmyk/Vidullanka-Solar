@@ -1518,8 +1518,8 @@ def login_page():
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:30px!important;height:30px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:28px!important;min-height:28px!important;padding-top:3px!important;padding-bottom:3px!important;font-size:17px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:26px!important;height:26px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:24px!important;min-height:24px!important;padding-top:2px!important;padding-bottom:2px!important;font-size:17px!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
@@ -2442,7 +2442,7 @@ def render_plant_details_and_specs(db, plant):
     }
     engineer = (profile.engineer_name.strip() if profile and profile.engineer_name else "") or engineers.get(plant.code, "Not provided")
 
-    st.markdown("## 🏭 Power Plant Details")
+    st.markdown("## Power Plant Details")
     detail_rows = [
         ("Plant", display_plant_name(plant)), ("Site code", display_site_code(plant)),
         ("AC Capacity", f"{plant.capacity_mw:g} MW"),
@@ -2528,7 +2528,7 @@ def render_plant_details_and_specs(db, plant):
 
     spec = specs.get(spec_key, {}) if spec_key else {}
 
-    st.markdown("## ⚙️ Technical Specifications")
+    st.markdown("## Technical Specifications")
     if spec:
         st.dataframe(pd.DataFrame([{"Specification": k, "Value": v} for k, v in spec.items()]),
                      use_container_width=True, hide_index=True)
@@ -2548,7 +2548,7 @@ def _render_overview_card(title, icon, pct, done, total, target_text, map_render
         f'<div class="overview-work-card"><div class="overview-work-title">{icon} {title}</div>'
         f'<div class="overview-work-percent">{pct:.0f}%</div>'
         f'<div class="small-muted">{done} / {total} completed</div>'
-        f'<div class="overview-work-target">⏱️ {target_text}</div></div>',
+        f'<div class="overview-work-target">{target_text}</div></div>',
         unsafe_allow_html=True,
     )
     if map_renderer:
@@ -2589,14 +2589,14 @@ def overview_page(db, user, plant):
     ).group_by(RepairItem.asset_id).all()
     repair_counts = {a: int(c) for a, c in repair_rows}
 
-    st.markdown("## ⚡ Maintenance Productivity")
+    st.markdown("## Maintenance Productivity")
     st.caption("Compact operational view — cleaning, grass cutting and repair/maintenance status.")
 
     panel_col, grass_col, repair_col = st.columns(3, gap="medium")
 
     with panel_col:
         _render_overview_card(
-            "Panel Cleaning", "🧹", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
+            "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
@@ -2604,7 +2604,7 @@ def overview_page(db, user, plant):
 
     with grass_col:
         _render_overview_card(
-            "Grass Cutting", "🌿", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
+            "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
@@ -2612,7 +2612,7 @@ def overview_page(db, user, plant):
 
     with repair_col:
         _render_overview_card(
-            "Repair & Maintenance", "🔧",
+            "Repair & Maintenance", "",
             100 if metrics["open_repairs"] == 0 else 0,
             plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
             plant.inverter_count,
@@ -3905,8 +3905,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<b>{total}</b><br/><font size='8'>Activities</font>", small),
         Paragraph(f"<b>{green}</b><br/><font size='8'>Green - Completed</font>", small),
         Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
-        Paragraph(f"<b>{pending}</b><br/><font size='8'>Pending</font>", small),
-        Paragraph(f"<b>{approved}</b><br/><font size='8'>Approved</font>", small),
+        Paragraph(f"<b>{pending}</b><br/><font size='8'>Pending Inspection Approvals</font>", small),
+        Paragraph(f"<b>{approved}</b><br/><font size='8'>Approved Inspection Approvals</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font>", small),
     ]]
@@ -4057,8 +4057,8 @@ def reports_page(db,user,plant):
     c1.metric("Activities",total)
     c2.metric("Green - Completed",completed)
     c3.metric("Red - Not Completed",failed)
-    c4.metric("Pending inspection approvals",pending_approvals)
-    c5.metric("Approved Inspection Approvals",approved_approvals)
+    c4.metric("Pending Inspection Approvals", pending_approvals)
+    c5.metric("Approved Inspection Approvals", approved_approvals)
     c6.metric("Panel Cleaning", f"{pc:.0f}%")
     c7.metric("Grass Cutting", f"{gc:.0f}%")
     panel_left=max(0,panel_total-panel_done)
