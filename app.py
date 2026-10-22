@@ -1489,18 +1489,22 @@ def login_page():
                 background:transparent!important;
                 margin-bottom:.35rem!important;
             }}
-            /* Keep a visible green outline on every sign-in and create-account
-               field before focus, including BaseWeb's nested input wrappers. */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div > div,
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div > div > div{{
-                border:1.5px solid #16a765!important;
+            /* Force a visible green border on the actual BaseWeb input shell.
+               Keep inner wrappers borderless so they cannot cover the outline. */
+            html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"]{{
+                border:2px solid #16a765!important;
                 border-radius:7px!important;
-                box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
+                box-shadow:0 0 0 1px rgba(22,167,101,.14)!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
-                outline:none!important;
+                outline:1px solid rgba(22,167,101,.45)!important;
+                outline-offset:-1px!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"] > div{{
+                border:0!important;
+                box-shadow:none!important;
+                background:transparent!important;
+                box-sizing:border-box!important;
             }}
             [data-testid="stTextArea"] [data-baseweb="textarea"],
             [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
@@ -1511,6 +1515,9 @@ def login_page():
                 box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"]:not(:focus-within){{
+                border-color:#16a765!important;
             }}
             [data-testid="stTextInput"] input,
             [data-testid="stTextArea"] textarea,
@@ -2062,17 +2069,21 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # the short panel row at the far right. Coordinates are normalized to
         # the displayed MTR satellite image, not the old lower-half layout.
         block_specs = [
-            (.095, .555, .205, .605, "y"),  # 5-row lower-left bank
-            (.225, .555, .365, .605, "y"),  # 5-row lower-middle bank
-            (.385, .555, .515, .605, "y"),  # 5-row lower-right bank
-            (.100, .635, .245, .660, "y"),  # 1-row short strip
-            (.280, .635, .430, .660, "y"),  # 1-row short strip
-            (.180, .675, .335, .700, "y"),  # 1-row short lower strip
-            (.525, .135, .635, .485, "y"),  # 15-row upper panel bank
-            (.645, .115, .755, .495, "y"),  # 20-row upper panel bank
-            (.765, .105, .875, .505, "y"),  # 23-row upper panel bank
-            (.885, .125, .975, .485, "y"),  # 21-row upper-right panel bank
-            (.965, .555, .999, .605, "y"),  # 5-row far-right short bank
+            # Short left-side banks and strips follow the low panel rows in the
+            # supplied MTR satellite reference.
+            (.095, .555, .205, .620, "y"),  # 5-row lower-left bank
+            (.225, .555, .365, .620, "y"),  # 5-row lower-middle bank
+            (.385, .555, .515, .620, "y"),  # 5-row lower-right bank
+            (.100, .635, .245, .665, "y"),  # 1-row short strip
+            (.280, .635, .430, .665, "y"),  # 1-row short strip
+            (.180, .675, .335, .705, "y"),  # 1-row short lower strip
+            # Four tall panel banks belong across the lower/right panel arrays,
+            # not over the top of the satellite image.
+            (.525, .585, .635, .925, "y"),  # 15-row panel bank
+            (.645, .575, .755, .945, "y"),  # 20-row panel bank
+            (.765, .570, .875, .985, "y"),  # 23-row panel bank
+            (.885, .580, .975, .945, "y"),  # 21-row panel bank
+            (.965, .555, .999, .620, "y"),  # 5-row far-right short bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
