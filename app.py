@@ -1207,6 +1207,12 @@ def css():
         div[data-testid="stMetric"] [data-testid="stMetricLabel"],div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:9px!important;line-height:1.15!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;display:block!important;width:100%!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"] *{font-size:9px!important;line-height:1.15!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{margin:0!important}
+        /* Keep approval counts and their two-line labels fully inside each KPI card. */
+        div[data-testid="stMetric"]{padding:8px 7px!important;overflow:hidden!important;min-width:0!important}
+        div[data-testid="stMetric"] [data-testid="stMetricValue"],
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] div{font-size:18px!important;line-height:1.05!important;white-space:normal!important;overflow-wrap:anywhere!important}
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:8px!important;line-height:1.12!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important}
         /* Keep Streamlit's image/element toolbar compact when it appears. */
         [data-testid="stElementToolbar"]{transform:scale(.72);transform-origin:top right;right:3px!important;top:3px!important}
         .modebar-container{transform:scale(.72);transform-origin:top right}
@@ -1497,13 +1503,10 @@ def login_page():
                 margin-bottom:.35rem!important;
             }}
             /* Keep a green outline visible on every sign-in/create-account field, even before focus. */
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] > div > div,
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input:not([type="checkbox"]) {{
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] {{
                 border:2px solid #16a765!important;
                 border-radius:7px!important;
-                box-shadow:0 0 0 1px rgba(22,167,101,.12)!important;
+                box-shadow:none!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
                 outline:0!important;
@@ -1558,6 +1561,7 @@ def login_page():
                 height:40px!important;min-height:40px!important;max-height:40px!important;
                 padding:0 8px!important;box-sizing:border-box!important;align-items:center!important;
                 border:2px solid #16a765!important;border-radius:7px!important;background:#fff!important;
+                box-shadow:none!important;outline:none!important;
             }}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
                 height:36px!important;min-height:36px!important;max-height:36px!important;
@@ -1959,9 +1963,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # DPV: show 15 zones on grass map and table-status markers on panel map.
             grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
             zone_assets = asset_list(plant, "Zone")
-            zone_centres = [(.13,.31),(.25,.30),(.37,.29),(.49,.28),(.61,.28),
-                            (.73,.30),(.83,.34),(.17,.45),(.29,.44),(.41,.43),
-                            (.53,.43),(.65,.43),(.77,.45),(.27,.58),(.48,.58)]
+            # Keep every DPV grass-zone marker inside the visible solar-array
+            # footprint (not on the access road or the buildings at the right).
+            zone_centres = [(.145,.335),(.235,.335),(.325,.335),(.415,.335),(.505,.335),
+                            (.595,.335),(.685,.335),(.775,.335),(.185,.465),(.285,.465),
+                            (.385,.465),(.485,.465),(.585,.465),(.685,.465),(.315,.605)]
             if map_mode == "grass":
                 dx, dy, dtext = [], [], []
                 for idx, (cx, cy) in enumerate(zone_centres[:len(zone_assets)]):
@@ -1980,17 +1986,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             else:
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
                 pxs, pys, pcolors, ptext = [], [], [], []
+                # 366 table indicators are arranged in 26 columns x 14 rows.
+                # Coordinates stay within the actual panel banks; markers are
+                # compact so they read as row-aligned red/green table cells.
                 for idx, asset in enumerate(asset_list(plant, "Table")):
                     row, col = divmod(idx, 26)
-                    cx, cy = .105 + col * (.79 / 25), .29 + row * (.34 / 13)
-                    if cy > .66: break
+                    cx = .105 + col * (.755 / 25)
+                    cy = .285 + row * (.355 / 13)
                     rec = panel_records.get(asset)
                     done = bool(rec and rec.status == "Completed")
                     pxs.append(cx * img_width); pys.append((1-cy) * img_height)
                     pcolors.append("#16e879" if done else "#ff2638")
                     ptext.append(f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}")
                 clean_fig.add_trace(go.Scatter(x=pxs, y=pys, mode="markers",
-                    marker=dict(size=5, color=pcolors, symbol="square"),
+                    marker=dict(size=5, color=pcolors, symbol="square", line=dict(width=0)),
                     hovertext=ptext, hoverinfo="text", showlegend=False))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
@@ -4091,8 +4100,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/3 cycles completed'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'4/4 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/4 cycles completed'}", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 completed' if panel_total > 0 and panel_done >= panel_total else '0/3 completed'}", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}%", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -4232,11 +4241,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
-
-    panel_cycle = "3/3 cycles completed" if panel_total > 0 and panel_done >= panel_total else "0/3 cycles completed"
-    grass_cycle = "4/4 cycles completed" if grass_total > 0 and grass_done >= grass_total else "0/4 cycles completed"
-    st.markdown(f"<div style='font-size:17px;font-weight:700'>Panel cleaning cycles: {panel_cycle} &nbsp; · &nbsp; Grass cutting cycles: {grass_cycle}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete)</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Maintenance Summary")
     left,right=st.columns(2)
