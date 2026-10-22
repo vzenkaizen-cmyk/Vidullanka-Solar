@@ -1204,15 +1204,15 @@ def css():
         .dashboard-card{height:158px;min-height:158px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 14px 12px;box-sizing:border-box;overflow:hidden}.dashboard-card h4{margin:0;color:var(--muted);font-size:13px;line-height:1.25;min-height:17px}.dashboard-value{color:var(--text);font-size:28px;font-weight:800;line-height:1.1;margin-top:2px}.dashboard-label,.small-muted{color:var(--muted);font-size:11px;line-height:1.25;overflow-wrap:anywhere}.dashboard-label{margin-top:auto;min-height:29px}.pending-inline{display:block;margin-top:2px;white-space:normal;line-height:1.2}.good{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}.warn{color:var(--yellow);font-weight:800}.section-title{font-size:20px;font-weight:800;color:var(--text)}
         div[data-testid="stMetric"]{background:var(--surface);border:1px solid var(--border);padding:12px;border-radius:12px;box-shadow:var(--shadow);min-height:108px;box-sizing:border-box;min-width:0}
         div[data-testid="stMetric"] label{white-space:normal!important;overflow-wrap:anywhere;line-height:1.2;font-size:11px!important;display:block;min-width:0;max-width:100%;height:auto;overflow:visible;text-overflow:clip}
-        div[data-testid="stMetric"] [data-testid="stMetricLabel"],div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:9px!important;line-height:1.15!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;display:block!important;width:100%!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important}
-        div[data-testid="stMetric"] [data-testid="stMetricLabel"] *{font-size:9px!important;line-height:1.15!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important}
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"],div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:11px!important;line-height:1.2!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;display:block!important;width:100%!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important}
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"] *{font-size:11px!important;line-height:1.2!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{margin:0!important}
         /* Keep approval counts and their two-line labels fully inside each KPI card. */
         div[data-testid="stMetric"]{padding:8px 7px!important;overflow:hidden!important;min-width:0!important}
         div[data-testid="stMetric"] [data-testid="stMetricValue"],
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] div{font-size:18px!important;line-height:1.05!important;white-space:normal!important;overflow-wrap:anywhere!important}
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] div{font-size:15px!important;line-height:1.05!important;white-space:normal!important;overflow-wrap:anywhere!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"],
-        div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:8px!important;line-height:1.12!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important}
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:10px!important;line-height:1.15!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important}
         /* Keep Streamlit's image/element toolbar compact when it appears. */
         [data-testid="stElementToolbar"]{transform:scale(.72);transform-origin:top right;right:3px!important;top:3px!important}
         .modebar-container{transform:scale(.72);transform-origin:top right}
@@ -1504,7 +1504,7 @@ def login_page():
             }}
             /* Keep a green outline visible on every sign-in/create-account field, even before focus. */
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] {{
-                border:2px solid #16a765!important;
+                border:1px solid #16a765!important;
                 border-radius:7px!important;
                 box-shadow:none!important;
                 background:#fff!important;
@@ -3927,7 +3927,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
             Paragraph(f"<b>{len(df)}</b><br/><font size='8'>Recorded Activities</font>", small),
             Paragraph(f"<b>{completed_count}</b><br/><font size='8'>Completed</font>", small),
             Paragraph(f"<b>{not_completed_count}</b><br/><font size='8'>Not Completed / Pending</font>", small),
-            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font>", small),
+            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font><br/><font size='8'>{'3/3 cycles completed' if report_type == 'Panel Cleaning' and item_total > 0 and done_count >= item_total else '4/4 cycles completed' if report_type == 'Grass Cutting' and item_total > 0 and done_count >= item_total else '0/3 cycles completed' if report_type == 'Panel Cleaning' else '0/4 cycles completed'}</font>", small),
         ]]
         kpi = Table(kpi_data, colWidths=[48*mm]*4, rowHeights=[15*mm])
         kpi.setStyle(TableStyle([
@@ -4040,8 +4040,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
         Paragraph(f"<font size='16'><b>{pending}</b></font><br/><font size='7'>Pending Inspection Approvals</font>", small),
         Paragraph(f"<font size='16'><b>{approved}</b></font><br/><font size='7'>Approved Inspection Approvals</font>", small),
-        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font>", small),
-        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font>", small),
+        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'3/3 cycles completed' if panel_total and panel_done >= panel_total else '0/3 cycles completed'}</font>", small),
+        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</font>", small),
     ]]
     kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[12*mm])
     kpi_table.setStyle(TableStyle([
@@ -4100,8 +4100,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 completed' if panel_total > 0 and panel_done >= panel_total else '0/3 completed'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}%", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/3 cycles completed'}", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'4/4 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/4 cycles completed'}", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -4241,7 +4241,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Maintenance Summary")
     left,right=st.columns(2)
