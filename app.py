@@ -2069,26 +2069,21 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
         ]
     elif plant_code == "MTR":
-        # MTR panel-cleaning rows are aligned to the actual satellite arrays:
-        # the four large banks sit over the upper/right panel rows, the small
-        # banks follow the lower-left panel strips, and the last bank follows
-        # the short panel row at the far right. Coordinates are normalized to
-        # the displayed MTR satellite image, not the old lower-half layout.
+        # MTR panel-cleaning rows follow the solar-panel rows visible in the
+        # satellite image and the user's hand-drawn layout. Keep the short
+        # banks on the lower-left panel strips and move the four tall banks
+        # onto the actual upper/right solar-panel arrays.
         block_specs = [
-            # Short left-side banks and strips follow the low panel rows in the
-            # supplied MTR satellite reference.
             (.095, .555, .205, .620, "y"),  # 5-row lower-left bank
             (.225, .555, .365, .620, "y"),  # 5-row lower-middle bank
             (.385, .555, .515, .620, "y"),  # 5-row lower-right bank
             (.100, .635, .245, .665, "y"),  # 1-row short strip
             (.280, .635, .430, .665, "y"),  # 1-row short strip
             (.180, .675, .335, .705, "y"),  # 1-row short lower strip
-            # Four tall panel banks belong across the lower/right panel arrays,
-            # not over the top of the satellite image.
-            (.525, .585, .635, .925, "y"),  # 15-row panel bank
-            (.645, .575, .755, .945, "y"),  # 20-row panel bank
-            (.765, .570, .875, .985, "y"),  # 23-row panel bank
-            (.885, .580, .975, .945, "y"),  # 21-row panel bank
+            (.525, .145, .635, .505, "y"),  # 15-row upper/right panel bank
+            (.645, .145, .755, .515, "y"),  # 20-row upper/right panel bank
+            (.765, .145, .875, .535, "y"),  # 23-row upper/right panel bank
+            (.885, .155, .975, .515, "y"),  # 21-row upper/right panel bank
             (.965, .555, .999, .620, "y"),  # 5-row far-right short bank
         ]
     elif plant_code == "ORK":
