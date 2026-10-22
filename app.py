@@ -1524,26 +1524,19 @@ def login_page():
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:1px!important;line-height:14px!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{height:28px!important;min-height:28px!important}}
             
-/* Reduce the height of Sign In and Create Account input boxes */
-[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{
+/* Final compact sizing override for the Email and Password fields. */
+[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{
     height:auto!important;
     min-height:0!important;
     margin-bottom:.35rem!important;
-}
+}}
 
-[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{
+[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{
     height:30px!important;
     min-height:30px!important;
-}
+}}
 
-[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{
-    height:30px!important;
-    min-height:30px!important;
-    padding:0 8px!important;
-    box-sizing:border-box!important;
-}
-
-[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{
+[data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
     height:28px!important;
     min-height:28px!important;
     padding-top:1px!important;
@@ -1551,7 +1544,7 @@ def login_page():
     font-size:16px!important;
     line-height:20px!important;
     box-sizing:border-box!important;
-}
+}}
 
 [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{
     font-size:12px!important;
