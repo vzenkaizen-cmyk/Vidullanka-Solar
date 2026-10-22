@@ -2312,7 +2312,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             polygon = [tl, tr, br, bl, tl]
             is_done = asset in completed
             if map_mode in ("both", "panel"):
-                if plant_code == "MDP":
+                # MTR panel-cleaning layout: every table remains red until the
+                # requested design is changed; completion status does not recolour it.
+                if plant_code in {"MDP", "MTR"}:
                     fill_color = "#ff4e59"
                 else:
                     fill_color = "#16c982" if is_done else "#ff4e59"
@@ -2332,7 +2334,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                line=dict(color="#062337", width=1),
+                line=dict(color="#ff4e59" if plant_code == "MTR" and map_mode in ("both", "panel") else "#062337", width=1),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
