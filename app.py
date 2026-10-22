@@ -2069,10 +2069,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
         ]
     elif plant_code == "MTR":
-        # MTR panel-cleaning rows follow the solar-panel rows visible in the
-        # satellite image and the user's hand-drawn layout. Keep the short
-        # banks on the lower-left panel strips and move the four tall banks
-        # onto the actual upper/right solar-panel arrays.
+        # MTR panel-cleaning footprints follow the hand-drawn plan and the
+        # actual satellite arrays. The three short 5-row groups and three
+        # single-row strips stay over the lower-left panel strips. The four
+        # tall groups are moved down and left so they cover the long central /
+        # right-hand solar arrays rather than the upper panel rows.
         block_specs = [
             (.095, .555, .205, .620, "y"),  # 5-row lower-left bank
             (.225, .555, .365, .620, "y"),  # 5-row lower-middle bank
@@ -2080,10 +2081,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.100, .635, .245, .665, "y"),  # 1-row short strip
             (.280, .635, .430, .665, "y"),  # 1-row short strip
             (.180, .675, .335, .705, "y"),  # 1-row short lower strip
-            (.525, .145, .635, .505, "y"),  # 15-row upper/right panel bank
-            (.645, .145, .755, .515, "y"),  # 20-row upper/right panel bank
-            (.765, .145, .875, .535, "y"),  # 23-row upper/right panel bank
-            (.885, .155, .975, .515, "y"),  # 21-row upper/right panel bank
+            (.425, .335, .535, .900, "y"),  # 15-row long central-left array
+            (.545, .315, .655, .940, "y"),  # 20-row long central array
+            (.665, .305, .785, .985, "y"),  # 23-row long central-right array
+            (.795, .325, .915, .935, "y"),  # 21-row long right array
             (.965, .555, .999, .620, "y"),  # 5-row far-right short bank
         ]
     elif plant_code == "ORK":
