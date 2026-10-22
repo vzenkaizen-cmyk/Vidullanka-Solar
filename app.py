@@ -1482,16 +1482,27 @@ def login_page():
             .login-accent{{height:4px;width:60px;border-radius:4px;background:#1687e8;margin:12px 0 22px}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTabs"]{{margin-top:6px}}
             [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{{color:#14213d!important;background:#fff!important;-webkit-text-fill-color:#14213d!important;font-size:16px!important;caret-color:#14213d!important}}
-            /* Keep the full green outline visible on every empty and filled login/register field. */
-            [data-testid="stTextInput"],
-            [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stTextInput"] [data-baseweb="input"] > div,
+            /* Keep labels above compact input boxes, matching the requested sketch. */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{
+                border:0!important;
+                box-shadow:none!important;
+                background:transparent!important;
+                margin-bottom:.35rem!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
+                border:1.5px solid #16a765!important;
+                border-radius:7px!important;
+                box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
+                background:#fff!important;
+                box-sizing:border-box!important;
+            }}
             [data-testid="stTextArea"] [data-baseweb="textarea"],
             [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
             [data-testid="stNumberInput"] [data-baseweb="input"],
             [data-testid="stNumberInput"] [data-baseweb="input"] > div{{
                 border:1.5px solid #16a765!important;
-                border-radius:8px!important;
+                border-radius:7px!important;
                 box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
@@ -1516,25 +1527,21 @@ def login_page():
             [data-testid="stTabs"] [role="tab"]{{color:#183b2c!important}}
             [data-testid="stTabs"] [role="tab"][aria-selected="true"]{{border-bottom-color:#16a765!important;color:#087443!important}}
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
-            /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:30px!important;height:30px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{min-height:30px!important;height:30px!important;padding:0 8px!important;box-sizing:border-box!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:28px!important;min-height:28px!important;padding-top:1px!important;padding-bottom:1px!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:1px!important;line-height:14px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{height:28px!important;min-height:28px!important}}
-            /* Final compact sizing override for the Email and Password fields. */
+            /* Compact sign-in and create-account fields: label above a 34px box. */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{
                 height:auto!important;min-height:0!important;margin-bottom:.35rem!important;
             }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{
+                display:block!important;font-size:12px!important;margin-bottom:3px!important;line-height:14px!important;
+            }}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
-                height:40px!important;min-height:40px!important;max-height:40px!important;
+                height:34px!important;min-height:34px!important;max-height:34px!important;
                 padding:0 8px!important;box-sizing:border-box!important;align-items:center!important;
             }}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{
-                height:38px!important;min-height:38px!important;max-height:38px!important;
+                height:32px!important;min-height:32px!important;max-height:32px!important;
                 padding:0!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important;
             }}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
