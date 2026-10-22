@@ -608,6 +608,9 @@ def seed_database():
         if mtr:
             mtr.name = "MTR Solar Power Plant"
             mtr.active = True
+            # The supplied MTR layout contains 102 table rows/cells in total.
+            if mtr.table_count != 102:
+                mtr.table_count = 102
 
         for legacy_code in ("HOF", "MTR-II"):
             legacy = db.query(Plant).filter(Plant.code == legacy_code).first()
@@ -2045,28 +2048,30 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # MDP panel rows follow the supplied hand-drawn site plan: the large
         # upper-left bank, smaller banks across the upper/middle rows, and the
         # three lower banks. Coordinates are normalized to the MDP satellite.
+        # Counts are read directly from the supplied sketch. The first bank is
+        # a true 11-row x 5-column grid (55 cells), not 55 full-width stripes.
         block_specs = [
-            (.035, .135, .485, .335, "y"),  # main upper-left bank
-            (.500, .170, .585, .300, "y"),  # 9-row bank
-            (.610, .200, .700, .380, "y"),  # 11-row bank
-            (.715, .200, .785, .285, "y"),  # 5-row bank
-            (.800, .200, .895, .380, "y"),  # 11-row bank
-            (.905, .200, .985, .380, "y"),  # 11-row bank
-            (.925, .405, .985, .535, "y"),  # 8-row bank
-            (.025, .510, .115, .565, "y"),  # short left bank
-            (.145, .500, .220, .660, "y"),  # lower-left bank
-            (.245, .500, .320, .660, "y"),  # lower bank
-            (.345, .500, .420, .660, "y"),  # lower bank
-            (.435, .500, .500, .610, "y"),  # 7-row bank
-            (.515, .500, .575, .610, "y"),  # 7-row bank
-            (.590, .500, .650, .610, "y"),  # 7-row bank
-            (.665, .500, .725, .610, "y"),  # 7-row bank
-            (.740, .500, .800, .590, "y"),  # 5-row bank
-            (.810, .500, .870, .590, "y"),  # 5-row bank
-            (.880, .500, .940, .590, "y"),  # 5-row bank
-            (.150, .720, .245, .900, "y"),  # lower-left 9-row bank
-            (.270, .720, .365, .940, "y"),  # lower-middle 11-row bank
-            (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
+            (.035, .135, .485, .335, "grid55"),  # 11 rows x 5 columns
+            (.500, .170, .585, .300, "y"),       # 9 rows
+            (.610, .200, .700, .380, "y"),       # 11 rows
+            (.715, .200, .785, .285, "y"),       # 5 rows
+            (.800, .200, .895, .380, "y"),       # 11 rows
+            (.905, .200, .985, .380, "y"),       # 11 rows
+            (.925, .405, .985, .535, "y"),       # 8 rows
+            (.025, .510, .115, .565, "y"),       # 2 rows
+            (.145, .500, .220, .660, "y"),       # 11 rows
+            (.245, .500, .320, .660, "y"),       # 11 rows
+            (.345, .500, .420, .660, "y"),       # 11 rows
+            (.435, .500, .500, .610, "y"),       # 7 rows
+            (.515, .500, .575, .610, "y"),       # 7 rows
+            (.590, .500, .650, .610, "y"),       # 7 rows
+            (.665, .500, .725, .610, "y"),       # 7 rows
+            (.740, .500, .800, .590, "y"),       # 5 rows
+            (.810, .500, .870, .590, "y"),       # 5 rows
+            (.880, .500, .940, .590, "y"),       # 5 rows
+            (.150, .720, .245, .900, "y"),       # 9 rows
+            (.270, .720, .365, .940, "y"),       # 11 rows
+            (.390, .720, .470, .985, "y"),       # 12 rows
         ]
     elif plant_code == "MTR":
         # MTR panel-cleaning footprints follow the hand-drawn plan and the
@@ -2075,17 +2080,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # tall groups are moved down and left so they cover the long central /
         # right-hand solar arrays rather than the upper panel rows.
         block_specs = [
-            (.095, .555, .205, .620, "y"),  # 5-row lower-left bank
-            (.225, .555, .365, .620, "y"),  # 5-row lower-middle bank
-            (.385, .555, .515, .620, "y"),  # 5-row lower-right bank
-            (.100, .635, .245, .665, "y"),  # 1-row short strip
-            (.280, .635, .430, .665, "y"),  # 1-row short strip
-            (.180, .675, .335, .705, "y"),  # 1-row short lower strip
-            (.425, .335, .535, .900, "y"),  # 15-row long central-left array
-            (.545, .315, .655, .940, "y"),  # 20-row long central array
-            (.665, .305, .785, .985, "y"),  # 23-row long central-right array
-            (.795, .325, .915, .935, "y"),  # 21-row long right array
-            (.965, .555, .999, .620, "y"),  # 5-row far-right short bank
+            (.090, .555, .205, .625, "y"),  # 5 rows: first short bank
+            (.225, .555, .345, .625, "y"),  # 5 rows: second short bank
+            (.365, .555, .485, .625, "y"),  # 5 rows: third short bank
+            (.105, .645, .245, .675, "y"),  # 1 row: short strip
+            (.275, .645, .420, .675, "y"),  # 1 row: short strip
+            (.185, .690, .335, .720, "y"),  # 1 row: lower short strip
+            (.455, .395, .525, .825, "y"),  # 15 rows: long array
+            (.535, .345, .615, .900, "y"),  # 20 rows: long array
+            (.625, .330, .705, .965, "y"),  # 23 rows: long array
+            (.715, .355, .805, .910, "y"),  # 21 rows: long array
+            (.830, .555, .885, .625, "y"),  # 5 rows: final short bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
@@ -2147,8 +2152,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
             # Match the user's ORK table-row counts exactly.
             counts = [1, 6, 7, 13, 14, 2, 9]
+        elif plant_code == "MDP" and len(block_specs) == 21 and len(assets) == 220:
+            # Exact MDP sketch counts: 11x5 main grid, then the remaining banks.
+            counts = [55, 9, 11, 5, 11, 11, 8, 2, 11, 11, 11, 7, 7, 7, 7, 5, 5, 5, 9, 11, 12]
         elif plant_code == "MTR" and len(block_specs) == 11 and len(assets) == 102:
-            # Match the user's MTR sketch exactly: 5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5.
+            # Exact MTR sketch counts: 5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5.
             counts = [5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5]
         else:
             total_weight = sum(weights)
@@ -2284,6 +2292,32 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if count <= 0:
             continue
         top_left, top_right, bottom_left, bottom_right, direction = block
+        # MDP's first bank is 11 rows by 5 columns, exactly as drawn in the sketch.
+        if plant_code == "MDP" and block_idx == 0 and direction == "grid55":
+            inset = 0.045
+            for row_idx in range(11):
+                for col_idx in range(5):
+                    if asset_index >= len(assets):
+                        break
+                    asset = assets[asset_index]
+                    asset_index += 1
+                    fx0, fx1 = col_idx / 5 + inset / 5, (col_idx + 1) / 5 - inset / 5
+                    fy0, fy1 = row_idx / 11 + inset / 11, (row_idx + 1) / 11 - inset / 11
+                    def interp(a, b, f):
+                        return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+                    tl = interp(interp(top_left, top_right, fx0), interp(bottom_left, bottom_right, fx0), fy0)
+                    tr = interp(interp(top_left, top_right, fx1), interp(bottom_left, bottom_right, fx1), fy0)
+                    br = interp(interp(top_left, top_right, fx1), interp(bottom_left, bottom_right, fx1), fy1)
+                    bl = interp(interp(top_left, top_right, fx0), interp(bottom_left, bottom_right, fx0), fy1)
+                    polygon = [tl, tr, br, bl, tl]
+                    is_done = asset in completed
+                    fill_color = "#ff4e59" if map_mode in ("both", "panel") else "rgba(0,0,0,0)"
+                    hover_text = f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}"
+                    fig.add_trace(go.Scatter(x=[x for x, y in polygon], y=[img_height-y for x, y in polygon],
+                        mode="lines", fill="toself", fillcolor=fill_color,
+                        line=dict(color="#ff4e59" if map_mode in ("both", "panel") else "#062337", width=1),
+                        hoverinfo="text", text=[hover_text] * len(polygon), showlegend=False))
+            continue
         # A small gap between strips keeps the satellite roads and row gaps visible.
         inset = 0.045
         for row_idx in range(count):
