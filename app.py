@@ -1489,13 +1489,18 @@ def login_page():
                 background:transparent!important;
                 margin-bottom:.35rem!important;
             }}
+            /* Keep a visible green outline on every sign-in and create-account
+               field before focus, including BaseWeb's nested input wrappers. */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div > div,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div > div > div{{
                 border:1.5px solid #16a765!important;
                 border-radius:7px!important;
                 box-shadow:inset 0 0 0 1px rgba(22,167,101,.10)!important;
                 background:#fff!important;
                 box-sizing:border-box!important;
+                outline:none!important;
             }}
             [data-testid="stTextArea"] [data-baseweb="textarea"],
             [data-testid="stTextArea"] [data-baseweb="textarea"] > div,
@@ -2051,21 +2056,23 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.390, .720, .470, .985, "y"),  # lower-right 12-row bank
         ]
     elif plant_code == "MTR":
-        # MTR panel rows follow the hand-drawn layout: small banks at the
-        # upper-left, three short horizontal strips beneath them, four tall
-        # banks across the centre/right, and a small upper-right bank.
+        # MTR panel-cleaning rows are aligned to the actual satellite arrays:
+        # the four large banks sit over the upper/right panel rows, the small
+        # banks follow the lower-left panel strips, and the last bank follows
+        # the short panel row at the far right. Coordinates are normalized to
+        # the displayed MTR satellite image, not the old lower-half layout.
         block_specs = [
-            (.065, .555, .180, .620, "y"),  # 5-row upper-left bank
-            (.205, .555, .340, .620, "y"),  # 5-row upper-middle bank
-            (.365, .555, .500, .620, "y"),  # 5-row upper-right bank
+            (.095, .555, .205, .605, "y"),  # 5-row lower-left bank
+            (.225, .555, .365, .605, "y"),  # 5-row lower-middle bank
+            (.385, .555, .515, .605, "y"),  # 5-row lower-right bank
             (.100, .635, .245, .660, "y"),  # 1-row short strip
             (.280, .635, .430, .660, "y"),  # 1-row short strip
             (.180, .675, .335, .700, "y"),  # 1-row short lower strip
-            (.500, .600, .610, .875, "y"),  # 15-row tall bank
-            (.620, .575, .725, .900, "y"),  # 20-row tall bank
-            (.735, .575, .840, .955, "y"),  # 23-row tall bank
-            (.850, .590, .950, .900, "y"),  # 21-row tall bank
-            (.945, .555, .995, .635, "y"),  # 5-row upper-right bank
+            (.525, .135, .635, .485, "y"),  # 15-row upper panel bank
+            (.645, .115, .755, .495, "y"),  # 20-row upper panel bank
+            (.765, .105, .875, .505, "y"),  # 23-row upper panel bank
+            (.885, .125, .975, .485, "y"),  # 21-row upper-right panel bank
+            (.965, .555, .999, .605, "y"),  # 5-row far-right short bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
