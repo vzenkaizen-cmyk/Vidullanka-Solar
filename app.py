@@ -1518,8 +1518,8 @@ def login_page():
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:38px!important;height:38px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:34px!important;min-height:34px!important;padding-top:5px!important;padding-bottom:5px!important;font-size:14px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:30px!important;height:30px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:28px!important;min-height:28px!important;padding-top:3px!important;padding-bottom:3px!important;font-size:17px!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
@@ -2038,11 +2038,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.080, .250, .240, .275, "y"),  # short strip
             (.280, .250, .440, .275, "y"),  # short strip
             (.180, .285, .340, .310, "y"),  # short strip
-            (.555, .220, .680, .700, "y"),  # 15-row tall bank
-            (.700, .150, .820, .780, "y"),  # 20-row tall bank
-            (.825, .120, .945, .900, "y"),  # 23-row tall bank
-            (.450, .190, .550, .820, "y"),  # 21-row tall bank
-            (.940, .120, .995, .220, "y"),  # 5-row upper-right bank
+            (.500, .220, .615, .700, "y"),  # 15-row tall bank
+            (.620, .150, .730, .780, "y"),  # 20-row tall bank
+            (.735, .120, .845, .900, "y"),  # 23-row tall bank
+            (.850, .190, .955, .820, "y"),  # 21-row tall bank
+            (.945, .120, .995, .220, "y"),  # 5-row upper-right bank
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
@@ -2265,7 +2265,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             polygon = [tl, tr, br, bl, tl]
             is_done = asset in completed
             if map_mode in ("both", "panel"):
-                fill_color = "#16c982" if is_done else "#ff4e59"
+                if plant_code == "MDP":
+                    fill_color = "#ff4e59"
+                else:
+                    fill_color = "#16c982" if is_done else "#ff4e59"
                 hover_text = f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}"
                 if map_mode == "both" and zone_assets:
                     zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets))))
@@ -2667,7 +2670,7 @@ def worker_options_for_plant(plant, db, first_names_only=False):
 
 def panel_cleaning_page(db, user, plant):
     header(plant)
-    st.markdown("## 🧹 Panel Cleaning")
+    st.markdown("## Panel Cleaning")
 
     task_date = st.date_input("Work date", value=date.today(), key="panel_date")
     # Compact map — same size as the Grass Cutting map.
@@ -3141,7 +3144,7 @@ def _render_inspection_category(db, user, plant, category):
 
 def inspection_page(db, user, plant):
     header(plant)
-    st.markdown("## 🔧 Maintenance Inspections")
+    st.markdown("## Maintenance Inspections")
     st.caption(
         "Select a maintenance process tab. Inverter and safety checks are separated, and AC inspections are split into outdoor and indoor units."
     )
@@ -3180,7 +3183,7 @@ def inspection_page(db, user, plant):
 
 def loss_repair_page(db, user, plant):
     header(plant)
-    st.markdown("## 🔧 Repair & Maintenance")
+    st.markdown("## Repair & Maintenance")
 
     tab1, tab2 = st.tabs(["Open Repair Items", "Create Repair Item"])
 
@@ -3314,7 +3317,7 @@ def loss_repair_page(db, user, plant):
 
 def activity_page(db, user, plant):
     header(plant)
-    st.markdown("## 📋 Activity Log")
+    st.markdown("## Activity Log")
 
     f1, f2, f3 = st.columns(3)
     with f1:
@@ -3748,8 +3751,91 @@ def _excel_bytes(df,sheet_name="Maintenance Report"):
     return output.getvalue()
 
 
-def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct):
-    """Create a management-friendly PDF report with KPIs, charts and activity details."""
+def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="Overall Summary"):
+    """Create a one-page work-category report or the full overall management report."""
+    if report_type in ("Panel Cleaning", "Grass Cutting"):
+        # Dedicated work reports contain only their own category; inspections and
+        # approvals, as well as the other work category, are intentionally excluded.
+        df = df[df["Category"] == report_type].copy() if len(df) else df.copy()
+        output = io.BytesIO()
+        doc = SimpleDocTemplate(
+            output, pagesize=landscape(A4), rightMargin=9*mm, leftMargin=9*mm,
+            topMargin=8*mm, bottomMargin=8*mm,
+            title=f"{plant.name} - {report_type} Report",
+            author="Solar Operation and Maintenance Platform",
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle("WorkReportTitle", parent=styles["Title"], alignment=TA_CENTER,
+                                     fontSize=17, leading=20, spaceAfter=4,
+                                     textColor=colors.HexColor("#123b63"))
+        subtitle_style = ParagraphStyle("WorkReportSubtitle", parent=styles["Normal"], alignment=TA_CENTER,
+                                        fontSize=8, textColor=colors.HexColor("#5b6573"), spaceAfter=8)
+        heading_style = ParagraphStyle("WorkReportHeading", parent=styles["Heading2"], fontSize=10,
+                                       leading=12, textColor=colors.HexColor("#123b63"), spaceBefore=5, spaceAfter=4)
+        small = ParagraphStyle("WorkReportSmall", parent=styles["Normal"], fontSize=7, leading=8)
+        pct, done_count, item_total = (panel_pct, 0, 0) if report_type == "Panel Cleaning" else (grass_pct, 0, 0)
+        progress_db = SessionLocal()
+        try:
+            if report_type == "Panel Cleaning":
+                pct, done_count, item_total = panel_cleaning_percent(progress_db, plant.id, end)
+                unit = "tables"
+            else:
+                pct, done_count, item_total = grass_cutting_percent(progress_db, plant.id, end)
+                unit = "zones"
+        finally:
+            progress_db.close()
+        completed_count = int((df["Status"] == "Completed").sum()) if len(df) else 0
+        not_completed_count = int((df["Status"] != "Completed").sum()) if len(df) else 0
+        story = [
+            Paragraph(f"{report_type} Summary Report", title_style),
+            Paragraph(f"<b>{plant.name}</b> &nbsp; | &nbsp; Period: {start:%d %b %Y} - {end:%d %b %Y} &nbsp; | &nbsp; Generated: {datetime.now():%d %b %Y %H:%M}", subtitle_style),
+        ]
+        kpi_data = [[
+            Paragraph(f"<b>{len(df)}</b><br/><font size='8'>Recorded Activities</font>", small),
+            Paragraph(f"<b>{completed_count}</b><br/><font size='8'>Completed</font>", small),
+            Paragraph(f"<b>{not_completed_count}</b><br/><font size='8'>Not Completed / Pending</font>", small),
+            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font>", small),
+        ]]
+        kpi = Table(kpi_data, colWidths=[48*mm]*4, rowHeights=[15*mm])
+        kpi.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
+            ("BOX", (0,0), (-1,-1), .6, colors.HexColor("#d7e0ea")),
+            ("INNERGRID", (0,0), (-1,-1), .4, colors.HexColor("#e2e8f0")),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ]))
+        story += [kpi, Spacer(1, 5*mm), Paragraph(f"{report_type} Progress Summary", heading_style)]
+        story.append(Paragraph(f"{done_count} of {item_total} {unit} completed; {max(0, item_total-done_count)} remaining ({pct:.1f}% complete).", small))
+        story += [Spacer(1, 4*mm), Paragraph(f"{report_type} Activities", heading_style)]
+        if len(df):
+            columns = ["Date", "Category", "Asset", "Worker", "Status", "Remarks"]
+            rows = [[Paragraph(f"<b>{c}</b>", small) for c in columns]]
+            for _, row in df.head(22).iterrows():
+                vals = [row.get("Date", ""), row.get("Category", ""), row.get("Asset", ""),
+                        row.get("Worker", ""), row.get("Status", ""), row.get("Remarks", "") or ""]
+                formatted = []
+                for value in vals:
+                    if pd.isna(value): value = ""
+                    if hasattr(value, "strftime"): value = value.strftime("%d %b %Y")
+                    formatted.append(Paragraph(str(value)[:100], small))
+                rows.append(formatted)
+            activity = Table(rows, colWidths=[22*mm, 32*mm, 22*mm, 35*mm, 28*mm, 65*mm], repeatRows=1)
+            activity.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#d9ecfb")),
+                ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#123b63")),
+                ("GRID", (0,0), (-1,-1), .3, colors.HexColor("#d7e0ea")),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7fafc")]),
+                ("LEFTPADDING", (0,0), (-1,-1), 4), ("RIGHTPADDING", (0,0), (-1,-1), 4),
+                ("TOPPADDING", (0,0), (-1,-1), 3), ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ]))
+            story.append(activity)
+            if len(df) > 22:
+                story.append(Paragraph(f"Showing the latest 22 of {len(df)} activities. Export to Excel for the complete report.", small))
+        else:
+            story.append(Paragraph("No activities found for the selected period.", small))
+        story += [Spacer(1, 4*mm), Paragraph("Prepared for operational management review.", small)]
+        doc.build(story)
+        return output.getvalue()
     output = io.BytesIO()
     doc = SimpleDocTemplate(
         output,
@@ -3972,12 +4058,12 @@ def reports_page(db,user,plant):
     c2.metric("Green - Completed",completed)
     c3.metric("Red - Not Completed",failed)
     c4.metric("Pending inspection approvals",pending_approvals)
-    c5.metric("Approved approvals",approved_approvals)
+    c5.metric("Approved Inspection Approvals",approved_approvals)
     c6.metric("Panel Cleaning", f"{pc:.0f}%")
     c7.metric("Grass Cutting", f"{gc:.0f}%")
     panel_left=max(0,panel_total-panel_done)
     grass_left=max(0,grass_total-grass_done)
-    st.markdown("### 🧹 Panel Cleaning and 🌿 Grass Cutting")
+    st.markdown("### Panel Cleaning and Grass Cutting")
     pcol,gcol=st.columns(2)
     with pcol:
         st.markdown("**Panel cleaning status**")
@@ -4002,7 +4088,7 @@ def reports_page(db,user,plant):
     grass_cycle = "1 cycle completed" if grass_total > 0 and grass_done >= grass_total else "Pending"
     st.markdown(f"**Panel cleaning cycle:** {panel_cycle}  ·  **Grass cutting cycle:** {grass_cycle}")
 
-    st.markdown("### 📈 Overall maintenance summary")
+    st.markdown("### Overall Maintenance Summary")
     left,right=st.columns(2)
     if total:
         with left:
@@ -4017,7 +4103,7 @@ def reports_page(db,user,plant):
             fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
             st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
 
-    st.markdown("### 📋 Overall activity report")
+    st.markdown("### Overall Activity Report")
     if total:
         report_df = df.copy()
         report_df["Status"] = report_df["Status"].replace({
@@ -4029,7 +4115,7 @@ def reports_page(db,user,plant):
     else:
         st.info("No activities found for the selected period.")
 
-    st.markdown("### 📄 Separate Panel Cleaning and Grass Cutting Reports")
+    st.markdown("### Separate Panel Cleaning and Grass Cutting Reports")
     for category, label, pct in [
         ("Panel Cleaning","Panel Cleaning",pc),
         ("Grass Cutting","Grass Cutting",gc),
@@ -4046,11 +4132,11 @@ def reports_page(db,user,plant):
                 key=f"excel_{category}", use_container_width=True)
             x2.download_button(
                 f"📄 {label} PDF",
-                _pdf_report_bytes(cat_df,plant,start,end,pc,gc),
+                _pdf_report_bytes(cat_df,plant,start,end,pc,gc,report_type=category),
                 f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.pdf",
                 "application/pdf", key=f"pdf_{category}", use_container_width=True)
 
-    st.markdown("### 📚 Overall Summary Downloads")
+    st.markdown("### Overall Summary Downloads")
     x1,x2=st.columns(2)
     x1.download_button("⬇️ Export overall report to Excel",_excel_bytes(df,"Overall Summary"),
         f"{plant.code.lower()}_overall_maintenance_summary.xlsx",
@@ -4128,7 +4214,7 @@ def admin_page(db):
     c1,c2,c3=st.columns(3); c1.metric("Users",db.query(User).count()); c2.metric("Plants",db.query(Plant).count()); c3.metric("Inspection approvals",pending_records)
     st.markdown("### 👥 User access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
     st.markdown("### ✅ Maintenance sign-off"); st.write("Engineers and administrators can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
-    st.markdown("### 📊 Management reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
+    st.markdown("### Management Reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
 
 
 # ============================================================
