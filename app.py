@@ -1518,10 +1518,11 @@ def login_page():
             [data-testid="stTextInput"] input::placeholder{{color:#718096!important;opacity:1!important}}
             /* Compact, consistent sign-in and registration fields (all four borders remain visible). */
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{margin-bottom:.45rem!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:38px!important;height:38px!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{min-height:38px!important;height:38px!important;padding:0 9px!important;box-sizing:border-box!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important;font-size:17px!important;box-sizing:border-box!important}}
-            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:3px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{min-height:30px!important;height:30px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{min-height:30px!important;height:30px!important;padding:0 8px!important;box-sizing:border-box!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:28px!important;min-height:28px!important;padding-top:1px!important;padding-bottom:1px!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:1px!important;line-height:14px!important}}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{height:28px!important;min-height:28px!important}}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
@@ -2036,9 +2037,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.065, .555, .180, .620, "y"),  # 5-row upper-left bank
             (.205, .555, .340, .620, "y"),  # 5-row upper-middle bank
             (.365, .555, .500, .620, "y"),  # 5-row upper-right bank
-            (.100, .635, .245, .660, "y"),  # short strip
-            (.280, .635, .430, .660, "y"),  # short strip
-            (.180, .675, .335, .700, "y"),  # short lower strip
+            (.100, .635, .245, .660, "y"),  # 1-row short strip
+            (.280, .635, .430, .660, "y"),  # 1-row short strip
+            (.180, .675, .335, .700, "y"),  # 1-row short lower strip
             (.500, .600, .610, .875, "y"),  # 15-row tall bank
             (.620, .575, .725, .900, "y"),  # 20-row tall bank
             (.735, .575, .840, .955, "y"),  # 23-row tall bank
@@ -2104,6 +2105,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
             # Match the user's ORK table-row counts exactly.
             counts = [1, 6, 7, 13, 14, 2, 9]
+        elif plant_code == "MTR" and len(block_specs) == 11 and len(assets) == 102:
+            # Match the user's MTR sketch exactly: 5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5.
+            counts = [5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
