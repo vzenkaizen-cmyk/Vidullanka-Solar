@@ -1523,6 +1523,20 @@ def login_page():
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{height:28px!important;min-height:28px!important;padding-top:1px!important;padding-bottom:1px!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] label{{font-size:12px!important;margin-bottom:1px!important;line-height:14px!important}}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{height:28px!important;min-height:28px!important}}
+            /* Final compact sizing override for the Email and Password fields. */
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]{{
+                height:auto!important;min-height:0!important;margin-bottom:.35rem!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
+                height:40px!important;min-height:40px!important;max-height:40px!important;
+                padding:0 8px!important;box-sizing:border-box!important;align-items:center!important;
+            }}
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input,
+            [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] input{{
+                height:38px!important;min-height:38px!important;max-height:38px!important;
+                padding:0!important;font-size:16px!important;line-height:20px!important;box-sizing:border-box!important;
+            }}
             [data-testid="stMainBlockContainer"]{{padding-top:1rem!important}}
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
@@ -2088,9 +2102,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (right * img_width, bottom * img_height),
             direction,
         ))
-    if plant_code in {"HS1", "HRN1", "HRN"}:
-        # The number of horizontal tables is proportional to each group's
-        # vertical span, not its image area/width.
+    if plant_code in {"HS1", "HRN1", "HRN", "MDP"}:
+        # Horizontal panel rows follow the visible row count/vertical span in
+        # the satellite layout, rather than the overall footprint area.
+        # This keeps MDP rows aligned with the solar-panel banks in its image.
         weights = [max(1, int((bottom - top) * 1000))
                    for _left, top, _right, bottom, _direction in block_specs]
     else:
