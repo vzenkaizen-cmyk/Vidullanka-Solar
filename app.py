@@ -54,8 +54,8 @@ DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
 # These are deliberately kept in one place so management can change them later.
-PANEL_CLEANING_TARGET_DAYS = 7
-GRASS_CUTTING_TARGET_DAYS = 30
+PANEL_CLEANING_TARGET_DAYS = 90
+GRASS_CUTTING_TARGET_DAYS = 60
 REPAIR_MAINTENANCE_TARGET_DAYS = 7
 # ============================================================
 # NEON POSTGRESQL CONFIGURATION
@@ -395,8 +395,8 @@ PROCESS_CATEGORIES = {
         "frequency": "Monthly",
         "asset_type": "Table",
         "items": [
-            "Front Glass Damage",
-            "Back Glass Damage",
+            "Front Glass Condition",
+            "Back Glass Condition",
             "Diode Damage",
         ],
     },
@@ -1504,7 +1504,7 @@ def login_page():
             }}
             /* Keep a green outline visible on every sign-in/create-account field, even before focus. */
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] {{
-                border:1px solid #16a765!important;
+                border:1.5px solid #111827!important;
                 border-radius:7px!important;
                 box-shadow:none!important;
                 background:#fff!important;
@@ -1528,7 +1528,7 @@ def login_page():
                 box-sizing:border-box!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) div[data-testid="stTextInput"] div[data-baseweb="input"]:not(:focus-within){{
-                border-color:#16a765!important;
+                border-color:#111827!important;
             }}
             [data-testid="stTextInput"] input,
             [data-testid="stTextArea"] textarea,
@@ -1560,7 +1560,7 @@ def login_page():
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{
                 height:40px!important;min-height:40px!important;max-height:40px!important;
                 padding:0 8px!important;box-sizing:border-box!important;align-items:center!important;
-                border:2px solid #16a765!important;border-radius:7px!important;background:#fff!important;
+                border:2px solid #111827!important;border-radius:7px!important;background:#fff!important;
                 box-shadow:none!important;outline:none!important;
             }}
             [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
@@ -1577,6 +1577,8 @@ def login_page():
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
             
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{border:2px solid #111827!important;background:#fff!important;box-shadow:none!important}}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:not(:focus-within){{border-color:#111827!important}}
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -1906,6 +1908,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     dpv_reference = plant_code == "DPV"
     if ork_grass_reference:
         selected_satellite = "Aerial Solar Farm Zone Map.png"
+    elif plant_code == "DPV" and map_mode == "grass":
+        selected_satellite = "Color-Coded Solar Farm Zones.png"
     else:
         selected_satellite = satellite_files.get(plant_code, "HR1.jpeg")
 
@@ -1965,9 +1969,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             zone_assets = asset_list(plant, "Zone")
             # Keep every DPV grass-zone marker inside the visible solar-array
             # footprint (not on the access road or the buildings at the right).
-            zone_centres = [(.145,.335),(.235,.335),(.325,.335),(.415,.335),(.505,.335),
-                            (.595,.335),(.685,.335),(.775,.335),(.185,.465),(.285,.465),
-                            (.385,.465),(.485,.465),(.585,.465),(.685,.465),(.315,.605)]
+            zone_centres = [(.175,.265),(.285,.265),(.405,.265),(.525,.265),(.645,.265),
+                            (.765,.265),(.865,.265),(.925,.265),(.205,.475),(.325,.475),
+                            (.445,.475),(.565,.475),(.685,.475),(.335,.735),(.735,.565)]
             if map_mode == "grass":
                 dx, dy, dtext = [], [], []
                 for idx, (cx, cy) in enumerate(zone_centres[:len(zone_assets)]):
@@ -1978,10 +1982,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     dtext.append(f"{asset} — Grass cutting: {'Completed' if done else 'Pending'}")
                 clean_fig.add_trace(go.Scatter(
                     x=dx, y=dy, mode="markers+text",
-                    marker=dict(size=22, color=["#16e879" if "Completed" in t else "#ff2638" for t in dtext],
+                    marker=dict(size=25, color=["#16e879" if "Completed" in t else "#ff2638" for t in dtext],
                                 line=dict(color="#ffffff", width=2)),
                     text=[f"Z{i+1}" for i in range(len(dx))], textposition="middle center",
-                    textfont=dict(size=9, color="#07131f"), hovertext=dtext, hoverinfo="text",
+                    textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
                     showlegend=False))
             else:
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
@@ -2780,9 +2784,11 @@ MTR_EMPLOYEES = [
 ]
 
 def worker_options_for_plant(plant, db, first_names_only=False):
-    """Return the supervisor and two worker choices for each non-MTR site."""
+    """Return the configured worker list for the selected solar plant."""
     code = (plant.code or "").strip().upper()
-    if code == "MTR":
+    if code == "DPV":
+        values = ["Harsha-Supervisor", "Nihal", "Nishantha", "Priyanka", "Saman", "Chinthaka"]
+    elif code == "MTR":
         values = list(MTR_EMPLOYEES)
     else:
         # HRN 1 and HRN 2 use the requested supervisor label consistently.
@@ -2992,17 +2998,33 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     values.setdefault(asset, {})[item] = status
 
     if status == "RED":
+        is_panel_condition = category == "Panel Inspection"
+        reason_label = "Panel number / issue" if is_panel_condition else "Reason / issue"
+        reason_placeholder = "Enter affected panel number(s) and issue" if is_panel_condition else "Reason / issue"
         reason = st.text_input(
-            "Reason / issue",
+            reason_label,
             value=saved_reason,
             key=f"inspection_reason_{category}_{task_date}_{asset}_{item_index}",
-            placeholder="Reason / issue",
-            label_visibility="collapsed",
+            placeholder=reason_placeholder,
+            label_visibility="visible" if is_panel_condition else "collapsed",
         ).strip()
         values[asset][f"{item}__reason"] = reason
         reason_widgets.append((f"{asset} – {item}", reason))
     else:
         values[asset][f"{item}__reason"] = ""
+
+    if category == "Switch Yard Inspection" and item.strip() == "OCB Tripping Count Recorded" and status == "GREEN":
+        saved_items = parse_details(old_record).get("items", {}) if old_record else {}
+        previous_count = saved_items.get(f"{item}__count", 0)
+        try:
+            previous_count = int(previous_count or 0)
+        except (TypeError, ValueError):
+            previous_count = 0
+        count = st.number_input(
+            "Tripping count", min_value=0, step=1, value=previous_count,
+            key=f"inspection_trip_count_{category}_{task_date}_{asset}_{item_index}",
+        )
+        values[asset][f"{item}__count"] = int(count)
 
 
 def _render_inspection_category(db, user, plant, category):
@@ -3068,7 +3090,12 @@ def _render_inspection_category(db, user, plant, category):
 
     # Daily inspection gets separate tabs so CCTV, Lightning Arresters and Fire
     # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
-    if category in ("Daily Inspection", "AC Inspection"):
+    if category == "Panel Inspection":
+        tab_titles = ["Front Glass Condition", "Back Glass Condition", "Diode Damage"]
+        tabs = st.tabs(tab_titles)
+        groups = [(tab_titles[i], [item], group_assets) for i, (group_title, group_items, group_assets) in enumerate(groups) for item in group_items]
+        group_contexts = list(zip(tabs, groups))
+    elif category in ("Daily Inspection", "AC Inspection"):
         tabs = st.tabs([title for title, _, _ in groups])
         group_contexts = list(zip(tabs, groups))
     else:
@@ -3218,6 +3245,9 @@ def _render_inspection_category(db, user, plant, category):
 
             for item, selected_status in asset_values.items():
                 if item.endswith("__reason"):
+                    continue
+                if item.endswith("__count"):
+                    merged_items[item] = int(selected_status or 0)
                     continue
                 if selected_status == "UNRECORDED":
                     # Do not create a record for a never-recorded item. If the user
@@ -3842,7 +3872,13 @@ maintenance_reminders""",
                 "Worker": worker.full_name if worker else "",
                 "WorkerEmail": worker.email if worker else "",
                 "Status": r.status,
-                "Remarks": r.remarks,
+                "Remarks": "; ".join(filter(None, [r.remarks or "", *[
+                    f"{key[:-8]}: {value}" for key, value in (parse_details(r).get("items", {}) or {}).items()
+                    if key.endswith("__reason") and str(value or "").strip()
+                ], *[
+                    f"{key[:-7]}: {value}" for key, value in (parse_details(r).get("items", {}) or {}).items()
+                    if key.endswith("__count")
+                ]])),
                 "CompletedAt": r.completed_at,
             }
         )
@@ -3868,7 +3904,19 @@ maintenance_reminders""",
 def _records_dataframe(db,plant_id,start,end):
     rows=db.query(MaintenanceRecord).filter(MaintenanceRecord.plant_id==plant_id,MaintenanceRecord.task_date>=start,MaintenanceRecord.task_date<=end).order_by(MaintenanceRecord.task_date.desc()).all()
     users={u.id:u.full_name for u in db.query(User).all()}
-    return pd.DataFrame([{"Date":r.task_date,"Category":r.category,"Asset":r.asset_id,"Worker":users.get(r.worker_id,"Unassigned"),"Status":r.status,"Approval":getattr(r,"approval_status","Pending") or "Pending","Remarks":r.remarks or "","Completed At":r.completed_at,"Approved At":getattr(r,"approved_at",None),"Approved By":users.get(getattr(r,"approved_by",None),"")} for r in rows])
+    report_rows=[]
+    for r in rows:
+        details=parse_details(r)
+        items=details.get("items", {}) if isinstance(details, dict) else {}
+        issue_details=[]
+        for key, value in items.items():
+            if key.endswith("__reason") and str(value or "").strip():
+                issue_details.append(f"{key[:-8]}: {str(value).strip()}")
+            elif key.endswith("__count"):
+                issue_details.append(f"{key[:-7]}: {value}")
+        remarks="; ".join(filter(None, [r.remarks or "", *issue_details]))
+        report_rows.append({"Date":r.task_date,"Category":r.category,"Asset":r.asset_id,"Worker":users.get(r.worker_id,"Unassigned"),"Status":r.status,"Approval":getattr(r,"approval_status","Pending") or "Pending","Remarks":remarks,"Completed At":r.completed_at,"Approved At":getattr(r,"approved_at",None),"Approved By":users.get(getattr(r,"approved_by",None),"")})
+    return pd.DataFrame(report_rows)
 
 def _excel_bytes(df,sheet_name="Maintenance Report"):
     output=io.BytesIO()
@@ -3927,7 +3975,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
             Paragraph(f"<b>{len(df)}</b><br/><font size='8'>Recorded Activities</font>", small),
             Paragraph(f"<b>{completed_count}</b><br/><font size='8'>Completed</font>", small),
             Paragraph(f"<b>{not_completed_count}</b><br/><font size='8'>Not Completed / Pending</font>", small),
-            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font><br/><font size='8'>{'3/3 cycles completed' if report_type == 'Panel Cleaning' and item_total > 0 and done_count >= item_total else '4/4 cycles completed' if report_type == 'Grass Cutting' and item_total > 0 and done_count >= item_total else '0/3 cycles completed' if report_type == 'Panel Cleaning' else '0/4 cycles completed'}</font>", small),
+            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font><br/><font size='8'>{'4/4 cycles completed' if report_type == 'Panel Cleaning' and item_total > 0 and done_count >= item_total else '6/6 cycles completed' if report_type == 'Grass Cutting' and item_total > 0 and done_count >= item_total else '0/4 cycles completed' if report_type == 'Panel Cleaning' else '0/6 cycles completed'}</font>", small),
         ]]
         kpi = Table(kpi_data, colWidths=[48*mm]*4, rowHeights=[15*mm])
         kpi.setStyle(TableStyle([
@@ -4040,8 +4088,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
         Paragraph(f"<font size='16'><b>{pending}</b></font><br/><font size='7'>Pending Inspection Approvals</font>", small),
         Paragraph(f"<font size='16'><b>{approved}</b></font><br/><font size='7'>Approved Inspection Approvals</font>", small),
-        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'3/3 cycles completed' if panel_total and panel_done >= panel_total else '0/3 cycles completed'}</font>", small),
-        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</font>", small),
+        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</font>", small),
+        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</font>", small),
     ]]
     kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[12*mm])
     kpi_table.setStyle(TableStyle([
@@ -4068,7 +4116,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         ]))
         done_count = panel_done if label == "Panel Cleaning" else grass_done
         total_count = panel_total if label == "Panel Cleaning" else grass_total
-        cycles_per_year = 3 if label == "Panel Cleaning" else 4
+        cycles_per_year = 4 if label == "Panel Cleaning" else 6
         state = f"{cycles_per_year}/{cycles_per_year} cycles completed" if total_count > 0 and done_count >= total_count else f"0/{cycles_per_year} cycles completed"
         status_rows.append([Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small), Paragraph(f"{done_count}/{total_count} {unit} • {state}", small)])
     status_table = Table(status_rows, colWidths=[27*mm, 55*mm, 17*mm, 42*mm])
@@ -4100,8 +4148,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'3/3 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/3 cycles completed'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'4/4 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/4 cycles completed'}", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'4/4 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/4 cycles completed'}", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'6/6 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/6 cycles completed'}", small)],
     ]
     progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
     progress_table.setStyle(TableStyle([
@@ -4232,7 +4280,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} remaining ({pc:.1f}% complete) · {'3/3 cycles completed' if panel_total and panel_done >= panel_total else '0/3 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
         pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[grass_done,grass_left]}),
@@ -4241,7 +4289,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'4/4 cycles completed' if grass_total and grass_done >= grass_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Maintenance Summary")
     left,right=st.columns(2)
