@@ -2099,7 +2099,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     row_h = (bottom - top) / max(1, len(bank_assets))
                     for row_idx, asset in enumerate(bank_assets):
                         y_top = top + row_idx * row_h
-                        y_bottom = min(bottom, y_top + row_h * .78)
+                        # Use a narrow, consistent gap and a high-contrast outline
+                        # so every individual DPV panel row is clearly distinguishable.
+                        y_bottom = min(bottom, y_top + row_h * .88)
                         rec = panel_records.get(asset)
                         done = bool(rec and rec.status == "Completed")
                         clean_fig.add_shape(
@@ -2107,7 +2109,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                             x0=left * img_width, x1=right * img_width,
                             y0=(1 - y_bottom) * img_height,
                             y1=(1 - y_top) * img_height,
-                            line=dict(color="#111827", width=0.5),
+                            line=dict(color="#ffffff", width=1.25),
                             fillcolor="#16e879" if done else "#ff2638",
                             layer="above",
                         )
@@ -2500,8 +2502,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                         line=dict(color="#ff4e59" if map_mode in ("both", "panel") else "#062337", width=1),
                         hoverinfo="text", text=[hover_text] * len(polygon), showlegend=False))
             continue
-        # A small gap between strips keeps the satellite roads and row gaps visible.
-        inset = 0.045
+        # Keep a strong, clearly visible gap between DPV rows so every row can
+        # be identified at normal page size without zooming. Other sites unchanged.
+        inset = 0.22 if plant_code == "DPV" else 0.045
         for row_idx in range(count):
             if asset_index >= len(assets):
                 break
@@ -2531,9 +2534,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # MTR panel-cleaning layout: every table remains red until the
                 # requested design is changed; completion status does not recolour it.
                 if plant_code in {"MDP", "MTR"}:
-                    fill_color = "#ff4e59"
+                    fill_color = "#ff001f"
                 else:
-                    fill_color = "#16c982" if is_done else "#ff4e59"
+                    # DPV pending rows use the vivid red shown in the reference;
+                    # completed rows turn bright green while retaining the same
+                    # high-contrast row outlines.
+                    fill_color = "#00e676" if is_done else ("#ff001f" if plant_code == "DPV" else "#ff4e59")
                 hover_text = f"{asset}<br>Panel cleaning: {'Completed' if is_done else 'Pending'}"
                 if map_mode == "both" and zone_assets:
                     zone_idx = min(zone_count - 1, int(asset_index * zone_count / max(1, len(assets))))
@@ -2550,7 +2556,12 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                line=dict(color="#ff4e59" if plant_code == "MTR" and map_mode in ("both", "panel") else "#062337", width=1),
+                line=dict(
+                    color=("#111111" if plant_code == "DPV" and map_mode in ("both", "panel")
+                           else "#ff4e59" if plant_code == "MTR" and map_mode in ("both", "panel")
+                           else "#062337"),
+                    width=1.8 if plant_code == "DPV" and map_mode in ("both", "panel") else 1,
+                ),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
@@ -4626,7 +4637,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
