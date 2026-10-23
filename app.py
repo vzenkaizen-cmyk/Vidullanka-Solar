@@ -2088,14 +2088,15 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 26, 26, 26]
                 table_assets = asset_list(plant, "Table")
                 idx = 0
+                hover_x, hover_y, hover_text = [], [], []
                 for bank_idx, (left, top, right, bottom, rows) in enumerate(dpv_blocks):
                     bank_assets = table_assets[idx:idx + counts[bank_idx]]
                     idx += counts[bank_idx]
                     if not bank_assets:
                         continue
-                    # Lay each table as a horizontal strip inside its bank.
-                    # Keep a small gap between rows so individual rows remain
-                    # clickable/identifiable in the hover text.
+                    # Keep each table as a separate coloured rectangle, but batch
+                    # hover targets into one Plotly trace to avoid hundreds of
+                    # individual traces on every Streamlit rerun.
                     row_h = (bottom - top) / max(1, len(bank_assets))
                     for row_idx, asset in enumerate(bank_assets):
                         y_top = top + row_idx * row_h
@@ -2111,14 +2112,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                             fillcolor="#16e879" if done else "#ff2638",
                             layer="above",
                         )
-                        clean_fig.add_trace(go.Scatter(
-                            x=[((left + right) / 2) * img_width],
-                            y=[(1 - (y_top + y_bottom) / 2) * img_height],
-                            mode="markers",
-                            marker=dict(size=1, opacity=0),
-                            hovertext=[f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"],
-                            hoverinfo="text", showlegend=False,
-                        ))
+                        hover_x.append(((left + right) / 2) * img_width)
+                        hover_y.append((1 - (y_top + y_bottom) / 2) * img_height)
+                        hover_text.append(
+                            f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"
+                        )
+                if hover_x:
+                    clean_fig.add_trace(go.Scatter(
+                        x=hover_x, y=hover_y, mode="markers",
+                        marker=dict(size=8, opacity=0.01, color="#ffffff"),
+                        hovertext=hover_text, hoverinfo="text", showlegend=False,
+                    ))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
