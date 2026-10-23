@@ -1201,14 +1201,14 @@ def css():
         .nav-wrap{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:4px 8px;margin:0 0 18px;box-shadow:var(--shadow);position:sticky;top:0;z-index:50}
         .nav-wrap [role="radiogroup"]{gap:4px;flex-wrap:wrap}.nav-wrap label{border-radius:9px;padding:5px 10px!important;border:1px solid transparent;min-height:34px}.nav-wrap label:hover{background:var(--surface2);border-color:var(--border)}
         .card,.dashboard-card,.status-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
-        .dashboard-card{height:158px;min-height:158px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 14px 12px;box-sizing:border-box;overflow:hidden}.dashboard-card h4{margin:0;color:var(--muted);font-size:13px;line-height:1.25;min-height:17px}.dashboard-value{color:var(--text);font-size:28px;font-weight:800;line-height:1.1;margin-top:2px}.dashboard-label,.small-muted{color:var(--muted);font-size:11px;line-height:1.25;overflow-wrap:anywhere}.dashboard-label{margin-top:auto;min-height:29px}.pending-inline{display:block;margin-top:2px;white-space:normal;line-height:1.2}.good{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}.warn{color:var(--yellow);font-weight:800}.section-title{font-size:20px;font-weight:800;color:var(--text)}
+        .dashboard-card{height:108px;min-height:108px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 14px 12px;box-sizing:border-box;overflow:hidden}.dashboard-card h4{margin:0;color:var(--muted);font-size:13px;line-height:1.25;min-height:17px}.dashboard-value{color:var(--text);font-size:28px;font-weight:800;line-height:1.1;margin-top:2px}.dashboard-label,.small-muted{color:var(--muted);font-size:11px;line-height:1.25;overflow-wrap:anywhere}.dashboard-label{margin-top:auto;min-height:29px}.pending-inline{display:block;margin-top:2px;white-space:normal;line-height:1.2}.good{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}.warn{color:var(--yellow);font-weight:800}.section-title{font-size:20px;font-weight:800;color:var(--text)}
         div[data-testid="stMetric"]{background:var(--surface);border:1px solid var(--border);padding:12px;border-radius:12px;box-shadow:var(--shadow);min-height:108px;box-sizing:border-box;min-width:0}
         div[data-testid="stMetric"] label{white-space:normal!important;overflow-wrap:anywhere;line-height:1.2;font-size:11px!important;display:block;min-width:0;max-width:100%;height:auto;overflow:visible;text-overflow:clip}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"],div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{font-size:11px!important;line-height:1.2!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;display:block!important;width:100%!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"] *{font-size:11px!important;line-height:1.2!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"] p{margin:0!important}
         /* Keep approval counts and their two-line labels fully inside each KPI card. */
-        div[data-testid="stMetric"]{padding:8px 7px!important;overflow:hidden!important;min-width:0!important}
+        div[data-testid="stMetric"]{padding:8px 7px!important;overflow:hidden!important;min-width:0!important;height:90px!important;min-height:90px!important;display:flex!important;flex-direction:column!important;justify-content:center!important;box-sizing:border-box!important}
         div[data-testid="stMetric"] [data-testid="stMetricValue"],
         div[data-testid="stMetric"] [data-testid="stMetricValue"] div{font-size:15px!important;line-height:1.05!important;white-space:normal!important;overflow-wrap:anywhere!important}
         div[data-testid="stMetric"] [data-testid="stMetricLabel"],
@@ -1579,12 +1579,17 @@ def login_page():
             
             /* Persistent black borders on login and account fields before focus. */
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"]{{
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input-container"]{{
                 border:2px solid #111827!important;border-radius:7px!important;
-                background:#ffffff!important;box-shadow:none!important;outline:none!important;
+                background:#ffffff!important;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)!important;outline:none!important;
+                min-height:40px!important;box-sizing:border-box!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
                 border:0!important;background:transparent!important;box-shadow:none!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]:not(:focus-within) [data-baseweb="input"]{{
+                border:2px solid #111827!important;background:#fff!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
                 border:0!important;background:transparent!important;box-shadow:none!important;outline:none!important;
@@ -1996,7 +2001,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 (.170, .690),  # Z11 — lower-left purple zone
                 (.317, .690),  # Z12 — lower blue zone
                 (.452, .655),  # Z13 — lower-centre yellow zone
-                (.374, .875),  # Z14 — bottom turquoise zone
+                (.374, .755),  # Z14 — lower-middle turquoise zone; keep marker inside its own zone
                 (.593, .620),  # Z15 — lower-right pink zone
             ]
             if map_mode == "grass":
@@ -2173,6 +2178,27 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.715, .355, .805, .910, "y"),  # 21 rows: long array
             (.830, .555, .885, .625, "y"),  # 5 rows: final short bank
         ]
+    elif plant_code == "DPV":
+        # DPV panel-cleaning footprints follow the supplied 15-zone hand sketch.
+        # Every footprint stays over the visible panel banks in the DPV aerial photo;
+        # rows are coloured within each bank instead of being spread uniformly over the image.
+        block_specs = [
+            (.105, .245, .205, .395, "y"),  # Group 1: upper-left bank
+            (.210, .245, .305, .395, "y"),  # Group 2: upper-left/centre bank
+            (.310, .245, .405, .395, "y"),  # Group 3: upper-centre bank
+            (.410, .245, .505, .395, "y"),  # Group 4: upper-centre/right bank
+            (.510, .225, .610, .380, "y"),  # Group 5: upper-right bank
+            (.105, .405, .205, .565, "y"),  # Group 6: middle-left bank
+            (.210, .405, .305, .565, "y"),  # Group 7: middle-left/centre bank
+            (.310, .405, .405, .565, "y"),  # Group 8: middle-centre bank
+            (.410, .405, .505, .565, "y"),  # Group 9: middle-centre/right bank
+            (.510, .395, .610, .555, "y"),  # Group 10: middle-right bank
+            (.105, .575, .205, .735, "y"),  # Group 11: lower-left bank
+            (.210, .575, .305, .735, "y"),  # Group 12: lower-left/centre bank
+            (.310, .575, .405, .735, "y"),  # Group 13: lower-centre bank
+            (.410, .575, .505, .735, "y"),  # Group 14: lower-centre/right bank
+            (.510, .565, .610, .715, "y"),  # Group 15: lower-right bank
+        ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
         # These seven groups cover all visible panel rows; their row counts are
@@ -2239,6 +2265,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         elif plant_code == "MTR" and len(block_specs) == 11 and len(assets) == 102:
             # Exact MTR sketch counts: 5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5.
             counts = [5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5]
+        elif plant_code == "DPV" and len(block_specs) == 15 and len(assets) == 366:
+            # Keep the 366 table indicators grouped across the 15 sketched banks.
+            counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 30]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
@@ -4110,21 +4139,25 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     # KPI cards represented as a compact table in the PDF.
     kpi_data = [[
-        Paragraph(f"<b>{total}</b><br/><font size='8'>Activities</font>", small),
-        Paragraph(f"<b>{green}</b><br/><font size='8'>Green - Completed</font>", small),
-        Paragraph(f"<b>{red}</b><br/><font size='8'>Red - Not Completed</font>", small),
-        Paragraph(f"<font size='16'><b>{pending}</b></font><br/><font size='7'>Pending Inspection Approvals</font>", small),
-        Paragraph(f"<font size='16'><b>{approved}</b></font><br/><font size='7'>Approved Inspection Approvals</font>", small),
+        Paragraph(f"<font size='9'><b>{total}</b></font><br/><font size='6'>Activities</font>", small),
+        Paragraph(f"<font size='9'><b>{green}</b></font><br/><font size='6'>Green - Completed</font>", small),
+        Paragraph(f"<font size='9'><b>{red}</b></font><br/><font size='6'>Red - Not Completed</font>", small),
+        Paragraph(f"<font size='10'><b>{pending}</b></font><br/><font size='6'>Pending Inspection<br/>Approvals</font>", small),
+        Paragraph(f"<font size='10'><b>{approved}</b></font><br/><font size='6'>Approved Inspection<br/>Approvals</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</font>", small),
     ]]
-    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[12*mm])
+    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[15*mm])
     kpi_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
         ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#d7e0ea")),
         ("INNERGRID", (0,0), (-1,-1), 0.4, colors.HexColor("#e2e8f0")),
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0), (-1,-1), 3),
+        ("RIGHTPADDING", (0,0), (-1,-1), 3),
+        ("TOPPADDING", (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
     ]))
     story += [kpi_table, Spacer(1, 2*mm)]
 
@@ -4521,7 +4554,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
