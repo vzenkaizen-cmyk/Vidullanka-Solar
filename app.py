@@ -1577,8 +1577,18 @@ def login_page():
             .login-form-title,.login-form-sub,[data-testid="stMain"] h1,[data-testid="stMain"] h2{{font-family:Arial,Helvetica,sans-serif!important;letter-spacing:normal!important}}
             [data-testid="stMain"] label,[data-testid="stMain"] p{{color:#14213d}}
             
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]{{border:2px solid #111827!important;background:#fff!important;box-shadow:none!important}}
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"]:not(:focus-within){{border-color:#111827!important}}
+            /* Persistent black borders on login and account fields before focus. */
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"]{{
+                border:2px solid #111827!important;border-radius:7px!important;
+                background:#ffffff!important;box-shadow:none!important;outline:none!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
+                border:0!important;background:transparent!important;box-shadow:none!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
+                border:0!important;background:transparent!important;box-shadow:none!important;outline:none!important;
+            }}
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -1969,9 +1979,26 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             zone_assets = asset_list(plant, "Zone")
             # Keep every DPV grass-zone marker inside the visible solar-array
             # footprint (not on the access road or the buildings at the right).
-            zone_centres = [(.175,.265),(.285,.265),(.405,.265),(.525,.265),(.645,.265),
-                            (.765,.265),(.865,.265),(.925,.265),(.205,.475),(.325,.475),
-                            (.445,.475),(.565,.475),(.685,.475),(.335,.735),(.735,.565)]
+            # Normalized centre points are aligned to the 15 actual coloured
+            # zone regions in Color-Coded Solar Farm Zones.png. Coordinates are
+            # relative to the source image, not the stretched display size.
+            zone_centres = [
+                (.175, .295),  # Z1 — upper-left red zone
+                (.292, .295),  # Z2 — upper yellow zone
+                (.434, .295),  # Z3 — upper green zone
+                (.609, .270),  # Z4 — upper blue zone
+                (.765, .190),  # Z5 — top-right purple zone
+                (.169, .500),  # Z6 — middle-left orange zone
+                (.291, .500),  # Z7 — middle turquoise zone
+                (.417, .500),  # Z8 — middle magenta zone
+                (.535, .500),  # Z9 — middle blue zone
+                (.638, .475),  # Z10 — middle-right green zone
+                (.170, .690),  # Z11 — lower-left purple zone
+                (.317, .690),  # Z12 — lower blue zone
+                (.452, .655),  # Z13 — lower-centre yellow zone
+                (.374, .875),  # Z14 — bottom turquoise zone
+                (.593, .620),  # Z15 — lower-right pink zone
+            ]
             if map_mode == "grass":
                 dx, dy, dtext = [], [], []
                 for idx, (cx, cy) in enumerate(zone_centres[:len(zone_assets)]):
@@ -4264,8 +4291,19 @@ def reports_page(db,user,plant):
     c1.metric("Activities",total)
     c2.metric("Green - Completed",completed)
     c3.metric("Red - Not Completed",failed)
-    c4.metric("Pending Inspection Approvals", pending_approvals)
-    c5.metric("Approved Inspection Approvals", approved_approvals)
+    # Compact approval KPI cards: keep each label within its own card on two lines.
+    c4.markdown(
+        f"<div style='border:1px solid #d7e0ea;border-radius:8px;padding:10px 8px;min-height:91px;background:#ffffff;overflow:hidden;text-align:center;'>"
+        f"<div style='font-size:22px;font-weight:650;line-height:1.1;color:#262730;margin-bottom:7px;'>{pending_approvals}</div>"
+        f"<div style='font-size:10px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;'>Pending Inspection<br>Approvals</div></div>",
+        unsafe_allow_html=True,
+    )
+    c5.markdown(
+        f"<div style='border:1px solid #d7e0ea;border-radius:8px;padding:10px 8px;min-height:91px;background:#ffffff;overflow:hidden;text-align:center;'>"
+        f"<div style='font-size:22px;font-weight:650;line-height:1.1;color:#262730;margin-bottom:7px;'>{approved_approvals}</div>"
+        f"<div style='font-size:10px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;'>Approved Inspection<br>Approvals</div></div>",
+        unsafe_allow_html=True,
+    )
     c6.metric("Panel Cleaning", f"{pc:.0f}%")
     c7.metric("Grass Cutting", f"{gc:.0f}%")
     panel_left=max(0,panel_total-panel_done)
