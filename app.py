@@ -54,9 +54,22 @@ DEFAULT_DB = "sqlite:///solar_maintenance.db"
 
 # Management target times used on the compact Overview cards.
 # These are deliberately kept in one place so management can change them later.
-PANEL_CLEANING_TARGET_DAYS = 90
-GRASS_CUTTING_TARGET_DAYS = 60
+PANEL_CLEANING_TARGET_DAYS = 90  # DPV default; other requested sites use 30 days
+GRASS_CUTTING_TARGET_DAYS = 60  # DPV default; other requested sites use 30 days
 REPAIR_MAINTENANCE_TARGET_DAYS = 7
+
+def maintenance_target_days(plant, category):
+    """Return the requested cycle target for the selected solar plant."""
+    identity = " ".join([
+        str(getattr(plant, "code", "") or ""),
+        str(getattr(plant, "name", "") or ""),
+    ]).upper()
+    is_dpv = "DPV" in identity or "RANNA" in identity
+    if category == "Panel Cleaning":
+        return 90 if is_dpv else 30
+    if category == "Grass Cutting":
+        return 60 if is_dpv else 30
+    return REPAIR_MAINTENANCE_TARGET_DAYS
 # ============================================================
 # NEON POSTGRESQL CONFIGURATION
 # ============================================================
@@ -2065,60 +2078,50 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
                     showlegend=False))
             else:
-                # DPV panel cleaning: draw each table as a horizontal red/green
-                # strip within the real solar-array footprints, matching the
-                # grouped layout in the supplied DPV hand sketch. The strip
-                # geometry is normalized to the DPV satellite photo.
+                # DPV panel cleaning: keep the original satellite photo clean and
+                # apply a translucent green overlay only to completed panel areas.
+                # Pending panels remain the untouched satellite image; no red grid
+                # or artificial table-layout is drawn over the photograph.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
-                # DPV panel-cleaning layout: exactly two clear rows of five
-                # panel banks, following the supplied hand sketch. All banks
-                # remain inside the solar-array footprint on the satellite image.
-                dpv_blocks = [
-                    (.145, .300, .255, .425, 12), (.265, .300, .375, .425, 12),
-                    (.385, .300, .495, .425, 12), (.505, .300, .615, .425, 12),
-                    (.625, .300, .755, .425, 9),
-                    (.145, .475, .255, .610, 10), (.265, .475, .375, .610, 12),
-                    (.385, .475, .495, .610, 12), (.505, .475, .615, .610, 12),
-                    (.625, .475, .755, .610, 12),
-                ]
-
-                # Allocate the 366 table assets in display order across the
-                # 15 banks. Every cell is individually status-coloured and
-                # hoverable so workers can identify the corresponding table.
-                counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 26, 26, 26]
                 table_assets = asset_list(plant, "Table")
-                idx = 0
-                for bank_idx, (left, top, right, bottom, rows) in enumerate(dpv_blocks):
-                    bank_assets = table_assets[idx:idx + counts[bank_idx]]
-                    idx += counts[bank_idx]
-                    if not bank_assets:
+                dpv_array_regions = [
+                    (.145, .300, .255, .425), (.265, .300, .375, .425),
+                    (.385, .300, .495, .425), (.505, .300, .615, .425),
+                    (.625, .300, .755, .425), (.145, .475, .255, .610),
+                    (.265, .475, .375, .610), (.385, .475, .495, .610),
+                    (.505, .475, .615, .610), (.625, .475, .755, .610),
+                ]
+                counts = [37, 37, 37, 37, 37, 37, 36, 36, 36, 36]
+                asset_idx = 0
+                for region_idx, (left, top, right, bottom) in enumerate(dpv_array_regions):
+                    region_assets = table_assets[asset_idx:asset_idx + counts[region_idx]]
+                    asset_idx += counts[region_idx]
+                    if not region_assets:
                         continue
-                    # Lay each table as a horizontal strip inside its bank.
-                    # Keep a small gap between rows so individual rows remain
-                    # clickable/identifiable in the hover text.
-                    row_h = (bottom - top) / max(1, len(bank_assets))
-                    for row_idx, asset in enumerate(bank_assets):
-                        y_top = top + row_idx * row_h
-                        y_bottom = min(bottom, y_top + row_h * .78)
-                        rec = panel_records.get(asset)
-                        done = bool(rec and rec.status == "Completed")
-                        clean_fig.add_shape(
-                            type="rect",
-                            x0=left * img_width, x1=right * img_width,
-                            y0=(1 - y_bottom) * img_height,
-                            y1=(1 - y_top) * img_height,
-                            line=dict(color="#111827", width=0.5),
-                            fillcolor="#16e879" if done else "#ff2638",
-                            layer="above",
-                        )
-                        clean_fig.add_trace(go.Scatter(
-                            x=[((left + right) / 2) * img_width],
-                            y=[(1 - (y_top + y_bottom) / 2) * img_height],
-                            mode="markers",
-                            marker=dict(size=1, opacity=0),
-                            hovertext=[f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"],
-                            hoverinfo="text", showlegend=False,
-                        ))
+                    completed_rows = sum(
+                        1 for asset in region_assets
+                        if panel_records.get(asset) and panel_records[asset].status == "Completed"
+                    )
+                    if completed_rows <= 0:
+                        continue
+                    # Tint the corresponding completed portion of the solar-array
+                    # surface, clipped to the array region; preserve image detail.
+                    fraction = completed_rows / len(region_assets)
+                    green_bottom = bottom - (bottom - top) * fraction
+                    clean_fig.add_shape(
+                        type="rect", x0=left * img_width, x1=right * img_width,
+                        y0=(1 - bottom) * img_height,
+                        y1=(1 - green_bottom) * img_height,
+                        line=dict(width=0), fillcolor="rgba(22,232,121,0.38)",
+                        layer="above",
+                    )
+                    clean_fig.add_trace(go.Scatter(
+                        x=[((left + right) / 2) * img_width],
+                        y=[(1 - (top + bottom) / 2) * img_height],
+                        mode="markers", marker=dict(size=1, opacity=0),
+                        hovertext=[f"DPV solar array {region_idx + 1}: {completed_rows}/{len(region_assets)} tables completed"],
+                        hoverinfo="text", showlegend=False,
+                    ))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
@@ -2261,16 +2264,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.830, .555, .885, .625, "y"),  # 5 rows: final short bank
         ]
     elif plant_code == "DPV":
-        # DPV panel-cleaning layout: two clear rows of five panel banks,
-        # positioned over the visible solar tables and inside the array boundary.
-        block_specs = [
-            (.145, .300, .255, .425, "y"), (.265, .300, .375, .425, "y"),
-            (.385, .300, .495, .425, "y"), (.505, .300, .615, .425, "y"),
-            (.625, .300, .755, .425, "y"),
-            (.145, .475, .255, .610, "y"), (.265, .475, .375, .610, "y"),
-            (.385, .475, .495, .610, "y"), (.505, .475, .615, .610, "y"),
-            (.625, .475, .755, .610, "y"),
-        ]
+        # DPV is rendered in the clean-satellite branch above, without a table grid.
+        block_specs = []
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
         # These seven groups cover all visible panel rows; their row counts are
@@ -2862,7 +2857,7 @@ def overview_page(db, user, plant):
     with panel_col:
         _render_overview_card(
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
-            _overview_target_label(metrics["panel_done"], metrics["panel_total"], PANEL_CLEANING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["panel_done"], metrics["panel_total"], maintenance_target_days(plant, "Panel Cleaning"), "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
@@ -2870,7 +2865,7 @@ def overview_page(db, user, plant):
     with grass_col:
         _render_overview_card(
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
-            _overview_target_label(metrics["grass_done"], metrics["grass_total"], GRASS_CUTTING_TARGET_DAYS, "cycle")
+            _overview_target_label(metrics["grass_done"], metrics["grass_total"], maintenance_target_days(plant, "Grass Cutting"), "cycle")
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
