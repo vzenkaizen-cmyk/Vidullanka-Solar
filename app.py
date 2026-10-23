@@ -1582,14 +1582,14 @@ def login_page():
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"],
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input-container"]{{
                 border:2px solid #111827!important;border-radius:7px!important;
-                background:#ffffff!important;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)!important;outline:none!important;
+                background:#eaf5ff!important;box-shadow:inset 0 0 0 1px rgba(17,24,39,.06)!important;outline:none!important;
                 min-height:40px!important;box-sizing:border-box!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div{{
                 border:0!important;background:transparent!important;box-shadow:none!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]:not(:focus-within) [data-baseweb="input"]{{
-                border:2px solid #111827!important;background:#fff!important;
+                border:2px solid #6b9fc9!important;background:#eaf5ff!important;
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
                 border:0!important;background:transparent!important;box-shadow:none!important;outline:none!important;
@@ -1619,6 +1619,27 @@ def login_page():
             }}
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]:not(:focus-within) [data-baseweb="input"] {{
                 border:2px solid #16a765!important;
+            }}
+            /* Login card and fields: pale blue fill with visible borders even when empty. */
+            html body [data-testid="stColumn"]:has(.login-card-anchor) {{
+                background:#f0f8ff!important;
+                border:1px solid #c4def3!important;
+                border-radius:22px!important;
+                padding:26px 28px!important;
+                box-sizing:border-box!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input-container"] {{
+                background:#eaf5ff!important;
+                border:2px solid #6b9fc9!important;
+                border-radius:7px!important;
+                min-height:42px!important;
+                box-sizing:border-box!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input {{
+                background:transparent!important;
+                color:#14213d!important;
+                -webkit-text-fill-color:#14213d!important;
             }}
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
@@ -2073,6 +2094,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     (.335, .205, .510, .255, 6),
                     (.520, .205, .690, .255, 5),
                 ]
+                # Inset every DPV panel-cleaning bank so the full red/green
+                # layout remains safely inside the blue boundary drawn around the
+                # solar-array footprint in the reference image.
+                dpv_blocks = [
+                    (
+                        0.455 + (left - 0.455) * 0.90,
+                        0.48 + (top - 0.48) * 0.86,
+                        0.455 + (right - 0.455) * 0.90,
+                        0.48 + (bottom - 0.48) * 0.86,
+                        rows,
+                    )
+                    for left, top, right, bottom, rows in dpv_blocks
+                ]
+
                 # Allocate the 366 table assets in display order across the
                 # 15 banks. Every cell is individually status-coloured and
                 # hoverable so workers can identify the corresponding table.
