@@ -1589,31 +1589,6 @@ def login_page():
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
                 border:0!important;background:transparent!important;box-shadow:none!important;outline:none!important;
             }}
-            /* Streamlit/BaseWeb markup differs between versions. Apply the visible
-               outline to both possible input wrappers, not just one DOM variant. */
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="base-input"],
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"]{{
-                border:2px solid #111827!important;
-                border-radius:7px!important;
-                background:#fff!important;
-                box-shadow:inset 0 0 0 1px #111827!important;
-                min-height:40px!important;
-                box-sizing:border-box!important;
-            }}
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="input"] > div,
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[data-baseweb="base-input"] > div{{
-                border:0!important;
-                background:transparent!important;
-                box-shadow:none!important;
-            }}
-            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
-                display:block!important;
-                width:100%!important;
-                min-width:0!important;
-                color:#14213d!important;
-                -webkit-text-fill-color:#14213d!important;
-                background:transparent!important;
-            }}
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -4546,6 +4521,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
