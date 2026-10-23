@@ -2070,64 +2070,53 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # grouped layout in the supplied DPV hand sketch. The strip
                 # geometry is normalized to the DPV satellite photo.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
-                # DPV panel cleaning: use the real rectangular panel banks in the
-                # satellite image. Each bank is divided into its actual 10/12
-                # visible rows; each displayed row represents its share of the
-                # underlying table records. A row turns green only when every
-                # table assigned to it is completed. Thus a whole rectangle is
-                # green only after all of its rows are completed.
-                panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+                # DPV panel-cleaning layout: exactly two clear rows of five
+                # panel banks, following the supplied hand sketch. All banks
+                # remain inside the solar-array footprint on the satellite image.
                 dpv_blocks = [
                     (.145, .300, .255, .425, 12), (.265, .300, .375, .425, 12),
                     (.385, .300, .495, .425, 12), (.505, .300, .615, .425, 12),
-                    (.625, .300, .755, .425, 10),
+                    (.625, .300, .755, .425, 9),
                     (.145, .475, .255, .610, 10), (.265, .475, .375, .610, 12),
                     (.385, .475, .495, .610, 12), (.505, .475, .615, .610, 12),
                     (.625, .475, .755, .610, 12),
                 ]
-                table_assets = asset_list(plant, "Table")
-                # Split all table records among the visual rows without losing
-                # any records. A row can represent multiple tables where needed.
-                total_visual_rows = sum(block[4] for block in dpv_blocks)
-                row_asset_counts = [len(table_assets) // total_visual_rows] * total_visual_rows
-                for extra_idx in range(len(table_assets) % total_visual_rows):
-                    row_asset_counts[extra_idx] += 1
 
-                asset_cursor = 0
-                visual_row_cursor = 0
-                for bank_idx, (left, top, right, bottom, row_count) in enumerate(dpv_blocks):
-                    row_h = (bottom - top) / row_count
-                    for row_idx in range(row_count):
-                        asset_count = row_asset_counts[visual_row_cursor]
-                        row_assets = table_assets[asset_cursor:asset_cursor + asset_count]
-                        asset_cursor += asset_count
-                        visual_row_cursor += 1
-                        # A visual row is complete only when all records mapped
-                        # to it are completed. Pending rows remain red.
-                        row_done = bool(row_assets) and all(
-                            (rec := panel_records.get(asset)) is not None and rec.status == "Completed"
-                            for asset in row_assets
-                        )
+                # Allocate the 366 table assets in display order across the
+                # 15 banks. Every cell is individually status-coloured and
+                # hoverable so workers can identify the corresponding table.
+                counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 26, 26, 26]
+                table_assets = asset_list(plant, "Table")
+                idx = 0
+                for bank_idx, (left, top, right, bottom, rows) in enumerate(dpv_blocks):
+                    bank_assets = table_assets[idx:idx + counts[bank_idx]]
+                    idx += counts[bank_idx]
+                    if not bank_assets:
+                        continue
+                    # Lay each table as a horizontal strip inside its bank.
+                    # Keep a small gap between rows so individual rows remain
+                    # clickable/identifiable in the hover text.
+                    row_h = (bottom - top) / max(1, len(bank_assets))
+                    for row_idx, asset in enumerate(bank_assets):
                         y_top = top + row_idx * row_h
-                        y_bottom = min(bottom, y_top + row_h * .94)
+                        y_bottom = min(bottom, y_top + row_h * .78)
+                        rec = panel_records.get(asset)
+                        done = bool(rec and rec.status == "Completed")
                         clean_fig.add_shape(
                             type="rect",
                             x0=left * img_width, x1=right * img_width,
                             y0=(1 - y_bottom) * img_height,
                             y1=(1 - y_top) * img_height,
                             line=dict(color="#111827", width=0.5),
-                            fillcolor="#16e879" if row_done else "#ff2638",
+                            fillcolor="#16e879" if done else "#ff2638",
                             layer="above",
                         )
-                        labels = ", ".join(row_assets)
                         clean_fig.add_trace(go.Scatter(
                             x=[((left + right) / 2) * img_width],
                             y=[(1 - (y_top + y_bottom) / 2) * img_height],
                             mode="markers",
                             marker=dict(size=1, opacity=0),
-                            hovertext=[f"DPV rectangle {bank_idx + 1}, row {row_idx + 1} — "
-                                       f"{'Completed' if row_done else 'Pending'}"
-                                       + (f" — {labels}" if labels else "")],
+                            hovertext=[f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"],
                             hoverinfo="text", showlegend=False,
                         ))
         if ork_grass_reference:
