@@ -2072,40 +2072,21 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # grouped layout in the supplied DPV hand sketch. The strip
                 # geometry is normalized to the DPV satellite photo.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+                # DPV hand-sketch layout: 15 distinct panel banks arranged
+                # within the actual solar-array footprint of the aerial photo.
+                # The three rows and five bank columns mirror the supplied sketch;
+                # all coordinates are normalized to the source image and stay
+                # inside the array boundary (away from roads/buildings).
                 dpv_blocks = [
-                    # left-side banks
-                    (.115, .275, .285, .425, 18),
-                    (.115, .435, .285, .585, 18),
-                    (.115, .595, .285, .745, 18),
-                    # central-left banks
-                    (.290, .255, .465, .415, 20),
-                    (.290, .425, .465, .585, 20),
-                    (.290, .595, .465, .755, 20),
-                    # central banks
-                    (.470, .245, .635, .405, 20),
-                    (.470, .415, .635, .575, 20),
-                    (.470, .585, .635, .745, 20),
-                    # right-side banks, shortened to stay on the panels
-                    (.640, .235, .805, .385, 18),
-                    (.640, .395, .805, .545, 18),
-                    (.640, .555, .805, .705, 18),
-                    # top and bottom shorter groups from the hand sketch
-                    (.150, .205, .325, .265, 7),
-                    (.335, .205, .510, .255, 6),
-                    (.520, .205, .690, .255, 5),
-                ]
-                # Inset every DPV panel-cleaning bank so the full red/green
-                # layout remains safely inside the blue boundary drawn around the
-                # solar-array footprint in the reference image.
-                dpv_blocks = [
-                    (
-                        0.455 + (left - 0.455) * 0.90,
-                        0.48 + (top - 0.48) * 0.86,
-                        0.455 + (right - 0.455) * 0.90,
-                        0.48 + (bottom - 0.48) * 0.86,
-                        rows,
-                    )
-                    for left, top, right, bottom, rows in dpv_blocks
+                    (.145, .285, .255, .405, 12), (.265, .285, .375, .405, 12),
+                    (.385, .285, .495, .405, 12), (.505, .285, .615, .405, 12),
+                    (.625, .285, .755, .405, 5),
+                    (.145, .420, .255, .555, 12), (.265, .420, .375, .555, 12),
+                    (.385, .420, .495, .555, 12), (.505, .420, .615, .555, 12),
+                    (.625, .420, .755, .555, 12),
+                    (.145, .570, .255, .690, 13), (.265, .570, .375, .690, 13),
+                    (.385, .570, .495, .690, 13), (.505, .570, .615, .690, 4),
+                    (.625, .570, .755, .690, 3),
                 ]
 
                 # Allocate the 366 table assets in display order across the
@@ -2291,21 +2272,17 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # Every footprint stays over the visible panel banks in the DPV aerial photo;
         # rows are coloured within each bank instead of being spread uniformly over the image.
         block_specs = [
-            (.105, .245, .205, .395, "y"),  # Group 1: upper-left bank
-            (.210, .245, .305, .395, "y"),  # Group 2: upper-left/centre bank
-            (.310, .245, .405, .395, "y"),  # Group 3: upper-centre bank
-            (.410, .245, .505, .395, "y"),  # Group 4: upper-centre/right bank
-            (.510, .225, .610, .380, "y"),  # Group 5: upper-right bank
-            (.105, .405, .205, .565, "y"),  # Group 6: middle-left bank
-            (.210, .405, .305, .565, "y"),  # Group 7: middle-left/centre bank
-            (.310, .405, .405, .565, "y"),  # Group 8: middle-centre bank
-            (.410, .405, .505, .565, "y"),  # Group 9: middle-centre/right bank
-            (.510, .395, .610, .555, "y"),  # Group 10: middle-right bank
-            (.105, .575, .205, .735, "y"),  # Group 11: lower-left bank
-            (.210, .575, .305, .735, "y"),  # Group 12: lower-left/centre bank
-            (.310, .575, .405, .735, "y"),  # Group 13: lower-centre bank
-            (.410, .575, .505, .735, "y"),  # Group 14: lower-centre/right bank
-            (.510, .565, .610, .715, "y"),  # Group 15: lower-right bank
+            # Fifteen banks from the supplied DPV sketch, positioned over the
+            # real solar tables and inset from the aerial image's array boundary.
+            (.145, .285, .255, .405, "y"), (.265, .285, .375, .405, "y"),
+            (.385, .285, .495, .405, "y"), (.505, .285, .615, .405, "y"),
+            (.625, .285, .755, .405, "y"),
+            (.145, .420, .255, .555, "y"), (.265, .420, .375, .555, "y"),
+            (.385, .420, .495, .555, "y"), (.505, .420, .615, .555, "y"),
+            (.625, .420, .755, .555, "y"),
+            (.145, .570, .255, .690, "y"), (.265, .570, .375, .690, "y"),
+            (.385, .570, .495, .690, "y"), (.505, .570, .615, .690, "y"),
+            (.625, .570, .755, .690, "y"),
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
