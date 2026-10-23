@@ -1919,11 +1919,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # A page can render the same plant/map mode more than once (for example,
     # Overview cards plus a detailed map). Give every chart instance a distinct
     # Streamlit identity to prevent StreamlitDuplicateElementId errors.
-    chart_instance = int(st.session_state.get("_satellite_chart_instance", 0)) + 1
-    st.session_state["_satellite_chart_instance"] = chart_instance
-    # Unique per rendered chart, including when the same site/map is displayed
-    # more than once on Overview. This prevents StreamlitDuplicateElementId.
-    chart_token = uuid.uuid4().hex[:10]
+    # Stable chart identity lets Streamlit reuse the rendered chart across reruns.
+    chart_instance = "embedded" if embedded else "standalone"
+    chart_token = "stable"
 
     if not embedded:
         header(plant)
@@ -2072,21 +2070,16 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # grouped layout in the supplied DPV hand sketch. The strip
                 # geometry is normalized to the DPV satellite photo.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
-                # DPV hand-sketch layout: 15 distinct panel banks arranged
-                # within the actual solar-array footprint of the aerial photo.
-                # The three rows and five bank columns mirror the supplied sketch;
-                # all coordinates are normalized to the source image and stay
-                # inside the array boundary (away from roads/buildings).
+                # DPV panel-cleaning layout: exactly two clear rows of five
+                # panel banks, following the supplied hand sketch. All banks
+                # remain inside the solar-array footprint on the satellite image.
                 dpv_blocks = [
-                    (.145, .285, .255, .405, 12), (.265, .285, .375, .405, 12),
-                    (.385, .285, .495, .405, 12), (.505, .285, .615, .405, 12),
-                    (.625, .285, .755, .405, 5),
-                    (.145, .420, .255, .555, 12), (.265, .420, .375, .555, 12),
-                    (.385, .420, .495, .555, 12), (.505, .420, .615, .555, 12),
-                    (.625, .420, .755, .555, 12),
-                    (.145, .570, .255, .690, 13), (.265, .570, .375, .690, 13),
-                    (.385, .570, .495, .690, 13), (.505, .570, .615, .690, 4),
-                    (.625, .570, .755, .690, 3),
+                    (.145, .300, .255, .425, 12), (.265, .300, .375, .425, 12),
+                    (.385, .300, .495, .425, 12), (.505, .300, .615, .425, 12),
+                    (.625, .300, .755, .425, 9),
+                    (.145, .475, .255, .610, 10), (.265, .475, .375, .610, 12),
+                    (.385, .475, .495, .610, 12), (.505, .475, .615, .610, 12),
+                    (.625, .475, .755, .610, 12),
                 ]
 
                 # Allocate the 366 table assets in display order across the
@@ -2175,7 +2168,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             clean_fig,
             use_container_width=True,
             config={"displayModeBar": False},
-            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{'dpv' if dpv_reference else 'ork'}_clean_{chart_instance}_{chart_token}_{uuid.uuid4().hex[:8]}",
+            key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{'dpv' if dpv_reference else 'ork'}_clean_{chart_instance}_{chart_token}",
         )
         return
 
@@ -2268,21 +2261,15 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.830, .555, .885, .625, "y"),  # 5 rows: final short bank
         ]
     elif plant_code == "DPV":
-        # DPV panel-cleaning footprints follow the supplied 15-zone hand sketch.
-        # Every footprint stays over the visible panel banks in the DPV aerial photo;
-        # rows are coloured within each bank instead of being spread uniformly over the image.
+        # DPV panel-cleaning layout: two clear rows of five panel banks,
+        # positioned over the visible solar tables and inside the array boundary.
         block_specs = [
-            # Fifteen banks from the supplied DPV sketch, positioned over the
-            # real solar tables and inset from the aerial image's array boundary.
-            (.145, .285, .255, .405, "y"), (.265, .285, .375, .405, "y"),
-            (.385, .285, .495, .405, "y"), (.505, .285, .615, .405, "y"),
-            (.625, .285, .755, .405, "y"),
-            (.145, .420, .255, .555, "y"), (.265, .420, .375, .555, "y"),
-            (.385, .420, .495, .555, "y"), (.505, .420, .615, .555, "y"),
-            (.625, .420, .755, .555, "y"),
-            (.145, .570, .255, .690, "y"), (.265, .570, .375, .690, "y"),
-            (.385, .570, .495, .690, "y"), (.505, .570, .615, .690, "y"),
-            (.625, .570, .755, .690, "y"),
+            (.145, .300, .255, .425, "y"), (.265, .300, .375, .425, "y"),
+            (.385, .300, .495, .425, "y"), (.505, .300, .615, .425, "y"),
+            (.625, .300, .755, .425, "y"),
+            (.145, .475, .255, .610, "y"), (.265, .475, .375, .610, "y"),
+            (.385, .475, .495, .610, "y"), (.505, .475, .615, .610, "y"),
+            (.625, .475, .755, .610, "y"),
         ]
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
@@ -2350,9 +2337,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         elif plant_code == "MTR" and len(block_specs) == 11 and len(assets) == 102:
             # Exact MTR sketch counts: 5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5.
             counts = [5, 5, 5, 1, 1, 1, 15, 20, 23, 21, 5]
-        elif plant_code == "DPV" and len(block_specs) == 15 and len(assets) == 366:
-            # Keep the 366 table indicators grouped across the 15 sketched banks.
-            counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 30]
+        elif plant_code == "DPV" and len(block_specs) == 10 and len(assets) == 366:
+            # Keep all 366 table indicators distributed across the two-row sketch.
+            counts = [37, 37, 37, 37, 37, 37, 36, 36, 36, 36]
         else:
             total_weight = sum(weights)
             counts = [len(assets) * w // total_weight for w in weights]
@@ -2591,7 +2578,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 "zoomOut2d", "autoScale2d", "resetScale2d"
             ],
         },
-        key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{chart_instance}_{chart_token}_{uuid.uuid4().hex[:8]}",
+        key=f"satellite_map_{plant.id}_{map_mode}_{'embedded' if embedded else 'standalone'}_{chart_instance}_{chart_token}",
     )
     if show_metrics:
         green_col, red_col, grass_col = st.columns([1, 1, 1.15], gap="small")
