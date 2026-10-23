@@ -2065,43 +2065,50 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
                     showlegend=False))
             else:
-                # DPV panel cleaning: colour the actual solar-array areas directly
-                # on the satellite photo. There is no separate layout, border, or
-                # gap between rows; each of the 366 table records controls its
-                # own translucent colour strip so completed/pending sections update
-                # in place while the original image remains visible underneath.
+                # DPV panel cleaning: draw each table as a horizontal red/green
+                # strip within the real solar-array footprints, matching the
+                # grouped layout in the supplied DPV hand sketch. The strip
+                # geometry is normalized to the DPV satellite photo.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+                # DPV panel-cleaning layout: exactly two clear rows of five
+                # panel banks, following the supplied hand sketch. All banks
+                # remain inside the solar-array footprint on the satellite image.
                 dpv_blocks = [
-                    (.145, .300, .255, .425, 37), (.265, .300, .375, .425, 37),
-                    (.385, .300, .495, .425, 37), (.505, .300, .615, .425, 37),
-                    (.625, .300, .755, .425, 37),
-                    (.145, .475, .255, .610, 37), (.265, .475, .375, .610, 36),
-                    (.385, .475, .495, .610, 36), (.505, .475, .615, .610, 36),
-                    (.625, .475, .755, .610, 36),
+                    (.145, .300, .255, .425, 12), (.265, .300, .375, .425, 12),
+                    (.385, .300, .495, .425, 12), (.505, .300, .615, .425, 12),
+                    (.625, .300, .755, .425, 9),
+                    (.145, .475, .255, .610, 10), (.265, .475, .375, .610, 12),
+                    (.385, .475, .495, .610, 12), (.505, .475, .615, .610, 12),
+                    (.625, .475, .755, .610, 12),
                 ]
-                table_assets = asset_list(plant, "Table")[:366]
+
+                # Allocate the 366 table assets in display order across the
+                # 15 banks. Every cell is individually status-coloured and
+                # hoverable so workers can identify the corresponding table.
+                counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 26, 26, 26]
+                table_assets = asset_list(plant, "Table")
                 idx = 0
-                for bank_idx, (left, top, right, bottom, bank_count) in enumerate(dpv_blocks):
-                    bank_assets = table_assets[idx:idx + bank_count]
-                    idx += bank_count
+                for bank_idx, (left, top, right, bottom, rows) in enumerate(dpv_blocks):
+                    bank_assets = table_assets[idx:idx + counts[bank_idx]]
+                    idx += counts[bank_idx]
                     if not bank_assets:
                         continue
-                    row_h = (bottom - top) / len(bank_assets)
+                    # Lay each table as a horizontal strip inside its bank.
+                    # Keep a small gap between rows so individual rows remain
+                    # clickable/identifiable in the hover text.
+                    row_h = (bottom - top) / max(1, len(bank_assets))
                     for row_idx, asset in enumerate(bank_assets):
                         y_top = top + row_idx * row_h
-                        y_bottom = top + (row_idx + 1) * row_h
+                        y_bottom = min(bottom, y_top + row_h * .78)
                         rec = panel_records.get(asset)
                         done = bool(rec and rec.status == "Completed")
-                        # Semi-transparent fill colours only; no visible cell
-                        # outlines or spacing, so the overlay reads as panel tint.
-                        fill = "rgba(22,200,130,0.62)" if done else "rgba(255,38,56,0.62)"
                         clean_fig.add_shape(
                             type="rect",
                             x0=left * img_width, x1=right * img_width,
                             y0=(1 - y_bottom) * img_height,
                             y1=(1 - y_top) * img_height,
-                            line=dict(width=0, color="rgba(0,0,0,0)"),
-                            fillcolor=fill,
+                            line=dict(color="#111827", width=0.5),
+                            fillcolor="#16e879" if done else "#ff2638",
                             layer="above",
                         )
                         clean_fig.add_trace(go.Scatter(
