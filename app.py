@@ -2084,14 +2084,26 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # or artificial table-layout is drawn over the photograph.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
                 table_assets = asset_list(plant, "Table")
+                # DPV satellite coordinates traced to the actual blue panel banks.
+                # Each rectangle stays within a solar-panel surface and excludes
+                # the pale access roads, vegetation, and buildings between arrays.
+                # These 17 regions follow the visible upper, middle, and lower banks.
                 dpv_array_regions = [
-                    (.145, .300, .255, .425), (.265, .300, .375, .425),
-                    (.385, .300, .495, .425), (.505, .300, .615, .425),
-                    (.625, .300, .755, .425), (.145, .475, .255, .610),
-                    (.265, .475, .375, .610), (.385, .475, .495, .610),
-                    (.505, .475, .615, .610), (.625, .475, .755, .610),
+                    # Upper bank
+                    (.265, .165, .382, .415), (.402, .165, .514, .415),
+                    (.534, .165, .646, .415), (.666, .165, .778, .415),
+                    (.800, .165, .912, .415), (.934, .165, .999, .415),
+                    # Middle bank
+                    (.263, .445, .390, .685), (.407, .445, .520, .685),
+                    (.537, .445, .650, .685), (.667, .445, .780, .685),
+                    (.800, .445, .912, .685), (.934, .445, .999, .685),
+                    # Lower bank
+                    (.250, .705, .390, .945), (.407, .705, .520, .945),
+                    (.537, .705, .650, .945), (.667, .705, .780, .945),
+                    (.800, .705, .912, .885),
                 ]
-                counts = [37, 37, 37, 37, 37, 37, 36, 36, 36, 36]
+                # Distribute the 366 table records across the 17 visible banks.
+                counts = [22, 22, 22, 22, 22, 22, 22, 22, 22, 21, 21, 21, 21, 21, 21, 21, 21]
                 asset_idx = 0
                 for region_idx, (left, top, right, bottom) in enumerate(dpv_array_regions):
                     region_assets = table_assets[asset_idx:asset_idx + counts[region_idx]]
@@ -2112,7 +2124,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                         type="rect", x0=left * img_width, x1=right * img_width,
                         y0=(1 - bottom) * img_height,
                         y1=(1 - green_bottom) * img_height,
-                        line=dict(width=0), fillcolor="rgba(22,232,121,0.38)",
+                        line=dict(width=0), fillcolor="rgba(0,78,48,0.62)",
                         layer="above",
                     )
                     clean_fig.add_trace(go.Scatter(
