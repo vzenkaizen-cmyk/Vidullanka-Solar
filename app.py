@@ -1594,6 +1594,32 @@ def login_page():
             html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input{{
                 border:0!important;background:transparent!important;box-shadow:none!important;outline:none!important;
             }}
+            /* Strong, persistent full-box borders for Email, Password and
+               Supervisor Account fields, including before the user types. */
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input-container"],
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] div[role="presentation"] {{
+                border:2px solid #16a765!important;
+                border-top:2px solid #16a765!important;
+                border-bottom:2px solid #16a765!important;
+                border-left:2px solid #16a765!important;
+                border-right:2px solid #16a765!important;
+                border-radius:7px!important;
+                background:#ffffff!important;
+                box-shadow:none!important;
+                box-sizing:border-box!important;
+                min-height:42px!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] [data-baseweb="input"] > div {{
+                border:0!important;background:transparent!important;box-shadow:none!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"] input {{
+                color:#14213d!important;-webkit-text-fill-color:#14213d!important;
+                caret-color:#14213d!important;background:transparent!important;
+            }}
+            html body [data-testid="stColumn"]:has(.login-card-anchor) [data-testid="stTextInput"]:not(:focus-within) [data-baseweb="input"] {{
+                border:2px solid #16a765!important;
+            }}
             @media(max-width:900px){{.login-logo{{width:190px}}.login-hero-title{{margin-top:2rem;font-size:38px}}.login-hero-points{{gap:14px;margin-top:25px}}[data-testid="stColumn"]:has(.login-card-anchor){{margin-top:20px;padding:22px}}}}
             </style>""",
             unsafe_allow_html=True,
@@ -2020,23 +2046,70 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
                     showlegend=False))
             else:
+                # DPV panel cleaning: draw each table as a horizontal red/green
+                # strip within the real solar-array footprints, matching the
+                # grouped layout in the supplied DPV hand sketch. The strip
+                # geometry is normalized to the DPV satellite photo.
                 panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
-                pxs, pys, pcolors, ptext = [], [], [], []
-                # 366 table indicators are arranged in 26 columns x 14 rows.
-                # Coordinates stay within the actual panel banks; markers are
-                # compact so they read as row-aligned red/green table cells.
-                for idx, asset in enumerate(asset_list(plant, "Table")):
-                    row, col = divmod(idx, 26)
-                    cx = .105 + col * (.755 / 25)
-                    cy = .285 + row * (.355 / 13)
-                    rec = panel_records.get(asset)
-                    done = bool(rec and rec.status == "Completed")
-                    pxs.append(cx * img_width); pys.append((1-cy) * img_height)
-                    pcolors.append("#16e879" if done else "#ff2638")
-                    ptext.append(f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}")
-                clean_fig.add_trace(go.Scatter(x=pxs, y=pys, mode="markers",
-                    marker=dict(size=5, color=pcolors, symbol="square", line=dict(width=0)),
-                    hovertext=ptext, hoverinfo="text", showlegend=False))
+                dpv_blocks = [
+                    # left-side banks
+                    (.115, .275, .285, .425, 18),
+                    (.115, .435, .285, .585, 18),
+                    (.115, .595, .285, .745, 18),
+                    # central-left banks
+                    (.290, .255, .465, .415, 20),
+                    (.290, .425, .465, .585, 20),
+                    (.290, .595, .465, .755, 20),
+                    # central banks
+                    (.470, .245, .635, .405, 20),
+                    (.470, .415, .635, .575, 20),
+                    (.470, .585, .635, .745, 20),
+                    # right-side banks, shortened to stay on the panels
+                    (.640, .235, .805, .385, 18),
+                    (.640, .395, .805, .545, 18),
+                    (.640, .555, .805, .705, 18),
+                    # top and bottom shorter groups from the hand sketch
+                    (.150, .205, .325, .265, 7),
+                    (.335, .205, .510, .255, 6),
+                    (.520, .205, .690, .255, 5),
+                ]
+                # Allocate the 366 table assets in display order across the
+                # 15 banks. Every cell is individually status-coloured and
+                # hoverable so workers can identify the corresponding table.
+                counts = [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 26, 26, 26]
+                table_assets = asset_list(plant, "Table")
+                idx = 0
+                for bank_idx, (left, top, right, bottom, rows) in enumerate(dpv_blocks):
+                    bank_assets = table_assets[idx:idx + counts[bank_idx]]
+                    idx += counts[bank_idx]
+                    if not bank_assets:
+                        continue
+                    # Lay each table as a horizontal strip inside its bank.
+                    # Keep a small gap between rows so individual rows remain
+                    # clickable/identifiable in the hover text.
+                    row_h = (bottom - top) / max(1, len(bank_assets))
+                    for row_idx, asset in enumerate(bank_assets):
+                        y_top = top + row_idx * row_h
+                        y_bottom = min(bottom, y_top + row_h * .78)
+                        rec = panel_records.get(asset)
+                        done = bool(rec and rec.status == "Completed")
+                        clean_fig.add_shape(
+                            type="rect",
+                            x0=left * img_width, x1=right * img_width,
+                            y0=(1 - y_bottom) * img_height,
+                            y1=(1 - y_top) * img_height,
+                            line=dict(color="#111827", width=0.5),
+                            fillcolor="#16e879" if done else "#ff2638",
+                            layer="above",
+                        )
+                        clean_fig.add_trace(go.Scatter(
+                            x=[((left + right) / 2) * img_width],
+                            y=[(1 - (y_top + y_bottom) / 2) * img_height],
+                            mode="markers",
+                            marker=dict(size=1, opacity=0),
+                            hovertext=[f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"],
+                            hoverinfo="text", showlegend=False,
+                        ))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
