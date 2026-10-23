@@ -2099,9 +2099,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     row_h = (bottom - top) / max(1, len(bank_assets))
                     for row_idx, asset in enumerate(bank_assets):
                         y_top = top + row_idx * row_h
-                        # Use a narrow, consistent gap and a high-contrast outline
-                        # so every individual DPV panel row is clearly distinguishable.
-                        y_bottom = min(bottom, y_top + row_h * .88)
+                        y_bottom = min(bottom, y_top + row_h * .78)
                         rec = panel_records.get(asset)
                         done = bool(rec and rec.status == "Completed")
                         clean_fig.add_shape(
@@ -2109,7 +2107,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                             x0=left * img_width, x1=right * img_width,
                             y0=(1 - y_bottom) * img_height,
                             y1=(1 - y_top) * img_height,
-                            line=dict(color="#ffffff", width=1.25),
+                            line=dict(color="#111827", width=0.5),
                             fillcolor="#16e879" if done else "#ff2638",
                             layer="above",
                         )
@@ -2503,9 +2501,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                         hoverinfo="text", text=[hover_text] * len(polygon), showlegend=False))
             continue
         # A small gap between strips keeps the satellite roads and row gaps visible.
-        # DPV needs visibly separated panel rows, matching the 10/12-row
-        # group appearance in the supplied sketch. Keep other sites unchanged.
-        inset = 0.10 if plant_code == "DPV" else 0.045
+        inset = 0.045
         for row_idx in range(count):
             if asset_index >= len(assets):
                 break
@@ -2554,12 +2550,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 y=[img_height - y * scale_y for x, y in polygon],
                 mode="lines", fill="toself",
                 fillcolor=fill_color,
-                line=dict(
-                    color=("#ffffff" if plant_code == "DPV" and map_mode in ("both", "panel")
-                           else "#ff4e59" if plant_code == "MTR" and map_mode in ("both", "panel")
-                           else "#062337"),
-                    width=1.6 if plant_code == "DPV" and map_mode in ("both", "panel") else 1,
-                ),
+                line=dict(color="#ff4e59" if plant_code == "MTR" and map_mode in ("both", "panel") else "#062337", width=1),
                 hoverinfo="text",
                 text=[hover_text] * len(polygon),
                 showlegend=False,
@@ -4635,6 +4626,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
