@@ -1895,7 +1895,14 @@ def top_nav(db, user):
         st.caption("🟢 System Online")
 
     if user.role == "supervisor":
-        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting"]
+        pages = [
+            "🏠 Overview",
+            "🧹 Panel Cleaning",
+            "🌿 Grass Cutting",
+            "🔧 Maintenance Inspections",
+            "⚠️ Repair & Maintenance",
+            "📋 Activity Log",
+        ]
     else:
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
