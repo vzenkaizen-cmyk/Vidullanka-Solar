@@ -65,9 +65,19 @@ def maintenance_target_days(plant, category):
         str(getattr(plant, "name", "") or ""),
     ]).upper()
     is_dpv = "DPV" in identity or "RANNA" in identity
+    is_mdp = "MDP" in identity
+    is_mtr = "MTR" in identity
     if category == "Panel Cleaning":
+        if is_mdp:
+            return 60
+        if is_mtr:
+            return 45
         return 90 if is_dpv else 30
     if category == "Grass Cutting":
+        if is_mdp:
+            return 60
+        if is_mtr:
+            return 45
         return 60 if is_dpv else 30
     return REPAIR_MAINTENANCE_TARGET_DAYS
 # ============================================================
