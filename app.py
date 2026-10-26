@@ -372,29 +372,36 @@ initialize_database(engine)
 # ============================================================
 
 def hash_password(password: str) -> str:
-    """Return a consistently formatted PBKDF2-SHA256 password hash.
-
-    Format: pbkdf2_sha256<iterations><salt hex>$<digest hex>
-    Keep this format stable because it is stored in the existing users table.
-    """
+    """Return a PBKDF2-SHA256 hash in the standard stored format."""
     salt = os.urandom(16)
     iterations = 180_000
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256iterations{salt.hex()}${digest.hex()}"
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """Verify the current format and safely reject malformed/legacy broken hashes."""
+    """Verify standard hashes and the malformed legacy format created by an older version."""
     try:
-        parts = (stored or "").split("$")
-        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
-            # Older app versions wrote a malformed string without the required
-            # separators. It cannot be reliably verified; reset that account's
-            # password through the configured admin password or account recovery.
+        stored = stored or ""
+        parts = stored.split("$")
+
+        if len(parts) == 4 and parts[0] == "pbkdf2_sha256":
+            # Standard format: algorithm$iterations$salt$digest
+            iterations = int(parts[1])
+            salt = bytes.fromhex(parts[2])
+            expected = parts[3]
+        elif stored.startswith("pbkdf2_sha256iterations") and len(parts) == 2:
+            # Compatibility with older accounts created by the previous buggy
+            # hash_password(): algorithm name and iteration count were joined,
+            # while the salt and digest were still saved. That version always
+            # used 180,000 PBKDF2 iterations.
+            salt_hex = stored[len("pbkdf2_sha256iterations"):].split("$", 1)[0]
+            salt = bytes.fromhex(salt_hex)
+            expected = parts[1]
+            iterations = 180_000
+        else:
             return False
-        iterations = int(parts[1])
-        salt = bytes.fromhex(parts[2])
-        expected = parts[3]
+
         if iterations < 1 or not salt or not expected:
             return False
         digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
@@ -1733,6 +1740,11 @@ def login_page():
                 elif not verify_password(password, user.password_hash):
                     st.error("Incorrect email or password.")
                 else:
+                    # Upgrade legacy malformed hashes after successful verification.
+                    # This is limited to the affected account and does not change its password.
+                    if (user.password_hash or "").startswith("pbkdf2_sha256iterations"):
+                        user.password_hash = hash_password(password)
+                        db.commit()
                     st.session_state.user = user
                     st.session_state.selected_plant_id = user.plant_id
                     st.rerun()
