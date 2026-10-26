@@ -331,6 +331,36 @@ def initialize_database(_engine):
                 ADD CONSTRAINT users_role_allowed_check
                 CHECK (role IN ('admin', 'engineer', 'supervisor', 'staff'))
             """))
+            # Compatibility fix: older versions of the app may have left extra
+            # NOT NULL columns in the users table that are no longer part of the
+            # current User model (for example, a legacy username column). SQLAlchemy
+            # cannot populate columns it does not map, so allow those legacy-only
+            # columns to be NULL. Current model columns and their constraints are
+            # left unchanged.
+            conn.execute(text("""
+                DO $$
+                DECLARE column_row RECORD;
+                BEGIN
+                    FOR column_row IN
+                        SELECT c.column_name
+                        FROM information_schema.columns c
+                        WHERE c.table_schema = current_schema()
+                          AND c.table_name = 'users'
+                          AND c.is_nullable = 'NO'
+                          AND c.column_default IS NULL
+                          AND c.column_name NOT IN (
+                              'id', 'full_name', 'email', 'password_hash',
+                              'role', 'plant_id', 'active', 'approved',
+                              'created_at'
+                          )
+                    LOOP
+                        EXECUTE format(
+                            'ALTER TABLE %I.%I ALTER COLUMN %I DROP NOT NULL',
+                            current_schema(), 'users', column_row.column_name
+                        );
+                    END LOOP;
+                END $$;
+            """))
     return True
 
 
@@ -1745,8 +1775,24 @@ def login_page():
                                 st.error("This email is not on the Engineer / Administrator access list. Use your registered Vidullanka work email or contact the system administrator.")
                                 return
                             plant_id = None
-                        db.add(User(full_name=name.strip(), email=email_value, password_hash=hash_password(reg_password), role=role, plant_id=plant_id, active=True, approved=True))
-                        db.commit()
+                        try:
+                            db.add(User(
+                                full_name=name.strip(),
+                                email=email_value,
+                                password_hash=hash_password(reg_password),
+                                role=role,
+                                plant_id=plant_id,
+                                active=True,
+                                approved=True,
+                            ))
+                            db.commit()
+                        except Exception:
+                            db.rollback()
+                            st.error(
+                                "The account could not be saved. Please check the app logs "
+                                "for the database column causing the problem, then try again."
+                            )
+                            return
                         scope = f" Assigned plant: {plant_code}." if account_kind == "supervisor" and email_value in PLANT_SUPERVISOR_EMAILS else (" Access: all active plants." if role in ("admin", "engineer") else " Plant assignment is required before using plant features.")
                         st.success(f"{title} created successfully as {role.title()}. You can sign in immediately.{scope}")
 
