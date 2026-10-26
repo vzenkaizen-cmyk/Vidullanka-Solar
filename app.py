@@ -764,6 +764,15 @@ def get_current_user():
 def allowed_plants(db, user):
     if user.role in ("admin", "engineer"):
         return db.query(Plant).filter(Plant.active == True).order_by(Plant.name).all()
+    # Roshan-Supervisor can switch between HRN 1 and HRN 2 while retaining
+    # supervisor-level access to the existing supervisor pages.
+    if user.role == "supervisor" and "roshan" in (user.full_name or "").strip().lower():
+        return (
+            db.query(Plant)
+            .filter(Plant.code.in_(["HS1", "HS2"]), Plant.active == True)
+            .order_by(Plant.code)
+            .all()
+        )
     if user.plant_id:
         p = db.query(Plant).filter(Plant.id == user.plant_id).first()
         return [p] if p and p.active else []
