@@ -2025,6 +2025,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     # DPV uses the same supplied clean satellite image for both map modes.
     ork_grass_reference = plant_code == "ORK" and map_mode == "grass"
     dpv_reference = plant_code == "DPV"
+    clean_panel_reference = plant_code in {"MDP", "MTR"} and map_mode == "panel"
     if ork_grass_reference:
         selected_satellite = "Aerial Solar Farm Zone Map.png"
     elif plant_code == "DPV" and map_mode == "grass":
@@ -2072,10 +2073,11 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     encoded = base64.b64encode(image_bytes).decode("ascii")
     image_uri = f"data:{image_mime};base64,{encoded}"
 
-    if ork_grass_reference or dpv_reference:
+    if ork_grass_reference or dpv_reference or clean_panel_reference:
         # ORK Grass Cutting uses its separate clean aerial photo without added
         # status overlays. DPV uses its supplied aerial photo for both work maps,
-        # without guessed table/zone overlays.
+        # without guessed table/zone overlays. MDP and MTR Panel Cleaning show
+        # only their satellite photographs, with no artificial table layout.
         import plotly.graph_objects as go
         clean_fig = go.Figure()
         clean_fig.add_layout_image(dict(
@@ -2967,19 +2969,21 @@ MTR_EMPLOYEES = [
 def worker_options_for_plant(plant, db, first_names_only=False):
     """Return the configured worker list for the selected solar plant."""
     code = (plant.code or "").strip().upper()
-    if code == "DPV":
+    if code in {"HS1", "HRN1", "HRN", "HRN 1", "HS2", "HRN2", "HRN 2"}:
+        values = ["Roshan-Supervisor", "Aravinda", "Gayan", "Dineth", "Himantha", "Asela"]
+    elif code == "MDP":
+        values = ["Sansala- Supervisor", "Nisad", "Vihanga", "Harsha", "Trainee"]
+    elif code == "ORK":
+        values = ["Pasindu- Supervisor", "Nimal", "Sunil"]
+    elif code == "DPV":
         values = ["Harsha-Supervisor", "Nihal", "Nishantha", "Priyanka", "Saman", "Chinthaka"]
     elif code == "MTR":
         values = list(MTR_EMPLOYEES)
     else:
-        # HRN 1 and HRN 2 use the requested supervisor label consistently.
-        if code in {"HS1", "HRN1", "HRN", "HRN 1", "HS2", "HRN2", "HRN 2"}:
-            supervisor_label = "Roshan - Supervisor"
-        else:
-            supervisor = (db.query(PlantOperationsProfile)
-                          .filter(PlantOperationsProfile.plant_id == plant.id).first())
-            supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
-            supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
+        supervisor = (db.query(PlantOperationsProfile)
+                      .filter(PlantOperationsProfile.plant_id == plant.id).first())
+        supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
+        supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
         values = [supervisor_label, "Worker 1", "Worker 2"]
 
     # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
