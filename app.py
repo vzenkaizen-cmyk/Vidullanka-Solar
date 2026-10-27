@@ -810,6 +810,70 @@ def status_map(db, plant_id, category, task_date):
     return {r.asset_id: r for r in rows}
 
 
+
+
+def status_map_for_period(db, plant_id, category, start_date, end_date):
+    """Return each asset's latest saved status inside the selected reporting period."""
+    rows = (
+        db.query(MaintenanceRecord)
+        .filter(
+            MaintenanceRecord.plant_id == plant_id,
+            MaintenanceRecord.category == category,
+            MaintenanceRecord.task_date >= start_date,
+            MaintenanceRecord.task_date <= end_date,
+        )
+        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+        .all()
+    )
+    result = {}
+    for row in rows:
+        result[row.asset_id] = row
+    return result
+
+
+def _map_status_map(db, plant_id, category, task_date, use_period=False):
+    """Use the selected month on cleaning pages, otherwise retain single-date behavior."""
+    start_value = st.session_state.get(f"_period_start_{plant_id}") if use_period else None
+    end_value = st.session_state.get(f"_period_end_{plant_id}") if use_period else None
+    if start_value and end_value:
+        try:
+            start_value = date.fromisoformat(start_value) if isinstance(start_value, str) else start_value
+            end_value = date.fromisoformat(end_value) if isinstance(end_value, str) else end_value
+            return status_map_for_period(db, plant_id, category, start_value, end_value)
+        except (TypeError, ValueError):
+            pass
+    return status_map(db, plant_id, category, task_date)
+
+
+def _period_picker(plant, category):
+    """Select a month/year reporting period and return its inclusive date range."""
+    today = date.today()
+    month_key = f"{category.lower().replace(' ', '_')}_period_month_{plant.id}"
+    year_key = f"{category.lower().replace(' ', '_')}_period_year_{plant.id}"
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        month_name = st.selectbox(
+            "Period (month)", list(__import__("calendar").month_name)[1:],
+            index=today.month - 1, key=month_key,
+        )
+    with c2:
+        year = st.selectbox(
+            "Year", list(range(today.year - 5, today.year + 2)),
+            index=5, key=year_key,
+        )
+    month = list(__import__("calendar").month_name).index(month_name)
+    start = date(int(year), month, 1)
+    if month == 12:
+        end = date(int(year) + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(int(year), month + 1, 1) - timedelta(days=1)
+    st.session_state[f"_period_start_{plant.id}"] = start.isoformat()
+    st.session_state[f"_period_end_{plant.id}"] = end.isoformat()
+    # Records are stored on their actual work dates; the period's final day is
+    # used only as the stable key for widgets and new actions.
+    return end
+
+
 def record_status(db, plant_id, category, asset_id, task_date):
     return (
         db.query(MaintenanceRecord)
@@ -1967,8 +2031,8 @@ def render_solar_layout(db, plant, task_date):
     # Arrange up to 10 zones in a 3-column schematic. The fourth row leaves
     # enough bottom space for Zone 10 and the legend never covers a zone.
     positions = [
-        (3, 16, 29, 17), (35.5, 16, 29, 17), (68, 16, 29, 17),
-        (3, 36, 29, 17), (35.5, 36, 29, 17), (68, 36, 29, 17),
+        (68, 16, 29, 17), (35.5, 16, 29, 17), (3, 16, 29, 17),
+        (35.5, 36, 29, 17), (3, 36, 29, 17), (68, 36, 29, 17),
         (3, 56, 29, 17), (35.5, 56, 29, 17), (68, 56, 29, 17),
         (3, 76, 29, 17),
     ]
@@ -2004,7 +2068,7 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
-def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True, map_mode="both"):
+def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True, map_mode="both", period_status=False):
     """Show the same satellite photo with status overlays limited to the current page.
 
     map_mode='both' shows panel-cleaning fills and grass-cutting zone borders;
@@ -2124,7 +2188,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ))
         if dpv_reference:
             # DPV: show 15 zones on grass map and table-status markers on panel map.
-            grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+            grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
             zone_assets = asset_list(plant, "Zone")
             # Keep every DPV grass-zone marker inside the visible solar-array
             # footprint (not on the access road or the buildings at the right).
@@ -2168,7 +2232,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # apply a translucent green overlay only to completed panel areas.
                 # Pending panels remain the untouched satellite image; no red grid
                 # or artificial table-layout is drawn over the photograph.
-                panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+                panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=period_status)
                 table_assets = asset_list(plant, "Table")
                 # DPV satellite coordinates traced to the actual blue panel banks.
                 # Each rectangle stays within a solar-panel surface and excludes
@@ -2223,7 +2287,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
-            grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+            grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
             zone_assets = asset_list(plant, "Zone")
             # Circle positions are aligned to the corresponding coloured zone,
             # rather than the old positions which placed several labels in the
@@ -2274,9 +2338,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         return
 
     assets = asset_list(plant, "Table")
-    panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+    panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=period_status)
     completed = {a for a, r in panel_records.items() if r.status == "Completed"}
-    grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+    grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
     zone_assets = asset_list(plant, "Zone")
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
@@ -2456,7 +2520,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # the first Python version: four zones in each of the two tall groups,
         # then one zone for each of the two shorter upper groups.
         zone_rects = [
-            (.014, .201, .258, .347),  # Zone 1: left group, upper
+            (.738, .111, .992, .438),  # Zone 1: upper-right group (swapped with Zone 10)
             (.017, .347, .258, .521),  # Zone 2: left group, upper-middle
             (.021, .521, .258, .718),  # Zone 3: left group, lower-middle
             (.024, .718, .258, .889),  # Zone 4: left group, lower
@@ -2465,7 +2529,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             (.258, .493, .512, .692),  # Zone 7: centre group, lower-middle
             (.258, .692, .512, .847),  # Zone 8: centre group, lower
             (.512, .146, .738, .438),  # Zone 9: upper-middle group
-            (.738, .111, .992, .438),  # Zone 10: upper-right group
+            (.014, .201, .258, .347),  # Zone 10: left group, upper (swapped with Zone 1)
         ]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
@@ -3034,16 +3098,16 @@ def panel_cleaning_page(db, user, plant):
     header(plant)
     st.markdown("## Panel Cleaning")
 
-    task_date = st.date_input("Work date", value=date.today(), key="panel_date")
+    task_date = _period_picker(plant, "Panel Cleaning")
     # Compact map — same size as the Grass Cutting map.
-    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="panel")
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="panel", period_status=True)
     search = st.text_input("Search table", placeholder="T-01")
 
     assets = asset_list(plant, "Table")
     if search:
         assets = [a for a in assets if search.lower() in a.lower()]
 
-    panel_records = status_map(db, plant.id, "Panel Cleaning", task_date)
+    panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=True)
     completed = sum(1 for r in panel_records.values() if r.status == "Completed")
     pct = round(completed / plant.table_count * 100, 1) if plant.table_count else 0
 
@@ -3060,13 +3124,16 @@ def panel_cleaning_page(db, user, plant):
         with cols[i % 5]:
             st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
             worker_options = worker_options_for_plant(plant, db)
-            worker_choices = list(dict.fromkeys(([saved_worker_name] if saved_worker_name else []) + worker_options))
-            worker_name = st.selectbox(
-                "Worker / Supervisor", worker_choices,
-                index=worker_choices.index(saved_worker_name) if saved_worker_name in worker_choices else 0,
+            saved_workers = [name.strip() for name in saved_worker_name.split(",") if name.strip()]
+            worker_choices = list(dict.fromkeys(saved_workers + worker_options))
+            worker_names = st.multiselect(
+                "Workers / Supervisors", worker_choices,
+                default=[name for name in saved_workers if name in worker_choices],
                 label_visibility="collapsed",
-                key=f"panel_worker_name_{plant.id}_{asset}_{task_date}",
-            ).strip()
+                placeholder="Select one or more workers",
+                key=f"panel_worker_names_{plant.id}_{asset}_{task_date}",
+            )
+            worker_name = ", ".join(worker_names)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"panel_{asset}_{task_date}",
@@ -3092,10 +3159,10 @@ def grass_cutting_page(db, user, plant):
     header(plant)
     st.markdown("## 🌿 Grass Cutting")
 
-    task_date = st.date_input("Work date", value=date.today(), key="grass_date")
+    task_date = _period_picker(plant, "Grass Cutting")
     # Compact map — same size as the Panel Cleaning map.
-    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass")
-    grass_records = status_map(db, plant.id, "Grass Cutting", task_date)
+    satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass", period_status=True)
+    grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=True)
     completed = sum(1 for r in grass_records.values() if r.status == "Completed")
     pct = round(completed / plant.zone_count * 100, 1) if plant.zone_count else 0
 
@@ -3112,14 +3179,16 @@ def grass_cutting_page(db, user, plant):
         with cols[i % 5]:
             st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
             worker_options = worker_options_for_plant(plant, db, first_names_only=True)
-            saved_first_name = saved_worker_name.split()[0] if saved_worker_name else ""
-            worker_choices = list(dict.fromkeys(([saved_first_name] if saved_first_name and saved_first_name.upper() != "R" else []) + worker_options))
-            worker_name = st.selectbox(
-                "Worker / Supervisor", worker_choices,
-                index=worker_choices.index(saved_first_name) if saved_first_name in worker_choices else 0,
+            saved_workers = [name.strip() for name in saved_worker_name.split(",") if name.strip() and name.strip().upper() != "R"]
+            worker_choices = list(dict.fromkeys(saved_workers + worker_options))
+            worker_names = st.multiselect(
+                "Workers / Supervisors", worker_choices,
+                default=[name for name in saved_workers if name in worker_choices],
                 label_visibility="collapsed",
-                key=f"grass_worker_name_{plant.id}_{zone}_{task_date}",
-            ).strip()
+                placeholder="Select one or more workers",
+                key=f"grass_worker_names_{plant.id}_{zone}_{task_date}",
+            )
+            worker_name = ", ".join(worker_names)
             if st.button(
                 "Mark Pending" if done else "Mark Completed",
                 key=f"grass_{zone}_{task_date}",
