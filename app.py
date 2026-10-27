@@ -1595,6 +1595,24 @@ def _login_background_uri():
 
 def login_page():
     css()
+    # Keep the authenticated app sidebar/navigation from appearing beside the
+    # sign-in screen during Streamlit reruns or when a session has expired.
+    st.markdown(
+        """<style>
+        [data-testid="stSidebar"],
+        [data-testid="stSidebarNav"] {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            min-width: 0 !important;
+        }
+        [data-testid="stMainBlockContainer"] {
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        </style>""",
+        unsafe_allow_html=True,
+    )
     bg_uri = _login_background_uri()
     logo_uri = _login_logo_uri()
     if bg_uri:
