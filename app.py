@@ -432,7 +432,7 @@ PROCESS_CATEGORIES = {
             "Inverter Communication",
             "Inverter Fan",
             "Inverter AC, DC Parameters",
-            "All CCTV Cameras Functioning",
+            "All CCTV Cameras",
             "Lightning Arresters ",
             "Plant Fire Extinguisher",
         ],
@@ -846,31 +846,9 @@ def _map_status_map(db, plant_id, category, task_date, use_period=False):
 
 
 def _period_picker(plant, category):
-    """Select the reporting month and the actual calendar date for new work records."""
+    """Choose the actual work date from a calendar without separate month/year filters."""
     today = date.today()
     prefix = category.lower().replace(" ", "_")
-    month_key = f"{prefix}_period_month_{plant.id}"
-    year_key = f"{prefix}_period_year_{plant.id}"
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        month_name = st.selectbox(
-            "Period (month)", list(__import__("calendar").month_name)[1:],
-            index=today.month - 1, key=month_key,
-        )
-    with c2:
-        year = st.selectbox(
-            "Year", list(range(today.year - 5, today.year + 2)),
-            index=5, key=year_key,
-        )
-    month = list(__import__("calendar").month_name).index(month_name)
-    start = date(int(year), month, 1)
-    if month == 12:
-        end = date(int(year) + 1, 1, 1) - timedelta(days=1)
-    else:
-        end = date(int(year), month + 1, 1) - timedelta(days=1)
-    st.session_state[f"_period_start_{plant.id}"] = start.isoformat()
-    st.session_state[f"_period_end_{plant.id}"] = end.isoformat()
-
     calendar_key = f"{prefix}_work_calendar_{plant.id}"
     previous = st.session_state.get(calendar_key, today)
     if isinstance(previous, str):
@@ -878,12 +856,15 @@ def _period_picker(plant, category):
             previous = date.fromisoformat(previous)
         except ValueError:
             previous = today
-    default_date = min(max(previous, start), end)
     task_date = st.date_input(
-        "Work date (calendar)", value=default_date, min_value=start, max_value=end,
-        key=calendar_key,
-        help="Choose the actual date the worker completed this task. The map shows the selected month's latest saved status for each table/zone.",
+        "Work date (calendar)", value=previous, key=calendar_key,
+        help="Choose the actual date the worker completed this task."
     )
+    start = date(task_date.year, task_date.month, 1)
+    end = (date(task_date.year + 1, 1, 1) - timedelta(days=1)
+           if task_date.month == 12 else date(task_date.year, task_date.month + 1, 1) - timedelta(days=1))
+    st.session_state[f"_period_start_{plant.id}"] = start.isoformat()
+    st.session_state[f"_period_end_{plant.id}"] = end.isoformat()
     return task_date
 
 
@@ -1934,7 +1915,12 @@ def notification_center(db, user):
             for n in notifications:
                 n.is_read = True
             db.commit(); st.rerun()
+        seen_notifications = set()
         for n in notifications:
+            fingerprint = (n.title, n.message, n.category, n.asset_id, n.notification_type)
+            if fingerprint in seen_notifications:
+                continue
+            seen_notifications.add(fingerprint)
             icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
             cls = "bad" if n.severity == "High" else "warn"
             st.markdown(
@@ -2844,7 +2830,12 @@ def overview_context(db, user, plant):
                 ).update({Notification.is_read: True}, synchronize_session=False)
                 db.commit()
                 st.rerun()
+            seen_notifications = set()
             for n in notifications:
+                fingerprint = (n.title, n.message, n.category, n.asset_id, n.notification_type)
+                if fingerprint in seen_notifications:
+                    continue
+                seen_notifications.add(fingerprint)
                 icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
                 st.markdown(
                     f'<div class="overview-notification"><b>{icon} {n.title}</b>'
@@ -2994,25 +2985,25 @@ def overview_page(db, user, plant):
     header(plant)
     overview_context(db, user, plant)
 
-    # Overview is filtered by month so the cards and satellite overlays reflect
-    # the saved cleaning/grass-cutting records for that selected month.
+    # Select a date range to review maintenance progress and satellite status.
     today = date.today()
-    month_names = list(__import__("calendar").month_name)[1:]
-    f1, f2 = st.columns([2, 1])
-    with f1:
-        selected_month = st.selectbox(
-            "Period (month)", month_names, index=today.month - 1,
-            key=f"overview_month_{plant.id}",
+    range_col1, range_col2 = st.columns(2)
+    with range_col1:
+        start_date = st.date_input(
+            "From date", value=date(today.year, today.month, 1),
+            key=f"overview_start_date_{plant.id}"
         )
-    with f2:
-        selected_year = st.selectbox(
-            "Year", list(range(today.year - 5, today.year + 2)), index=5,
-            key=f"overview_year_{plant.id}",
+    with range_col2:
+        end_date = st.date_input(
+            "To date", value=today, key=f"overview_end_date_{plant.id}"
         )
-    month_num = month_names.index(selected_month) + 1
-    start_date = date(int(selected_year), month_num, 1)
-    end_date = (date(int(selected_year) + 1, 1, 1) - timedelta(days=1)
-                if month_num == 12 else date(int(selected_year), month_num + 1, 1) - timedelta(days=1))
+    if start_date > end_date:
+        st.warning("The start date must be on or before the end date.")
+        start_date, end_date = end_date, start_date
+    # Share the selected overview range with the satellite maps so the overlay
+    # and progress cards always reflect exactly the dates chosen above.
+    st.session_state[f"_period_start_{plant.id}"] = start_date.isoformat()
+    st.session_state[f"_period_end_{plant.id}"] = end_date.isoformat()
 
     records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
@@ -3081,6 +3072,41 @@ def overview_page(db, user, plant):
             st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
         else:
             st.success("No repair maintenance items")
+
+    # Historical cycle completion across the recent six months.
+    st.markdown("### Maintenance History — Completed Cycles")
+    history_start = date(today.year, today.month, 1)
+    for _ in range(5):
+        history_start = date(history_start.year - (1 if history_start.month == 1 else 0),
+                             12 if history_start.month == 1 else history_start.month - 1, 1)
+    history_end = today
+    history_rows = db.query(MaintenanceRecord).filter(
+        MaintenanceRecord.plant_id == plant.id,
+        MaintenanceRecord.task_date >= history_start,
+        MaintenanceRecord.task_date <= history_end,
+        MaintenanceRecord.status == "Completed",
+        MaintenanceRecord.category.in_(["Panel Cleaning", "Grass Cutting"] + list(PROCESS_CATEGORIES.keys())),
+    ).all()
+    history_months = []
+    cursor = history_start
+    while cursor <= history_end:
+        history_months.append(cursor.strftime("%b %Y"))
+        cursor = date(cursor.year + (1 if cursor.month == 12 else 0), 1 if cursor.month == 12 else cursor.month + 1, 1)
+    history_data = {"Month": history_months, "Panel Cleaning": [0] * len(history_months),
+                    "Grass Cutting": [0] * len(history_months), "Inspections": [0] * len(history_months)}
+    month_index = {m: i for i, m in enumerate(history_months)}
+    for rec in history_rows:
+        key = rec.task_date.strftime("%b %Y")
+        if key not in month_index:
+            continue
+        i = month_index[key]
+        if rec.category == "Panel Cleaning":
+            history_data["Panel Cleaning"][i] += 1
+        elif rec.category == "Grass Cutting":
+            history_data["Grass Cutting"][i] += 1
+        else:
+            history_data["Inspections"][i] += 1
+    st.bar_chart(pd.DataFrame(history_data).set_index("Month"))
 
     # Recent Maintenance Activity intentionally removed from Overview.
     st.divider()
@@ -3752,8 +3778,12 @@ def loss_repair_page(db, user, plant):
         cfg = PROCESS_CATEGORIES[category]
         asset = st.selectbox("Asset", asset_list(plant, cfg["asset_type"]), key="new_repair_asset")
         component = st.selectbox("Component / subcategory", cfg["items"])
-        issue = st.text_area("Issue")
-        reason = st.text_area("Reason if work cannot be completed")
+        issue = st.text_input("Issue")
+        engineer_assistance = st.radio(
+            "Engineer assistance required?", ["✓ Yes", "✗ No"],
+            horizontal=True, key="repair_engineer_assistance"
+        )
+        reason = st.text_area("Reason (only if engineer assistance is required)") if engineer_assistance == "✓ Yes" else ""
         loss = st.number_input("Estimated loss %", 0.0, 100.0, 0.0, 0.5)
 
         if st.button("Create Repair Item", type="primary"):
@@ -3783,7 +3813,9 @@ def loss_repair_page(db, user, plant):
                         f"Category: {category}\n"
                         f"Asset: {asset}\n"
                         f"Component: {component}\n"
-                        f"Issue: {issue.strip()}"
+                        f"Issue: {issue.strip()}\n"
+                        f"Engineer assistance: {'Required' if engineer_assistance == '✓ Yes' else 'Not required'}"
+                        + (f"\nReason: {reason.strip()}" if engineer_assistance == "✓ Yes" and reason.strip() else "")
                     ),
                     category,
                     asset,
