@@ -846,10 +846,11 @@ def _map_status_map(db, plant_id, category, task_date, use_period=False):
 
 
 def _period_picker(plant, category):
-    """Select a month/year reporting period and return its inclusive date range."""
+    """Select the reporting month and the actual calendar date for new work records."""
     today = date.today()
-    month_key = f"{category.lower().replace(' ', '_')}_period_month_{plant.id}"
-    year_key = f"{category.lower().replace(' ', '_')}_period_year_{plant.id}"
+    prefix = category.lower().replace(" ", "_")
+    month_key = f"{prefix}_period_month_{plant.id}"
+    year_key = f"{prefix}_period_year_{plant.id}"
     c1, c2 = st.columns([2, 1])
     with c1:
         month_name = st.selectbox(
@@ -869,9 +870,21 @@ def _period_picker(plant, category):
         end = date(int(year), month + 1, 1) - timedelta(days=1)
     st.session_state[f"_period_start_{plant.id}"] = start.isoformat()
     st.session_state[f"_period_end_{plant.id}"] = end.isoformat()
-    # Records are stored on their actual work dates; the period's final day is
-    # used only as the stable key for widgets and new actions.
-    return end
+
+    calendar_key = f"{prefix}_work_calendar_{plant.id}"
+    previous = st.session_state.get(calendar_key, today)
+    if isinstance(previous, str):
+        try:
+            previous = date.fromisoformat(previous)
+        except ValueError:
+            previous = today
+    default_date = min(max(previous, start), end)
+    task_date = st.date_input(
+        "Work date (calendar)", value=default_date, min_value=start, max_value=end,
+        key=calendar_key,
+        help="Choose the actual date the worker completed this task. The map shows the selected month's latest saved status for each table/zone.",
+    )
+    return task_date
 
 
 def record_status(db, plant_id, category, asset_id, task_date):
@@ -2981,24 +2994,39 @@ def overview_page(db, user, plant):
     header(plant)
     overview_context(db, user, plant)
 
-    # Keep the existing date filters, but make the operational area the focus.
-    f1, f2 = st.columns([1, 1])
+    # Overview is filtered by month so the cards and satellite overlays reflect
+    # the saved cleaning/grass-cutting records for that selected month.
+    today = date.today()
+    month_names = list(__import__("calendar").month_name)[1:]
+    f1, f2 = st.columns([2, 1])
     with f1:
-        start_date = st.date_input("From", date.today() - timedelta(days=30), key="dash_start")
+        selected_month = st.selectbox(
+            "Period (month)", month_names, index=today.month - 1,
+            key=f"overview_month_{plant.id}",
+        )
     with f2:
-        end_date = st.date_input("To", date.today(), key="dash_end")
-    if start_date > end_date:
-        st.error("The start date cannot be after the end date.")
-        return
+        selected_year = st.selectbox(
+            "Year", list(range(today.year - 5, today.year + 2)), index=5,
+            key=f"overview_year_{plant.id}",
+        )
+    month_num = month_names.index(selected_month) + 1
+    start_date = date(int(selected_year), month_num, 1)
+    end_date = (date(int(selected_year) + 1, 1, 1) - timedelta(days=1)
+                if month_num == 12 else date(int(selected_year), month_num + 1, 1) - timedelta(days=1))
 
     records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
 
-    # Panel Cleaning and Grass Cutting are live work-status indicators.
-    # Read the saved records for the selected end date so the Overview always
-    # matches the completion status saved from those two maintenance pages.
-    panel_pct, panel_done, panel_total = panel_cleaning_percent(db, plant.id, end_date)
-    grass_pct, grass_done, grass_total = grass_cutting_percent(db, plant.id, end_date)
+    # Use each asset's latest saved record within the selected month, not only
+    # a record saved on the month's final day.
+    panel_records = status_map_for_period(db, plant.id, "Panel Cleaning", start_date, end_date)
+    grass_records = status_map_for_period(db, plant.id, "Grass Cutting", start_date, end_date)
+    panel_total = plant.table_count
+    grass_total = plant.zone_count
+    panel_done = sum(1 for r in panel_records.values() if r.status == "Completed")
+    grass_done = sum(1 for r in grass_records.values() if r.status == "Completed")
+    panel_pct = round(panel_done / panel_total * 100, 1) if panel_total else 0
+    grass_pct = round(grass_done / grass_total * 100, 1) if grass_total else 0
     metrics["panel_pct"] = panel_pct
     metrics["panel_done"] = panel_done
     metrics["panel_total"] = panel_total
@@ -3021,7 +3049,7 @@ def overview_page(db, user, plant):
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             _overview_target_label(metrics["panel_done"], metrics["panel_total"], maintenance_target_days(plant, "Panel Cleaning"), "cycle")
         )
-        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel")
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
     with grass_col:
@@ -3029,7 +3057,7 @@ def overview_page(db, user, plant):
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             _overview_target_label(metrics["grass_done"], metrics["grass_total"], maintenance_target_days(plant, "Grass Cutting"), "cycle")
         )
-        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass")
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
