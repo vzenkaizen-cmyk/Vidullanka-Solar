@@ -4719,68 +4719,192 @@ def reports_page(db,user,plant):
         _pdf_report_bytes(df,plant,start,end,pc,gc),
         f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
 
-def approvals_page(db,user,plant):
+def approvals_page(db, user, plant):
     header(plant)
     st.title("✅ Approvals & Sign-off")
-    st.caption("Engineers and administrators can approve or decline maintenance inspections and record an electronic signature.")
-    base_filter = [MaintenanceRecord.plant_id == plant.id, MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys()))]
-    pending = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status == "Pending").order_by(MaintenanceRecord.task_date.desc()).limit(100).all()
-    reviewed = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status.in_(["Approved", "Declined"])).order_by(MaintenanceRecord.approved_at.desc()).limit(100).all()
-    approved_count = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status == "Approved").count()
-    declined_count = db.query(MaintenanceRecord).filter(*base_filter, MaintenanceRecord.approval_status == "Declined").count()
-    c1,c2,c3=st.columns(3); c1.metric("Awaiting review",len(pending)); c2.metric("Approved",approved_count); c3.metric("Declined",declined_count)
+    st.caption(
+        "Select a maintenance inspection tab to review only that inspection type. "
+        "This keeps approvals organized and easier for engineers to process."
+    )
 
-    workers={u.id:u.full_name for u in db.query(User).all()}
-    if pending:
-        st.markdown("### 🔎 Awaiting review")
-        for rec in pending:
-            details=parse_details(rec); items=details.get("items",{}); red_items=[k for k,v in items.items() if not k.endswith("__reason") and v=="RED"]
+    base_filter = [
+        MaintenanceRecord.plant_id == plant.id,
+        MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
+    ]
+    pending = (
+        db.query(MaintenanceRecord)
+        .filter(*base_filter, MaintenanceRecord.approval_status == "Pending")
+        .order_by(MaintenanceRecord.task_date.desc())
+        .all()
+    )
+    reviewed = (
+        db.query(MaintenanceRecord)
+        .filter(
+            *base_filter,
+            MaintenanceRecord.approval_status.in_(["Approved", "Declined"]),
+        )
+        .order_by(MaintenanceRecord.approved_at.desc())
+        .all()
+    )
+    approved_count = db.query(MaintenanceRecord).filter(
+        *base_filter, MaintenanceRecord.approval_status == "Approved"
+    ).count()
+    declined_count = db.query(MaintenanceRecord).filter(
+        *base_filter, MaintenanceRecord.approval_status == "Declined"
+    ).count()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Awaiting review", len(pending))
+    c2.metric("Approved", approved_count)
+    c3.metric("Declined", declined_count)
+
+    workers = {u.id: u.full_name for u in db.query(User).all()}
+    categories = list(PROCESS_CATEGORIES.keys())
+    selected = st.session_state.get("approval_category", categories[0])
+    if selected not in categories:
+        selected = categories[0]
+
+    tab_labels = {
+        "Daily Inspection": "Inverter & Safety Checks",
+        "Inverter Inspection": "Inverter Inspection",
+        "Panel Inspection": "Panel Inspection",
+        "DC Cable Inspection": "DC Cable Inspection",
+        "MDB Inspection": "MDB Inspection",
+        "Switch Yard Inspection": "Switch Yard Inspection",
+        "AC Inspection": "AC Inspection",
+    }
+    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85], gap="small")
+    for col, category in zip(tab_cols, categories):
+        category_pending_count = sum(1 for rec in pending if rec.category == category)
+        label = f"{tab_labels[category]} ({category_pending_count})"
+        with col:
+            if st.button(
+                label,
+                key=f"approval_tab_{category}",
+                use_container_width=True,
+                type="primary" if category == selected else "secondary",
+            ):
+                st.session_state.approval_category = category
+                st.rerun()
+
+    st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
+    category_pending = [rec for rec in pending if rec.category == selected]
+    category_reviewed = [rec for rec in reviewed if rec.category == selected]
+    st.subheader(f"🔎 {tab_labels[selected]} — Awaiting review")
+
+    if category_pending:
+        for rec in category_pending:
+            details = parse_details(rec)
+            items = details.get("items", {})
+            red_items = [
+                key for key, value in items.items()
+                if not key.endswith("__reason") and value == "RED"
+            ]
             with st.container(border=True):
                 st.markdown(f"### {rec.category} • {rec.asset_id}")
-                st.write(f"**Inspection date:** {rec.task_date:%d %b %Y} • **Submitted by:** {workers.get(rec.worker_id,'Unassigned')} • **Status:** {rec.status}")
-                if red_items: st.markdown("**Items requiring attention:** "+", ".join(red_items))
-                if rec.remarks: st.write(f"**Remarks:** {rec.remarks}")
-                signature=st.text_input("Electronic signature — type your full name",key=f"sig_{rec.id}",placeholder="Engineer / Administrator full name")
-                comment=st.text_area("Approval comment",key=f"approval_comment_{rec.id}",placeholder="Optional for approval; required for decline")
-                a,b=st.columns(2)
-                if a.button("✅ Approve & Sign",key=f"approve_{rec.id}",type="primary",use_container_width=True):
-                    if not signature.strip(): st.error("Enter your electronic signature first.")
+                st.write(
+                    f"**Inspection date:** {rec.task_date:%d %b %Y} • "
+                    f"**Submitted by:** {workers.get(rec.worker_id, 'Unassigned')} • "
+                    f"**Status:** {rec.status}"
+                )
+                if red_items:
+                    st.markdown("**Items requiring attention:** " + ", ".join(red_items))
+                if rec.remarks:
+                    st.write(f"**Remarks:** {rec.remarks}")
+                signature = st.text_input(
+                    "Electronic signature — type your full name",
+                    key=f"sig_{rec.id}",
+                    placeholder="Engineer / Administrator full name",
+                )
+                comment = st.text_area(
+                    "Approval comment",
+                    key=f"approval_comment_{rec.id}",
+                    placeholder="Optional for approval; required for decline",
+                )
+                a, b = st.columns(2)
+                if a.button(
+                    "✅ Approve & Sign", key=f"approve_{rec.id}",
+                    type="primary", use_container_width=True,
+                ):
+                    if not signature.strip():
+                        st.error("Enter your electronic signature first.")
                     else:
-                        rec.approval_status="Approved"; rec.approved_by=user.id; rec.approved_at=datetime.utcnow(); rec.approval_signature=signature.strip(); rec.approval_comment=comment.strip(); db.commit(); st.success("Inspection approved and electronically signed."); st.rerun()
-                if b.button("🔴 Decline",key=f"decline_{rec.id}",use_container_width=True):
-                    if not signature.strip(): st.error("Enter your electronic signature first.")
-                    elif not comment.strip(): st.error("Add a reason when declining an inspection.")
+                        rec.approval_status = "Approved"
+                        rec.approved_by = user.id
+                        rec.approved_at = datetime.utcnow()
+                        rec.approval_signature = signature.strip()
+                        rec.approval_comment = comment.strip()
+                        db.commit()
+                        st.success("Inspection approved and electronically signed.")
+                        st.rerun()
+                if b.button("🔴 Decline", key=f"decline_{rec.id}", use_container_width=True):
+                    if not signature.strip():
+                        st.error("Enter your electronic signature first.")
+                    elif not comment.strip():
+                        st.error("Add a reason when declining an inspection.")
                     else:
-                        rec.approval_status="Declined"; rec.approved_by=user.id; rec.approved_at=datetime.utcnow(); rec.approval_signature=signature.strip(); rec.approval_comment=comment.strip(); db.commit(); st.warning("Inspection declined and returned for correction."); st.rerun()
+                        rec.approval_status = "Declined"
+                        rec.approved_by = user.id
+                        rec.approved_at = datetime.utcnow()
+                        rec.approval_signature = signature.strip()
+                        rec.approval_comment = comment.strip()
+                        db.commit()
+                        st.warning("Inspection declined and returned for correction.")
+                        st.rerun()
     else:
-        st.success("No maintenance inspections are waiting for approval.")
+        st.success(f"No {selected.lower()} inspections are waiting for approval.")
 
-    st.markdown("### ✏️ Reviewed inspections")
-    if not reviewed:
-        st.caption("No approved or declined inspection records yet.")
-        return
-
-    for rec in reviewed:
-        state = "Approved" if rec.approval_status == "Approved" else "Declined"
-        cls = "good" if state == "Approved" else "bad"
-        with st.expander(f"{rec.task_date:%d %b %Y} • {rec.category} • {rec.asset_id} • {state}"):
-            st.markdown(f"**Status:** <span class='{cls}'>{state}</span> &nbsp; • &nbsp; **Reviewed by:** {workers.get(rec.approved_by,'—')} &nbsp; • &nbsp; **Reviewed:** {rec.approved_at or '—'}", unsafe_allow_html=True)
-            signature = st.text_input("Electronic signature", value=rec.approval_signature or "", key=f"review_sig_{rec.id}")
-            comment = st.text_area("Approval comment", value=rec.approval_comment or "", key=f"review_comment_{rec.id}")
-            new_state = st.selectbox("Decision", ["Approved", "Declined"], index=0 if state == "Approved" else 1, key=f"review_state_{rec.id}")
-            a,b=st.columns(2)
-            if a.button("💾 Save changes", key=f"review_save_{rec.id}", use_container_width=True):
-                if not signature.strip(): st.error("Electronic signature is required.")
-                elif new_state == "Declined" and not comment.strip(): st.error("A comment is required when declining.")
-                else:
-                    rec.approval_status=new_state; rec.approved_by=user.id; rec.approved_at=datetime.utcnow(); rec.approval_signature=signature.strip(); rec.approval_comment=comment.strip(); db.commit(); st.success("Review updated."); st.rerun()
-            if b.button("🗑️ Delete inspection record", key=f"review_delete_{rec.id}", use_container_width=True):
-                db.delete(rec); db.commit(); st.success("Inspection record deleted."); st.rerun()
+    st.markdown(f"### ✏️ Reviewed {tab_labels[selected]}")
+    if not category_reviewed:
+        st.caption("No approved or declined inspection records for this inspection type yet.")
+    else:
+        for rec in category_reviewed:
+            state = "Approved" if rec.approval_status == "Approved" else "Declined"
+            cls = "good" if state == "Approved" else "bad"
+            with st.expander(f"{rec.task_date:%d %b %Y} • {rec.asset_id} • {state}"):
+                st.markdown(
+                    f"**Status:** <span class='{cls}'>{state}</span> &nbsp; • &nbsp; "
+                    f"**Reviewed by:** {workers.get(rec.approved_by, '—')} &nbsp; • &nbsp; "
+                    f"**Reviewed:** {rec.approved_at or '—'}",
+                    unsafe_allow_html=True,
+                )
+                signature = st.text_input(
+                    "Electronic signature", value=rec.approval_signature or "",
+                    key=f"review_sig_{rec.id}",
+                )
+                comment = st.text_area(
+                    "Approval comment", value=rec.approval_comment or "",
+                    key=f"review_comment_{rec.id}",
+                )
+                new_state = st.selectbox(
+                    "Decision", ["Approved", "Declined"],
+                    index=0 if state == "Approved" else 1,
+                    key=f"review_state_{rec.id}",
+                )
+                a, b = st.columns(2)
+                if a.button("💾 Save changes", key=f"review_save_{rec.id}", use_container_width=True):
+                    if not signature.strip():
+                        st.error("Electronic signature is required.")
+                    elif new_state == "Declined" and not comment.strip():
+                        st.error("A comment is required when declining.")
+                    else:
+                        rec.approval_status = new_state
+                        rec.approved_by = user.id
+                        rec.approved_at = datetime.utcnow()
+                        rec.approval_signature = signature.strip()
+                        rec.approval_comment = comment.strip()
+                        db.commit()
+                        st.success("Review updated.")
+                        st.rerun()
+                if b.button("🗑️ Delete inspection record", key=f"review_delete_{rec.id}", use_container_width=True):
+                    db.delete(rec)
+                    db.commit()
+                    st.success("Inspection record deleted.")
+                    st.rerun()
 
 
 # ============================================================
 # Admin settings
-# ============================================================
 
 def admin_page(db):
     st.title("⚙️ Administration")
