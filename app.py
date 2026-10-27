@@ -3783,7 +3783,6 @@ def loss_repair_page(db, user, plant):
             "Engineer assistance required?", ["✓ Yes", "✗ No"],
             horizontal=True, key="repair_engineer_assistance"
         )
-        reason = st.text_area("Reason (only if engineer assistance is required)") if engineer_assistance == "✓ Yes" else ""
         loss = st.number_input("Estimated loss %", 0.0, 100.0, 0.0, 0.5)
 
         if st.button("Create Repair Item", type="primary"):
@@ -3796,7 +3795,7 @@ def loss_repair_page(db, user, plant):
                     asset_id=asset,
                     component=component,
                     issue=issue.strip(),
-                    reason_not_completed=reason.strip(),
+                    reason_not_completed="",
                     loss_percent=loss,
                     status="Open",
                     created_by=user.id,
@@ -3804,22 +3803,27 @@ def loss_repair_page(db, user, plant):
                 db.add(item)
                 db.commit()
 
+                assistance_required = engineer_assistance == "✓ Yes"
+                notification_title = (
+                    f"🛠️ Engineer assistance required: {asset}"
+                    if assistance_required else f"🔴 New repair item: {asset}"
+                )
+                notification_message = (
+                    f"Plant: {plant.name}\\n"
+                    f"Category: {category}\\n"
+                    f"Asset: {asset}\\n"
+                    f"Component: {component}\\n"
+                    f"Issue: {issue.strip()}\\n"
+                    f"Engineer assistance required: {'Yes' if assistance_required else 'No'}"
+                )
                 notify_users(
                     db,
                     plant.id,
-                    f"🔴 New repair item: {asset}",
-                    (
-                        f"Plant: {plant.name}\n"
-                        f"Category: {category}\n"
-                        f"Asset: {asset}\n"
-                        f"Component: {component}\n"
-                        f"Issue: {issue.strip()}\n"
-                        f"Engineer assistance: {'Required' if engineer_assistance == '✓ Yes' else 'Not required'}"
-                        + (f"\nReason: {reason.strip()}" if engineer_assistance == "✓ Yes" and reason.strip() else "")
-                    ),
+                    notification_title,
+                    notification_message,
                     category,
                     asset,
-                    notification_type="RED_ALERT",
+                    notification_type="ENGINEER_ASSISTANCE" if assistance_required else "RED_ALERT",
                 )
 
                 st.success("Repair item created and notifications sent.")
