@@ -386,7 +386,7 @@ def hash_password(password: str) -> str:
     salt = os.urandom(16)
     iterations = 180_000
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+    return f"pbkdf2_sha256iterations{salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -396,7 +396,7 @@ def verify_password(password: str, stored: str) -> bool:
         parts = stored.split("$")
 
         if len(parts) == 4 and parts[0] == "pbkdf2_sha256":
-            # Standard format: algorithm$iterations$salt$digest
+            # Standard format: algorithmiterationssalt$digest
             iterations = int(parts[1])
             salt = bytes.fromhex(parts[2])
             expected = parts[3]
@@ -1595,24 +1595,6 @@ def _login_background_uri():
 
 def login_page():
     css()
-    # Keep the authenticated app sidebar/navigation from appearing beside the
-    # sign-in screen during Streamlit reruns or when a session has expired.
-    st.markdown(
-        """<style>
-        [data-testid="stSidebar"],
-        [data-testid="stSidebarNav"] {
-            display: none !important;
-            visibility: hidden !important;
-            width: 0 !important;
-            min-width: 0 !important;
-        }
-        [data-testid="stMainBlockContainer"] {
-            margin-left: auto !important;
-            margin-right: auto !important;
-        }
-        </style>""",
-        unsafe_allow_html=True,
-    )
     bg_uri = _login_background_uri()
     logo_uri = _login_logo_uri()
     if bg_uri:
@@ -4872,6 +4854,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
