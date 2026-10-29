@@ -3841,8 +3841,12 @@ def loss_repair_page(db, user, plant):
                     f"🛠️ Engineer assistance required: {asset}"
                     if assistance_required else f"🔴 New repair item: {asset}"
                 )
+                # Use the actual issue entered by the user, not a hard-coded example.
+                # The Overview notification renderer displays only the issue and
+                # the engineer-assistance requirement for assistance alerts.
                 notification_message = (
-                    "Data cable damaged" if assistance_required
+                    f"Issue: {issue.strip()}\nEngineer assistance required: Yes"
+                    if assistance_required
                     else f"{component}: {issue.strip()}"
                 )
                 notify_users(
