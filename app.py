@@ -2857,6 +2857,25 @@ def overview_context(db, user, plant):
                         for marker in ("plant:", "category:", "asset:", "component:", "issue:", "engineer assistance required:")
                     ):
                         issue_text = display_message
+                    # Older notifications may contain only the assistance flag.
+                    # Recover the issue from the matching repair item so it is also
+                    # shown for notifications created before this display update.
+                    if not issue_text and n.asset_id:
+                        repair_query = db.query(RepairItem).filter(
+                            RepairItem.plant_id == plant.id,
+                            RepairItem.asset_id == n.asset_id,
+                            RepairItem.issue.isnot(None),
+                            RepairItem.issue != "",
+                        )
+                        if n.category:
+                            repair_query = repair_query.filter(
+                                RepairItem.source_category == n.category
+                            )
+                        matching_repair = repair_query.order_by(
+                            RepairItem.created_at.desc()
+                        ).first()
+                        if matching_repair:
+                            issue_text = str(matching_repair.issue or "").strip()
                     display_message = " • ".join(part for part in (issue_text, assistance_text) if part)
                 st.markdown(
                     f'<div class="overview-notification"><b>{icon} {n.title}</b>'
