@@ -2838,9 +2838,29 @@ def overview_context(db, user, plant):
                     continue
                 seen_notifications.add(fingerprint)
                 icon = "🔴" if n.notification_type == "RED_ALERT" else "📅"
+                # Keep engineer-assistance notifications concise: hide plant/category/
+                # asset/component metadata and show only the issue and assistance flag.
+                display_message = str(n.message or "").strip()
+                if n.notification_type == "ENGINEER_ASSISTANCE":
+                    issue_text = ""
+                    assistance_text = "Engineer assistance required: Yes"
+                    for message_line in display_message.replace("\r", "").splitlines():
+                        line = message_line.strip()
+                        if line.lower().startswith("issue:"):
+                            issue_text = line.split(":", 1)[1].strip()
+                        elif line.lower().startswith("reason:") and not issue_text:
+                            issue_text = line.split(":", 1)[1].strip()
+                        elif line.lower().startswith("engineer assistance required:"):
+                            assistance_text = line
+                    if not issue_text and display_message and not any(
+                        marker in display_message.lower()
+                        for marker in ("plant:", "category:", "asset:", "component:", "issue:", "engineer assistance required:")
+                    ):
+                        issue_text = display_message
+                    display_message = " • ".join(part for part in (issue_text, assistance_text) if part)
                 st.markdown(
                     f'<div class="overview-notification"><b>{icon} {n.title}</b>'
-                    f'<div class="small-muted">{n.message}</div>'
+                    f'<div class="small-muted">{display_message}</div>'
                     f'<div class="small-muted">{n.created_at:%d %b %Y %H:%M}</div></div>',
                     unsafe_allow_html=True,
                 )
@@ -4806,7 +4826,32 @@ def approvals_page(db, user, plant):
             reason = str(saved_items.get(f"{item}__reason", "") or "").strip()
             rows.append({"Checklist item": item.strip(), "Supervisor result": result,
                          "Issue / reason": reason if result == "✗ Not OK" else ""})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+        # Separate the equipment and safety groups so engineers can scan each table quickly.
+        if rec.category == "Daily Inspection":
+            st.markdown("**🔌 Inverter Checks**")
+            st.dataframe(pd.DataFrame(rows[:3]), hide_index=True, use_container_width=True)
+            st.markdown("**🛡️ Safety Checks**")
+            st.dataframe(pd.DataFrame(rows[3:]), hide_index=True, use_container_width=True)
+        elif rec.category == "AC Inspection":
+            outdoor_rows = [row for row in rows if any(
+                str(item).strip() == row["Checklist item"] and str(item).strip().startswith("Outdoor -")
+                for item in PROCESS_CATEGORIES[rec.category]["items"]
+            )]
+            indoor_rows = [row for row in rows if any(
+                str(item).strip() == row["Checklist item"] and str(item).strip().startswith("Indoor -")
+                for item in PROCESS_CATEGORIES[rec.category]["items"]
+            )]
+            for row in outdoor_rows:
+                row["Checklist item"] = row["Checklist item"].replace("Outdoor -", "", 1).strip()
+            for row in indoor_rows:
+                row["Checklist item"] = row["Checklist item"].replace("Indoor -", "", 1).strip()
+            st.markdown("**🌤️ Outdoor Unit Checks**")
+            st.dataframe(pd.DataFrame(outdoor_rows), hide_index=True, use_container_width=True)
+            st.markdown("**❄️ Indoor Unit Checks**")
+            st.dataframe(pd.DataFrame(indoor_rows), hide_index=True, use_container_width=True)
+        else:
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
     def render_pending_record(rec):
         with st.container(border=True):
@@ -4845,9 +4890,10 @@ def approvals_page(db, user, plant):
                     st.warning("Inspection declined and returned for correction.")
                     st.rerun()
 
-    if selected == "Daily Inspection":
-        # Safety checks are recorded with INV-01; the other tabs show each inverter separately.
-        inverter_tabs = [f"INV-{i:02d}" for i in range(1, 11)]
+    if selected in ("Daily Inspection", "Inverter Inspection"):
+        # Show inverter-based inspection records as individual tabs, matching the
+        # Inverter & Safety Checks approval layout. Daily safety checks live on INV-01.
+        inverter_tabs = asset_list(plant, "Inverter")
         for inv_tab, asset_id in zip(st.tabs(inverter_tabs), inverter_tabs):
             with inv_tab:
                 record = next((r for r in category_pending if r.asset_id == asset_id), None)
