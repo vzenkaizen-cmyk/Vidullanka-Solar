@@ -646,6 +646,9 @@ def seed_database():
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
+            # HRN1 has exactly 80 solar table traces.
+            hs1_plant.table_count = 80
+            hs1_plant.zone_count = 10
 
         # Remove legacy/duplicate plants from the selector without deleting their
         # historical records. HOF is no longer a selectable plant, and only one MTR
@@ -1978,7 +1981,9 @@ def top_nav(db, user):
     else:
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
-        pages += ["📊 Reports", "✅ Approvals & Sign-off", "⏰ Reminders"]
+        pages += ["📊 Reports", "⏰ Reminders"]
+    if user.role == "engineer":
+        pages += ["✅ Approvals & Sign-off"]
     if user.role == "engineer":
         pages += ["👥 Users"]
     if user.role == "admin":
@@ -2518,17 +2523,20 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # HRN 1 grass-cutting zones follow the same four table groups as
         # the first Python version: four zones in each of the two tall groups,
         # then one zone for each of the two shorter upper groups.
+        # Zone order follows the user's blue-marked HRN1 sketch:
+        # Z1 is the far-right array; Z2 is immediately to its left;
+        # Z3-Z6 occupy the centre bank; Z7-Z10 occupy the left bank.
         zone_rects = [
-            (.738, .111, .992, .438),  # Zone 1: upper-right group (swapped with Zone 10)
-            (.017, .347, .258, .521),  # Zone 2: left group, upper-middle
-            (.021, .521, .258, .718),  # Zone 3: left group, lower-middle
-            (.024, .718, .258, .889),  # Zone 4: left group, lower
-            (.258, .159, .512, .336),  # Zone 5: centre group, upper
-            (.258, .336, .512, .493),  # Zone 6: centre group, upper-middle
-            (.258, .493, .512, .692),  # Zone 7: centre group, lower-middle
-            (.258, .692, .512, .847),  # Zone 8: centre group, lower
-            (.512, .146, .738, .438),  # Zone 9: upper-middle group
-            (.014, .201, .258, .347),  # Zone 10: left group, upper (swapped with Zone 1)
+            (.750, .105, .992, .438),  # Z1: far right
+            (.515, .145, .750, .438),  # Z2: upper centre-right
+            (.275, .700, .515, .850),  # Z3: centre bottom
+            (.275, .515, .515, .700),  # Z4: centre lower-middle
+            (.275, .340, .515, .515),  # Z5: centre upper-middle
+            (.275, .155, .515, .340),  # Z6: centre top
+            (.020, .720, .260, .890),  # Z7: left bottom
+            (.020, .535, .260, .720),  # Z8: left lower-middle
+            (.020, .355, .260, .535),  # Z9: left upper-middle
+            (.020, .195, .260, .355),  # Z10: left top
         ]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
@@ -3113,33 +3121,28 @@ def overview_page(db, user, plant):
         else:
             st.success("No repair maintenance items")
 
-    # Historical cycle completion across the recent six months.
+    # Historical cycle completion for the full calendar year (January to December).
+    # Months with no completed records remain visible with a zero value.
     st.markdown("### Maintenance History — Completed Cycles")
-    history_start = date(today.year, today.month, 1)
-    for _ in range(5):
-        history_start = date(history_start.year - (1 if history_start.month == 1 else 0),
-                             12 if history_start.month == 1 else history_start.month - 1, 1)
-    history_end = today
+    history_year = today.year
+    history_start = date(history_year, 1, 1)
+    history_end = date(history_year, 12, 31)
     history_rows = db.query(MaintenanceRecord).filter(
         MaintenanceRecord.plant_id == plant.id,
         MaintenanceRecord.task_date >= history_start,
-        MaintenanceRecord.task_date <= history_end,
+        MaintenanceRecord.task_date <= min(history_end, today),
         MaintenanceRecord.status == "Completed",
         MaintenanceRecord.category.in_(["Panel Cleaning", "Grass Cutting"] + list(PROCESS_CATEGORIES.keys())),
     ).all()
-    history_months = []
-    cursor = history_start
-    while cursor <= history_end:
-        history_months.append(cursor.strftime("%b %Y"))
-        cursor = date(cursor.year + (1 if cursor.month == 12 else 0), 1 if cursor.month == 12 else cursor.month + 1, 1)
-    history_data = {"Month": history_months, "Panel Cleaning": [0] * len(history_months),
-                    "Grass Cutting": [0] * len(history_months), "Inspections": [0] * len(history_months)}
-    month_index = {m: i for i, m in enumerate(history_months)}
+    history_months = [date(history_year, month, 1).strftime("%b %Y") for month in range(1, 13)]
+    history_data = {"Month": history_months, "Panel Cleaning": [0] * 12,
+                    "Grass Cutting": [0] * 12, "Inspections": [0] * 12}
+    month_index = {month: i for i, month in enumerate(history_months)}
     for rec in history_rows:
         key = rec.task_date.strftime("%b %Y")
-        if key not in month_index:
+        i = month_index.get(key)
+        if i is None:
             continue
-        i = month_index[key]
         if rec.category == "Panel Cleaning":
             history_data["Panel Cleaning"][i] += 1
         elif rec.category == "Grass Cutting":
@@ -3257,47 +3260,135 @@ def grass_cutting_page(db, user, plant):
     # Compact map — same size as the Panel Cleaning map.
     satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass", period_status=True)
     grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=True)
-    completed = sum(1 for r in grass_records.values() if r.status == "Completed")
-    pct = round(completed / plant.zone_count * 100, 1) if plant.zone_count else 0
 
-    st.progress(pct / 100, text=f"Grass cutting progress: {pct:.1f}%")
+    plant_code = (plant.code or "").strip().upper()
+    is_hrn1 = plant_code in {"HS1", "HRN1", "HRN", "HRN 1"} or "HRN 1" in (plant.name or "").upper()
 
-    cols = st.columns(5)
-    for i, zone in enumerate(asset_list(plant, "Zone")):
-        r = grass_records.get(zone)
-        done = bool(r and r.status == "Completed")
-        saved_worker_name = (r.remarks or "").strip() if r else ""
-        if saved_worker_name.upper() == "R":
-            saved_worker_name = ""
+    if is_hrn1:
+        # Exactly 80 traces: Z1=13, Z2=12, Z3-Z9=7 each, Z10=6.
+        # Trace numbering is continuous: Z1 01-13, Z2 14-25, Z3 26-32,
+        # continuing through Z10 75-80.
+        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        table_assets = [f"T-{i:02d}" for i in range(1, 81)]
+        zone_trace_map = {}
+        cursor = 0
+        for zone_index, count in enumerate(zone_trace_counts, start=1):
+            zone_trace_map[f"Z-{zone_index:02d}"] = table_assets[cursor:cursor + count]
+            cursor += count
 
-        with cols[i % 5]:
-            st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            worker_options = worker_options_for_plant(plant, db, first_names_only=True)
+        total_traces = len(table_assets)
+        completed_traces = 0
+        for zone_name, traces in zone_trace_map.items():
+            zone_record = grass_records.get(zone_name)
+            zone_details = parse_details(zone_record) if zone_record else {}
+            zone_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
+            if zone_record and zone_record.status == "Completed" and not zone_checks:
+                zone_checks = {trace: True for trace in traces}
+            completed_traces += sum(bool(zone_checks.get(trace, False)) for trace in traces)
+        pct = round(completed_traces / total_traces * 100, 1) if total_traces else 0
+        st.progress(pct / 100, text=f"Grass cutting progress: {pct:.1f}% ({completed_traces}/{total_traces} traces)")
+
+        worker_options = worker_options_for_plant(plant, db, first_names_only=True)
+        zone_cols = st.columns(5)
+        for zone_index, (zone, traces) in enumerate(zone_trace_map.items()):
+            rec = grass_records.get(zone)
+            saved_details = parse_details(rec) if rec else {}
+            saved_checks = saved_details.get("table_checks", {}) if isinstance(saved_details, dict) else {}
+            # Preserve legacy zone-level completions by treating their tables as
+            # completed until individual trace checkboxes are first edited.
+            if rec and rec.status == "Completed" and not saved_checks:
+                saved_checks = {trace: True for trace in traces}
+            saved_worker_name = (rec.remarks or "").strip() if rec else ""
+            if saved_worker_name.upper() == "R":
+                saved_worker_name = ""
             saved_workers = [name.strip() for name in saved_worker_name.split(",") if name.strip() and name.strip().upper() != "R"]
             worker_choices = list(dict.fromkeys(saved_workers + worker_options))
-            worker_names = st.multiselect(
-                "Workers / Supervisors", worker_choices,
-                default=[name for name in saved_workers if name in worker_choices],
-                label_visibility="collapsed",
-                placeholder="Select one or more workers",
-                key=f"grass_worker_names_{plant.id}_{zone}_{task_date}",
-            )
-            worker_name = ", ".join(worker_names)
-            if st.button(
-                "Mark Pending" if done else "Mark Completed",
-                key=f"grass_{zone}_{task_date}",
-                use_container_width=True,
-            ):
-                if not done and not worker_name:
-                    st.warning(f"Enter the worker's name for {zone} before marking it completed.")
-                else:
-                    upsert_record(
-                        db, plant.id, "Grass Cutting", zone, task_date, user.id,
-                        "Pending" if done else "Completed",
-                        {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_name,
-                    )
-                    st.rerun()
+
+            with zone_cols[zone_index % 5]:
+                zone_done = bool(traces) and all(bool(saved_checks.get(trace, False)) for trace in traces)
+                st.markdown(f"**{zone}**  \n{'🟢 Completed' if zone_done else '🔴 Pending'}")
+                worker_names = st.multiselect(
+                    "Workers / Supervisors", worker_choices,
+                    default=[name for name in saved_workers if name in worker_choices],
+                    label_visibility="collapsed",
+                    placeholder="Select one or more workers",
+                    key=f"grass_worker_names_{plant.id}_{zone}_{task_date}",
+                )
+                worker_name = ", ".join(worker_names)
+                st.caption(f"Traces {traces[0].replace('T-', '')}–{traces[-1].replace('T-', '')} · {len(traces)} tables")
+
+                current_checks = {}
+                trace_cols = st.columns(2)
+                for trace_index, trace_id in enumerate(traces):
+                    saved_value = bool(saved_checks.get(trace_id, False))
+                    with trace_cols[trace_index % 2]:
+                        current_checks[trace_id] = st.checkbox(
+                            trace_id,
+                            value=saved_value,
+                            key=f"hrn1_grass_trace_{plant.id}_{zone}_{trace_id}_{task_date}",
+                            disabled=not bool(worker_name),
+                        )
+                checked_count = sum(current_checks.values())
+                st.caption(f"{checked_count}/{len(traces)} tables completed")
+
+                # Save only when one or more table checkboxes have changed.
+                if current_checks != {trace: bool(saved_checks.get(trace, False)) for trace in traces}:
+                    if any(current_checks.values()) and not worker_name:
+                        st.warning(f"Select at least one worker for {zone} before saving table progress.")
+                    else:
+                        all_done = all(current_checks.values())
+                        upsert_record(
+                            db, plant.id, "Grass Cutting", zone, task_date, user.id,
+                            "Completed" if all_done else "Pending",
+                            {
+                                "items": {"Grass Cutting": "Done" if all_done else "Not Done"},
+                                "table_checks": current_checks,
+                            },
+                            remarks=worker_name or saved_worker_name,
+                        )
+                        st.rerun()
+
+    else:
+        completed = sum(1 for r in grass_records.values() if r.status == "Completed")
+        pct = round(completed / plant.zone_count * 100, 1) if plant.zone_count else 0
+        st.progress(pct / 100, text=f"Grass cutting progress: {pct:.1f}%")
+
+        cols = st.columns(5)
+        for i, zone in enumerate(asset_list(plant, "Zone")):
+            r = grass_records.get(zone)
+            done = bool(r and r.status == "Completed")
+            saved_worker_name = (r.remarks or "").strip() if r else ""
+            if saved_worker_name.upper() == "R":
+                saved_worker_name = ""
+
+            with cols[i % 5]:
+                st.markdown(f"**{zone}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+                worker_options = worker_options_for_plant(plant, db, first_names_only=True)
+                saved_workers = [name.strip() for name in saved_worker_name.split(",") if name.strip() and name.strip().upper() != "R"]
+                worker_choices = list(dict.fromkeys(saved_workers + worker_options))
+                worker_names = st.multiselect(
+                    "Workers / Supervisors", worker_choices,
+                    default=[name for name in saved_workers if name in worker_choices],
+                    label_visibility="collapsed",
+                    placeholder="Select one or more workers",
+                    key=f"grass_worker_names_{plant.id}_{zone}_{task_date}",
+                )
+                worker_name = ", ".join(worker_names)
+                if st.button(
+                    "Mark Pending" if done else "Mark Completed",
+                    key=f"grass_{zone}_{task_date}",
+                    use_container_width=True,
+                ):
+                    if not done and not worker_name:
+                        st.warning(f"Enter the worker's name for {zone} before marking it completed.")
+                    else:
+                        upsert_record(
+                            db, plant.id, "Grass Cutting", zone, task_date, user.id,
+                            "Pending" if done else "Completed",
+                            {"items": {"Grass Cutting": "Not Done" if done else "Done"}},
+                            remarks="" if done else worker_name,
+                        )
+                        st.rerun()
 
 
 # ============================================================
@@ -4772,6 +4863,9 @@ def reports_page(db,user,plant):
         f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
 
 def approvals_page(db, user, plant):
+    if user.role != "engineer":
+        st.error("Only engineers are authorised to approve or decline maintenance inspections.")
+        return
     header(plant)
     st.title("✅ Approvals & Sign-off")
     st.caption("Choose an inspection date and tab. Checklist summaries show the supervisor's recorded results for engineer review.")
@@ -4881,33 +4975,31 @@ def approvals_page(db, user, plant):
             st.markdown(f"### {rec.category} • {rec.asset_id}")
             st.write(f"**Inspection date:** {rec.task_date:%d %b %Y} • **Submitted by:** {workers.get(rec.worker_id, 'Unassigned')} • **Status:** {rec.status}")
             render_checklist_summary(rec)
-            signature = st.text_input("Electronic signature — type your full name", key=f"sig_{rec.id}",
-                                      placeholder="Engineer / Administrator full name")
+            signature = user.full_name.strip()
+            st.text_input(
+                "Engineer Full Name", value=signature,
+                key=f"engineer_sig_{rec.id}", disabled=True,
+            )
             comment = st.text_area("Approval comment", key=f"approval_comment_{rec.id}",
                                    placeholder="Optional for approval; required for decline")
             a, b = st.columns(2)
             if a.button("✅ Accept & Sign", key=f"approve_{rec.id}", type="primary", use_container_width=True):
-                if not signature.strip():
-                    st.error("Enter your electronic signature first.")
-                else:
-                    rec.approval_status = "Approved"
-                    rec.approved_by = user.id
-                    rec.approved_at = datetime.utcnow()
-                    rec.approval_signature = signature.strip()
-                    rec.approval_comment = comment.strip()
-                    db.commit()
-                    st.success("Inspection approved and electronically signed.")
-                    st.rerun()
+                rec.approval_status = "Approved"
+                rec.approved_by = user.id
+                rec.approved_at = datetime.utcnow()
+                rec.approval_signature = signature
+                rec.approval_comment = comment.strip()
+                db.commit()
+                st.success("Inspection approved and electronically signed.")
+                st.rerun()
             if b.button("🔴 Decline", key=f"decline_{rec.id}", use_container_width=True):
-                if not signature.strip():
-                    st.error("Enter your electronic signature first.")
-                elif not comment.strip():
+                if not comment.strip():
                     st.error("Add a reason when declining an inspection.")
                 else:
                     rec.approval_status = "Declined"
                     rec.approved_by = user.id
                     rec.approved_at = datetime.utcnow()
-                    rec.approval_signature = signature.strip()
+                    rec.approval_signature = signature
                     rec.approval_comment = comment.strip()
                     db.commit()
                     st.warning("Inspection declined and returned for correction.")
@@ -4957,7 +5049,7 @@ def admin_page(db):
     pending_records=db.query(MaintenanceRecord).filter(MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),MaintenanceRecord.approval_status=="Pending").count()
     c1,c2,c3=st.columns(3); c1.metric("Users",db.query(User).count()); c2.metric("Plants",db.query(Plant).count()); c3.metric("Inspection approvals",pending_records)
     st.markdown("### 👥 User access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
-    st.markdown("### ✅ Maintenance sign-off"); st.write("Engineers and administrators can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
+    st.markdown("### ✅ Maintenance sign-off"); st.write("Only engineers can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
     st.markdown("### Management Reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
 
 
