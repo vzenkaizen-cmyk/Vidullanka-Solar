@@ -4901,12 +4901,17 @@ def reports_page(db,user,plant):
         f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
 
 def approvals_page(db, user, plant):
-    if user.role != "engineer":
-        st.error("Only engineers are authorised to approve or decline maintenance inspections.")
+    # Administrators may view the complete approval page, but only engineers
+    # are permitted to approve, decline, or electronically sign inspections.
+    if user.role not in ("admin", "engineer"):
+        st.error("You are not authorised to access Approvals & Sign-off.")
         return
     header(plant)
     st.title("✅ Approvals & Sign-off")
-    st.caption("Choose an inspection date and tab. Checklist summaries show the supervisor's recorded results for engineer review.")
+    if user.role == "admin":
+        st.caption("Administrator view: you can review pending and completed inspection records. Only engineers can accept, decline, or electronically sign inspections.")
+    else:
+        st.caption("Choose an inspection date and tab. Checklist summaries show the supervisor's recorded results for engineer review.")
 
     base_filter = [
         MaintenanceRecord.plant_id == plant.id,
@@ -5013,35 +5018,38 @@ def approvals_page(db, user, plant):
             st.markdown(f"### {rec.category} • {rec.asset_id}")
             st.write(f"**Inspection date:** {rec.task_date:%d %b %Y} • **Submitted by:** {workers.get(rec.worker_id, 'Unassigned')} • **Status:** {rec.status}")
             render_checklist_summary(rec)
-            signature = user.full_name.strip()
-            st.text_input(
-                "Engineer Full Name", value=signature,
-                key=f"engineer_sig_{rec.id}", disabled=True,
-            )
-            comment = st.text_area("Approval comment", key=f"approval_comment_{rec.id}",
-                                   placeholder="Optional for approval; required for decline")
-            a, b = st.columns(2)
-            if a.button("✅ Accept & Sign", key=f"approve_{rec.id}", type="primary", use_container_width=True):
-                rec.approval_status = "Approved"
-                rec.approved_by = user.id
-                rec.approved_at = datetime.utcnow()
-                rec.approval_signature = signature
-                rec.approval_comment = comment.strip()
-                db.commit()
-                st.success("Inspection approved and electronically signed.")
-                st.rerun()
-            if b.button("🔴 Decline", key=f"decline_{rec.id}", use_container_width=True):
-                if not comment.strip():
-                    st.error("Add a reason when declining an inspection.")
-                else:
-                    rec.approval_status = "Declined"
+            if user.role == "engineer":
+                signature = user.full_name.strip()
+                st.text_input(
+                    "Engineer Full Name", value=signature,
+                    key=f"engineer_sig_{rec.id}", disabled=True,
+                )
+                comment = st.text_area("Approval comment", key=f"approval_comment_{rec.id}",
+                                       placeholder="Optional for approval; required for decline")
+                a, b = st.columns(2)
+                if a.button("✅ Accept & Sign", key=f"approve_{rec.id}", type="primary", use_container_width=True):
+                    rec.approval_status = "Approved"
                     rec.approved_by = user.id
                     rec.approved_at = datetime.utcnow()
                     rec.approval_signature = signature
                     rec.approval_comment = comment.strip()
                     db.commit()
-                    st.warning("Inspection declined and returned for correction.")
+                    st.success("Inspection approved and electronically signed.")
                     st.rerun()
+                if b.button("🔴 Decline", key=f"decline_{rec.id}", use_container_width=True):
+                    if not comment.strip():
+                        st.error("Add a reason when declining an inspection.")
+                    else:
+                        rec.approval_status = "Declined"
+                        rec.approved_by = user.id
+                        rec.approved_at = datetime.utcnow()
+                        rec.approval_signature = signature
+                        rec.approval_comment = comment.strip()
+                        db.commit()
+                        st.warning("Inspection declined and returned for correction.")
+                        st.rerun()
+            else:
+                st.info("View-only for administrators. An authorised engineer must accept or decline this inspection.")
 
     if selected in ("Daily Inspection", "Inverter Inspection"):
         # Show inverter-based inspection records as individual tabs, matching the
@@ -5087,7 +5095,7 @@ def admin_page(db):
     pending_records=db.query(MaintenanceRecord).filter(MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),MaintenanceRecord.approval_status=="Pending").count()
     c1,c2,c3=st.columns(3); c1.metric("Users",db.query(User).count()); c2.metric("Plants",db.query(Plant).count()); c3.metric("Inspection approvals",pending_records)
     st.markdown("### 👥 User access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
-    st.markdown("### ✅ Maintenance sign-off"); st.write("Only engineers can review inspections, approve or decline them, and record an electronic signature from **Approvals & Sign-off**.")
+    st.markdown("### ✅ Maintenance sign-off"); st.write("Administrators can view pending and reviewed inspections in **Approvals & Sign-off**. Only engineers can approve or decline inspections and record an electronic signature.")
     st.markdown("### Management Reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
 
 
