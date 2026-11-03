@@ -5018,14 +5018,18 @@ def approvals_page(db, user, plant):
             st.markdown(f"### {rec.category} • {rec.asset_id}")
             st.write(f"**Inspection date:** {rec.task_date:%d %b %Y} • **Submitted by:** {workers.get(rec.worker_id, 'Unassigned')} • **Status:** {rec.status}")
             render_checklist_summary(rec)
+
             if user.role == "engineer":
                 signature = user.full_name.strip()
                 st.text_input(
                     "Engineer Full Name", value=signature,
                     key=f"engineer_sig_{rec.id}", disabled=True,
                 )
-                comment = st.text_area("Approval comment", key=f"approval_comment_{rec.id}",
-                                       placeholder="Optional for approval; required for decline")
+                comment = st.text_area(
+                    "Approval comment",
+                    key=f"approval_comment_{rec.id}",
+                    placeholder="Optional for approval; required for decline",
+                )
                 a, b = st.columns(2)
                 if a.button("✅ Accept & Sign", key=f"approve_{rec.id}", type="primary", use_container_width=True):
                     rec.approval_status = "Approved"
@@ -5049,6 +5053,19 @@ def approvals_page(db, user, plant):
                         st.warning("Inspection declined and returned for correction.")
                         st.rerun()
             else:
+                st.text_input(
+                    "Engineer Full Name",
+                    value=rec.approval_signature or "Awaiting engineer review",
+                    key=f"admin_engineer_sig_{rec.id}",
+                    disabled=True,
+                )
+                st.text_area(
+                    "Approval comment",
+                    value=rec.approval_comment or "",
+                    key=f"admin_approval_comment_{rec.id}",
+                    placeholder="No comment submitted yet",
+                    disabled=True,
+                )
                 st.info("View-only for administrators. An authorised engineer must accept or decline this inspection.")
 
     if selected in ("Daily Inspection", "Inverter Inspection"):
