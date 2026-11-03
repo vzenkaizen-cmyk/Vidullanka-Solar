@@ -1982,7 +1982,7 @@ def top_nav(db, user):
         pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
     if user.role in ("admin", "engineer"):
         pages += ["📊 Reports", "⏰ Reminders"]
-    if user.role == "engineer":
+    if user.role in ("admin", "engineer"):
         pages += ["✅ Approvals & Sign-off"]
     if user.role == "engineer":
         pages += ["👥 Users"]
@@ -2528,15 +2528,15 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         # Z3-Z6 occupy the centre bank; Z7-Z10 occupy the left bank.
         zone_rects = [
             (.750, .105, .992, .438),  # Z1: far right
-            (.515, .145, .750, .438),  # Z2: upper centre-right
-            (.275, .700, .515, .850),  # Z3: centre bottom
-            (.275, .515, .515, .700),  # Z4: centre lower-middle
-            (.275, .340, .515, .515),  # Z5: centre upper-middle
-            (.275, .155, .515, .340),  # Z6: centre top
-            (.020, .720, .260, .890),  # Z7: left bottom
-            (.020, .535, .260, .720),  # Z8: left lower-middle
-            (.020, .355, .260, .535),  # Z9: left upper-middle
-            (.020, .195, .260, .355),  # Z10: left top
+            (.515, .145, .750, .438),  # Z2: immediately left of Z1
+            (.275, .155, .515, .340),  # Z3: centre bank - top
+            (.275, .340, .515, .515),  # Z4: centre bank - second
+            (.275, .515, .515, .700),  # Z5: centre bank - third
+            (.275, .700, .515, .850),  # Z6: centre bank - bottom
+            (.020, .720, .260, .890),  # Z7: left bank - bottom
+            (.020, .535, .260, .720),  # Z8: left bank - third
+            (.020, .355, .260, .535),  # Z9: left bank - second
+            (.020, .195, .260, .355),  # Z10: left bank - top
         ]
         zone_blocks = [
             ((l * img_width, t * img_height), (r * img_width, t * img_height),
@@ -3149,7 +3149,45 @@ def overview_page(db, user, plant):
             history_data["Grass Cutting"][i] += 1
         else:
             history_data["Inspections"][i] += 1
-    st.bar_chart(pd.DataFrame(history_data).set_index("Month"))
+    # Use an explicit categorical order so the x-axis always runs
+    # January, February, March ... December (never alphabetical).
+    import plotly.graph_objects as go
+
+    history_fig = go.Figure()
+    history_fig.add_trace(go.Bar(
+        name="Grass Cutting",
+        x=history_months,
+        y=history_data["Grass Cutting"],
+        marker_color="#0875d1",
+    ))
+    history_fig.add_trace(go.Bar(
+        name="Inspections",
+        x=history_months,
+        y=history_data["Inspections"],
+        marker_color="#83c8f5",
+    ))
+    history_fig.add_trace(go.Bar(
+        name="Panel Cleaning",
+        x=history_months,
+        y=history_data["Panel Cleaning"],
+        marker_color="#ff3038",
+    ))
+    history_fig.update_layout(
+        barmode="stack",
+        height=390,
+        margin=dict(l=0, r=0, t=10, b=0),
+        legend=dict(orientation="h", yanchor="top", y=-0.22, x=0),
+        xaxis=dict(
+            categoryorder="array",
+            categoryarray=history_months,
+            tickangle=-90,
+            title=None,
+        ),
+        yaxis=dict(title=None, rangemode="tozero"),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(history_fig, use_container_width=True, config={"displayModeBar": False})
 
     # Recent Maintenance Activity intentionally removed from Overview.
     st.divider()
