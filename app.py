@@ -610,16 +610,16 @@ def seed_database():
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
-                             inverter_count=10, table_count=80, zone_count=10, active=True))
+                             inverter_count=10, table_count=79, zone_count=10, active=True))
         db.flush()
-        # ORK has 52 solar tables. Keep the displayed count and generated table IDs aligned.
+        # Keep the requested site-wide total aligned across every active plant.
         ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
-        if ork_plant and ork_plant.table_count != 52:
-            ork_plant.table_count = 52
+        if ork_plant:
+            ork_plant.table_count = 79
         dpv_plant = db.query(Plant).filter(Plant.code == "DPV").first()
         if dpv_plant:
-            dpv_plant.zone_count = 15
-            dpv_plant.table_count = 366
+            dpv_plant.zone_count = 10
+            dpv_plant.table_count = 79
         db.commit()
 
         # HRN has been renamed to HS1 in the application. If an older Neon database
@@ -648,8 +648,8 @@ def seed_database():
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
-            # HRN1 has exactly 80 solar table traces.
-            hs1_plant.table_count = 80
+            # All active sites use 79 tables and 10 zones.
+            hs1_plant.table_count = 79
             hs1_plant.zone_count = 10
 
         # Remove legacy/duplicate plants from the selector without deleting their
@@ -677,9 +677,9 @@ def seed_database():
         if mtr:
             mtr.name = "MTR Solar Power Plant"
             mtr.active = True
-            # The supplied MTR layout contains 102 table rows/cells in total.
-            if mtr.table_count != 102:
-                mtr.table_count = 102
+            # MTR follows the same requested total as every other active site.
+            mtr.table_count = 79
+            mtr.zone_count = 10
 
         for legacy_code in ("HOF", "MTR-II"):
             legacy = db.query(Plant).filter(Plant.code == legacy_code).first()
@@ -744,6 +744,12 @@ def seed_database():
                 existing.role = "supervisor"
                 existing.plant_id = _plant_id_for_code(db, plant_code)
                 existing.approved = True
+
+        # Apply the same totals to every active plant, including existing rows
+        # already stored in Neon. This keeps both donut charts consistent by site.
+        for configured_plant in db.query(Plant).filter(Plant.active == True).all():
+            configured_plant.table_count = 79
+            configured_plant.zone_count = 10
 
         db.commit()
         st.session_state["_database_seeded"] = True
