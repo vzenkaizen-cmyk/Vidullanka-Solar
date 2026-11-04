@@ -3358,10 +3358,10 @@ def overview_page(db, user, plant):
 
 MTR_EMPLOYEES = [
     "Sudheera — Assistant Supervisor",
-    "Viraj Samarasinghe",
-    "Alaththuge Gunarathne",
-    "Saman Kumara",
-    "Chiwantha Dahanayake",
+    "Viraj",
+    "Gunarathne",
+    "Saman",
+    "Chiwantha",
     "Minidu",
 ]
 
