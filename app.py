@@ -3128,14 +3128,14 @@ def plant_summary_page(db, user):
         mtr_name_aliases = {
             "sudheera": "Sudheera — Assistant Supervisor",
             "sudheera — assistant supervisor": "Sudheera — Assistant Supervisor",
-            "viraj": "Viraj Samarasinghe",
-            "viraj samarasinghe": "Viraj Samarasinghe",
-            "gunarathne": "Alaththuge Gunarathne",
-            "alaththuge gunarathne": "Alaththuge Gunarathne",
-            "saman": "Saman Kumara",
-            "saman kumara": "Saman Kumara",
-            "chiwantha": "Chiwantha Dahanayake",
-            "chiwantha dahanayake": "Chiwantha Dahanayake",
+            "viraj": "Viraj ",
+            "viraj samarasinghe": "Viraj ",
+            "gunarathne": "Gunarathne",
+            "alaththuge gunarathne": "Gunarathne",
+            "saman": "Saman ",
+            "saman kumara": "Saman",
+            "chiwantha": "Chiwantha ",
+            "chiwantha dahanayake": "Chiwantha ",
             "minidu": "Minidu",
         }
         for rec in selected_records:
