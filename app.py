@@ -648,8 +648,8 @@ def seed_database():
             hs1_plant.name = "HRN 1 Solar Power Plant"
             if hs1_plant.capacity_mw in (None, 0):
                 hs1_plant.capacity_mw = 2
-            # All active sites use 79 tables and 10 zones.
-            hs1_plant.table_count = 79
+            # HRN 1 has 80 tables and 10 zones.
+            hs1_plant.table_count = 80
             hs1_plant.zone_count = 10
 
         # Remove legacy/duplicate plants from the selector without deleting their
@@ -745,10 +745,9 @@ def seed_database():
                 existing.plant_id = _plant_id_for_code(db, plant_code)
                 existing.approved = True
 
-        # Apply the same totals to every active plant, including existing rows
-        # already stored in Neon. This keeps both donut charts consistent by site.
+        # Keep site totals aligned, while preserving HRN 1's specific 80-table layout.
         for configured_plant in db.query(Plant).filter(Plant.active == True).all():
-            configured_plant.table_count = 79
+            configured_plant.table_count = 80 if configured_plant.code == "HS1" else 79
             configured_plant.zone_count = 10
 
         db.commit()
@@ -5165,19 +5164,45 @@ def reports_page(db,user,plant):
     pcol,gcol=st.columns(2)
     with pcol:
         st.markdown("**Panel cleaning status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed tables"],"Count":[panel_done,panel_left]}),
-                   names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed tables":"#e5484d"})
-        pie.update_traces(textinfo="label+value+percent")
+        pie=px.pie(
+            pd.DataFrame({
+                "Status":["Completed","Yet to be completed tables"],
+                "Count":[panel_done,panel_left],
+                "Label":["Completed","Yet to be completed<br>tables"],
+            }),
+            names="Status",values="Count",hole=.38,
+            color="Status",
+            color_discrete_map={"Completed":"#16a66a","Yet to be completed tables":"#e5484d"},
+            custom_data=["Label"],
+        )
+        pie.update_traces(
+            texttemplate="%{customdata[0]}<br>%{value}<br>%{percent}",
+            textposition="inside",
+            insidetextorientation="horizontal",
+            textfont_size=11,
+        )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} tables remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed zones"],"Count":[grass_done,grass_left]}),
-                   names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed zones":"#e5484d"})
-        pie.update_traces(textinfo="label+value+percent")
+        pie=px.pie(
+            pd.DataFrame({
+                "Status":["Completed","Yet to be completed zones"],
+                "Count":[grass_done,grass_left],
+                "Label":["Completed","Yet to be completed<br>zones"],
+            }),
+            names="Status",values="Count",hole=.38,
+            color="Status",
+            color_discrete_map={"Completed":"#16a66a","Yet to be completed zones":"#e5484d"},
+            custom_data=["Label"],
+        )
+        pie.update_traces(
+            texttemplate="%{customdata[0]}<br>%{value}<br>%{percent}",
+            textposition="inside",
+            insidetextorientation="horizontal",
+            textfont_size=11,
+        )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} zones remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
