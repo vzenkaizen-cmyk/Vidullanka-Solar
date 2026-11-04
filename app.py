@@ -610,7 +610,7 @@ def seed_database():
         for site_code, site_name in configured_sites:
             if not db.query(Plant).filter(Plant.code == site_code).first():
                 db.add(Plant(code=site_code, name=site_name, capacity_mw=0,
-                             inverter_count=10, table_count=79, zone_count=10, active=True))
+                             inverter_count=10, table_count=80, zone_count=10, active=True))
         db.flush()
         # Keep the requested site-wide total aligned across every active plant.
         ork_plant = db.query(Plant).filter(Plant.code == "ORK").first()
