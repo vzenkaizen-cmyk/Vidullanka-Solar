@@ -3358,7 +3358,7 @@ def worker_options_for_plant(plant, db, first_names_only=False):
                       .filter(PlantOperationsProfile.plant_id == plant.id).first())
         supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
         supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
-        values = [supervisor_label, "Worker 1", "Worker 2"]
+        values = [supervisor_label, "Worker 2"]
 
     # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
     values = [v.strip() for v in values if v and v.strip().upper() != "R"]
@@ -4269,7 +4269,7 @@ def activity_page(db, user, plant):
 # ============================================================
 
 def users_page(db, user, selected_plant=None):
-    st.title("👥 User Management")
+    st.title("User Management")
     st.caption("Manage user accounts, site staffing and operating contacts from one place.")
 
     user_tab, staff_tab = st.tabs(["👥 User Accounts", "👷 Operating Staff & Site Contacts"])
@@ -4482,7 +4482,7 @@ def plants_page(db):
 # ============================================================
 
 def reminders_page(db):
-    st.title("⏰ Automatic Maintenance Reminders")
+    st.title("Automatic Maintenance Reminders")
 
     plants = db.query(Plant).filter(Plant.active == True).all()
     plants = sorted(
@@ -5085,7 +5085,7 @@ def approvals_page(db, user, plant):
         st.error("You are not authorised to access Approvals & Sign-off.")
         return
     header(plant)
-    st.title("✅ Approvals & Sign-off")
+    st.title("Approvals and Sign-off")
     if user.role == "admin":
         st.caption("Administrator view: you can review pending and completed inspection records. Only engineers can accept, decline, or electronically sign inspections.")
     else:
@@ -5147,7 +5147,7 @@ def approvals_page(db, user, plant):
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     category_pending = [rec for rec in pending if rec.category == selected]
     category_reviewed = [rec for rec in reviewed if rec.category == selected]
-    st.subheader(f"🔎 {tab_labels[selected]} — {filter_date:%d %b %Y}")
+    st.subheader(f"{tab_labels[selected]} — {filter_date:%d %b %Y}")
 
     def render_checklist_summary(rec):
         details = parse_details(rec)
@@ -5167,9 +5167,9 @@ def approvals_page(db, user, plant):
 
         # Separate the equipment and safety groups so engineers can scan each table quickly.
         if rec.category == "Daily Inspection":
-            st.markdown("**🔌 Inverter Checks**")
+            st.markdown("**Inverter Checks**")
             st.dataframe(pd.DataFrame(rows[:3]), hide_index=True, use_container_width=True)
-            st.markdown("**🛡️ Safety Checks**")
+            st.markdown("**Safety Checks**")
             st.dataframe(pd.DataFrame(rows[3:]), hide_index=True, use_container_width=True)
         elif rec.category == "AC Inspection":
             outdoor_rows = [row for row in rows if any(
@@ -5184,9 +5184,9 @@ def approvals_page(db, user, plant):
                 row["Checklist item"] = row["Checklist item"].replace("Outdoor -", "", 1).strip()
             for row in indoor_rows:
                 row["Checklist item"] = row["Checklist item"].replace("Indoor -", "", 1).strip()
-            st.markdown("**🌤️ Outdoor Unit Checks**")
+            st.markdown("**Outdoor Unit Checks**")
             st.dataframe(pd.DataFrame(outdoor_rows), hide_index=True, use_container_width=True)
-            st.markdown("**❄️ Indoor Unit Checks**")
+            st.markdown("**Indoor Unit Checks**")
             st.dataframe(pd.DataFrame(indoor_rows), hide_index=True, use_container_width=True)
         else:
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
@@ -5268,7 +5268,7 @@ def approvals_page(db, user, plant):
     else:
         st.success(f"No {selected.lower()} inspections are waiting for approval on {filter_date:%d %b %Y}.")
 
-    st.markdown(f"### ✏️ Reviewed {tab_labels[selected]}")
+    st.markdown(f"### Reviewed {tab_labels[selected]}")
     if not category_reviewed:
         st.caption("No approved or declined inspection records for this inspection type and date yet.")
     else:
