@@ -5138,6 +5138,12 @@ def reports_page(db,user,plant):
     ).count()
     import plotly.express as px
     pc, panel_done, panel_total = panel_cleaning_percent(db,plant.id,end)
+    # HRN 1 always has 80 tables; use this total in the report even if an
+    # older database record still contains 79.
+    plant_identity = f"{plant.code} {plant.name}".upper().replace(" ", "")
+    if "HS1" in plant_identity or "HRN1" in plant_identity:
+        panel_total = 80
+        pc = round(panel_done / panel_total * 100, 1)
     gc, grass_done, grass_total = grass_cutting_percent(db,plant.id,end)
     c1,c2,c3,c4,c5,c6,c7=st.columns(7)
     c1.metric("Activities",total)
