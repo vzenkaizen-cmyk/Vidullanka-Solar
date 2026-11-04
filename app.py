@@ -3123,14 +3123,39 @@ def plant_summary_page(db, user):
 
     def worker_totals(selected_records, use_record_user=False):
         totals = {}
+        # Normalize legacy MTR entries to the same names shown in the
+        # Panel Cleaning and Grass Cutting worker dropdowns.
+        mtr_name_aliases = {
+            "sudheera": "Sudheera — Assistant Supervisor",
+            "sudheera — assistant supervisor": "Sudheera — Assistant Supervisor",
+            "viraj": "Viraj Samarasinghe",
+            "viraj samarasinghe": "Viraj Samarasinghe",
+            "gunarathne": "Alaththuge Gunarathne",
+            "alaththuge gunarathne": "Alaththuge Gunarathne",
+            "saman": "Saman Kumara",
+            "saman kumara": "Saman Kumara",
+            "chiwantha": "Chiwantha Dahanayake",
+            "chiwantha dahanayake": "Chiwantha Dahanayake",
+            "minidu": "Minidu",
+        }
         for rec in selected_records:
-            plant_name = display_plant_name(plant_by_id[rec.plant_id])
+            plant = plant_by_id[rec.plant_id]
+            plant_name = display_plant_name(plant)
             if use_record_user:
                 names = [users.get(rec.worker_id, "Unassigned")]
             else:
                 names = [n.strip() for n in (rec.remarks or "").split(",") if n.strip()]
+
             for name in set(names):
-                key = (name, plant_name)
+                clean_name = " ".join(str(name).split()).strip()
+                # Exclude legacy placeholder entries from every site's productivity tables.
+                if clean_name.casefold() in {"worker 1", "worker 2"}:
+                    continue
+
+                if (plant.code or "").strip().upper() == "MTR":
+                    clean_name = mtr_name_aliases.get(clean_name.casefold(), clean_name)
+
+                key = (clean_name, plant_name)
                 totals[key] = totals.get(key, 0) + 1
         return sorted(totals.items(), key=lambda item: (-item[1], item[0][0].casefold(), item[0][1].casefold()))
 
@@ -3332,11 +3357,11 @@ def overview_page(db, user, plant):
 
 
 MTR_EMPLOYEES = [
-    "Sudheera  — Assistant Supervisor",
-    "VIraj ",
-    "Gunarathne",
-    "Saman",
-    "Chiwantha",
+    "Sudheera — Assistant Supervisor",
+    "Viraj Samarasinghe",
+    "Alaththuge Gunarathne",
+    "Saman Kumara",
+    "Chiwantha Dahanayake",
     "Minidu",
 ]
 
@@ -3358,12 +3383,16 @@ def worker_options_for_plant(plant, db, first_names_only=False):
                       .filter(PlantOperationsProfile.plant_id == plant.id).first())
         supervisor_name = (supervisor.supervisor_name or "").strip() if supervisor else ""
         supervisor_label = f"{supervisor_name} — Supervisor" if supervisor_name else "Supervisor"
-        values = [supervisor_label, "Worker 2"]
+        values = [supervisor_label]
 
-    # Legacy records occasionally contain a single 'R'; do not offer it as a worker.
-    values = [v.strip() for v in values if v and v.strip().upper() != "R"]
-    # Grass Cutting uses this helper with first_names_only=True. Preserve the
-    # complete supervisor label and numbered worker options in that dropdown.
+    # Legacy records occasionally contain a single 'R' or numbered placeholders;
+    # do not offer these as selectable workers.
+    values = [
+        v.strip() for v in values
+        if v and v.strip().upper() not in {"R", "WORKER 1", "WORKER 2"}
+    ]
+    # Grass Cutting uses this helper with first_names_only=True. Keep the
+    # configured worker names consistent across maintenance dropdowns.
     return list(dict.fromkeys(values))
 
 def panel_cleaning_page(db, user, plant):
