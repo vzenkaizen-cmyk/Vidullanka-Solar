@@ -2080,7 +2080,7 @@ def render_solar_layout(db, plant, task_date):
     html.append('</div>')
     st.markdown(''.join(html), unsafe_allow_html=True)
 
-def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True, map_mode="both", period_status=False):
+def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, show_metrics=True, map_mode="both", period_status=False, status_category=None, include_weeding=False):
     """Show the same satellite photo with status overlays limited to the current page.
 
     map_mode='both' shows panel-cleaning fills and grass-cutting zone borders;
@@ -2103,6 +2103,21 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
 
     if task_date is None:
         task_date = st.date_input("Satellite status date", value=date.today(), key=f"satellite_map_date_{plant.id}")
+    panel_category = status_category if map_mode == "panel" and status_category else "Panel Cleaning"
+    grass_category = status_category if map_mode == "grass" and status_category else "Grass Cutting"
+
+    def merged_map_records(primary_category, weeding_category, asset_type):
+        primary = _map_status_map(db, plant.id, primary_category, task_date, use_period=period_status)
+        if not include_weeding:
+            return primary
+        weeding = _map_status_map(db, plant.id, weeding_category, task_date, use_period=period_status)
+        merged = dict(primary)
+        for asset, record in weeding.items():
+            existing = merged.get(asset)
+            if record.status == "Completed" or existing is None:
+                merged[asset] = record
+        return merged
+
     # Plant-specific satellite photos. The same selected photo is used on
     # Overview, Panel Cleaning, and Grass Cutting; other plants retain HR1.jpeg.
     plant_code = str(getattr(plant, "code", "") or "").strip().upper()
@@ -2200,7 +2215,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         ))
         if dpv_reference:
             # DPV: show 15 zones on grass map and table-status markers on panel map.
-            grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
+            grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
             zone_assets = asset_list(plant, "Zone")
             # Keep every DPV grass-zone marker inside the visible solar-array
             # footprint (not on the access road or the buildings at the right).
@@ -2244,7 +2259,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # apply a translucent green overlay only to completed panel areas.
                 # Pending panels remain the untouched satellite image; no red grid
                 # or artificial table-layout is drawn over the photograph.
-                panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=period_status)
+                panel_records = merged_map_records(panel_category, "Weeding Panel Cleaning", "Table")
                 table_assets = asset_list(plant, "Table")
                 # DPV satellite coordinates traced to the actual blue panel banks.
                 # Each rectangle stays within a solar-panel surface and excludes
@@ -2299,7 +2314,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
-            grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
+            grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
             zone_assets = asset_list(plant, "Zone")
             # Circle positions are aligned to the corresponding coloured zone,
             # rather than the old positions which placed several labels in the
@@ -2350,9 +2365,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         return
 
     assets = asset_list(plant, "Table")
-    panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=period_status)
+    panel_records = merged_map_records(panel_category, "Weeding Panel Cleaning", "Table")
     completed = {a for a, r in panel_records.items() if r.status == "Completed"}
-    grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=period_status)
+    grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
     zone_assets = asset_list(plant, "Zone")
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
     pending_count = max(0, len(assets) - len(completed))
@@ -3039,7 +3054,16 @@ def _render_overview_card(title, icon, pct, done, total, target_text, map_render
 
 def plant_summary_page(db, user):
     """Cross-plant management summary with plant and date filters."""
-    st.title("📊 Plant Performance Summary")
+    st.markdown("""<style>
+    [data-testid="stSidebar"]{display:none!important;}
+    [data-testid="stMainBlockContainer"]{max-width:100%!important;padding-left:2rem!important;padding-right:2rem!important;}
+    </style>""", unsafe_allow_html=True)
+    back_col, _ = st.columns([1, 8])
+    with back_col:
+        if st.button("← Back to Navigation", key="plant_summary_back"):
+            st.session_state.top_navigation_page = "🏠 Overview"
+            st.rerun()
+    st.title("Plant Performance Summary")
     st.caption("Compare panel cleaning, grass cutting and maintenance inspection activity across the available plants.")
 
     plants = allowed_plants(db, user)
@@ -3112,19 +3136,20 @@ def plant_summary_page(db, user):
 
     st.markdown("### Worker productivity")
     w1, w2, w3 = st.columns(3)
-    for col, label, source, use_user in [
-        (w1, "Most panel cleaning", panel_records, False),
-        (w2, "Most grass cutting", grass_records, False),
-        (w3, "Most inspection checklists", checklist_completed, True),
-    ]:
+    productivity_sections = [
+        (w1, "Panels completed by worker", panel_records, False, "Panels Completed"),
+        (w2, "Grass-cutting zones completed by worker", grass_records, False, "Zones Completed"),
+        (w3, "Inspection checklists completed by worker", checklist_completed, True, "Checklists Completed"),
+    ]
+    for col, label, source, use_user, count_label in productivity_sections:
         with col:
             st.markdown(f"**{label}**")
             ranking = worker_totals(source, use_user)
             if ranking:
-                ranking_rows = [{"Worker": key[0], "Plant": key[1], "Completed": count}
+                ranking_rows = [{"Worker": key[0], "Plant": key[1], count_label: count}
                                 for key, count in ranking[:10]]
                 st.dataframe(pd.DataFrame(ranking_rows), hide_index=True, use_container_width=True)
-                st.caption(f"Top performer: {ranking[0][0][0]} at {ranking[0][0][1]} ({ranking[0][1]} completed)")
+                st.caption(f"Top performer: {ranking[0][0][0]} at {ranking[0][0][1]} ({ranking[0][1]} {count_label.lower()})")
             else:
                 st.info("No completed records in this date range.")
 
@@ -3161,7 +3186,17 @@ def overview_page(db, user, plant):
     # Use each asset's latest saved record within the selected month, not only
     # a record saved on the month's final day.
     panel_records = status_map_for_period(db, plant.id, "Panel Cleaning", start_date, end_date)
+    panel_weeding_records = status_map_for_period(db, plant.id, "Weeding Panel Cleaning", start_date, end_date)
     grass_records = status_map_for_period(db, plant.id, "Grass Cutting", start_date, end_date)
+    grass_weeding_records = status_map_for_period(db, plant.id, "Weeding Grass Cutting", start_date, end_date)
+    panel_records = dict(panel_records)
+    for asset, rec in panel_weeding_records.items():
+        if rec.status == "Completed" or asset not in panel_records:
+            panel_records[asset] = rec
+    grass_records = dict(grass_records)
+    for asset, rec in grass_weeding_records.items():
+        if rec.status == "Completed" or asset not in grass_records:
+            grass_records[asset] = rec
     panel_total = plant.table_count
     grass_total = plant.zone_count
     panel_done = sum(1 for r in panel_records.values() if r.status == "Completed")
@@ -3190,7 +3225,7 @@ def overview_page(db, user, plant):
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             _overview_target_label(metrics["panel_done"], metrics["panel_total"], maintenance_target_days(plant, "Panel Cleaning"), "cycle")
         )
-        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True)
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
     with grass_col:
@@ -3198,7 +3233,7 @@ def overview_page(db, user, plant):
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             _overview_target_label(metrics["grass_done"], metrics["grass_total"], maintenance_target_days(plant, "Grass Cutting"), "cycle")
         )
-        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True)
+        satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
@@ -3397,6 +3432,12 @@ def weeding_task_page(db, user, plant, category, asset_type, title, icon):
     st.markdown(f"## {icon} {title}")
     st.caption("Record weeding work separately from the regular maintenance activity.")
     task_date = _period_picker(plant, category)
+    map_mode = "panel" if asset_type == "Table" else "grass"
+    satellite_table_map_page(
+        db, user, plant, embedded=True, task_date=task_date,
+        show_metrics=False, map_mode=map_mode, period_status=True,
+        status_category=category,
+    )
     records = _map_status_map(db, plant.id, category, task_date, use_period=True)
     assets = asset_list(plant, asset_type)
     completed = sum(1 for rec in records.values() if rec.status == "Completed")
@@ -4978,37 +5019,22 @@ def reports_page(db,user,plant):
     pcol,gcol=st.columns(2)
     with pcol:
         st.markdown("**Panel cleaning status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[panel_done,panel_left]}),
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed"],"Count":[panel_done,panel_left]}),
                    names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed":"#e5484d"})
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Left"],"Count":[grass_done,grass_left]}),
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed"],"Count":[grass_done,grass_left]}),
                    names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Left":"#e5484d"})
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed":"#e5484d"})
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
-
-    st.markdown("### Overall Maintenance Summary")
-    left,right=st.columns(2)
-    if total:
-        with left:
-            d=df["Status"].value_counts().rename_axis("Status").reset_index(name="Count")
-            fig=px.bar(d,x="Status",y="Count",title="Maintenance status",text="Count",
-                       color="Status",color_discrete_map={"Completed":"#16a66a","Failed":"#e5484d","Pending":"#e5484d"})
-            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
-            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
-        with right:
-            d=df["Category"].value_counts().rename_axis("Category").reset_index(name="Count")
-            fig=px.bar(d,x="Count",y="Category",orientation="h",title="Activities by category",text="Count")
-            fig.update_layout(margin=dict(l=10,r=10,t=50,b=10),height=320)
-            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
 
     st.markdown("### Overall Activity Report")
     if total:
@@ -5260,11 +5286,11 @@ def approvals_page(db, user, plant):
 # Admin settings
 
 def admin_page(db):
-    st.title("⚙️ Administration")
+    st.title("Administration")
     pending_records=db.query(MaintenanceRecord).filter(MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),MaintenanceRecord.approval_status=="Pending").count()
     c1,c2,c3=st.columns(3); c1.metric("Users",db.query(User).count()); c2.metric("Plants",db.query(Plant).count()); c3.metric("Inspection approvals",pending_records)
-    st.markdown("### 👥 User access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
-    st.markdown("### ✅ Maintenance sign-off"); st.write("Administrators can view pending and reviewed inspections in **Approvals & Sign-off**. Only engineers can approve or decline inspections and record an electronic signature.")
+    st.markdown("### User Access"); st.write("Accounts are created active and can sign in immediately. Use **Users** to assign plants, change roles, or deactivate accounts.")
+    st.markdown("### Maintenance Sign-off"); st.write("Administrators can view pending and reviewed inspections in **Approvals & Sign-off**. Only engineers can approve or decline inspections and record an electronic signature.")
     st.markdown("### Management Reports"); st.write("Engineers and Administrators can use **Reports** for graphical completion percentages, inspection status, loss & repair summaries, Excel export and PDF management reports.")
 
 
