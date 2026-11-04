@@ -5165,18 +5165,18 @@ def reports_page(db,user,plant):
     pcol,gcol=st.columns(2)
     with pcol:
         st.markdown("**Panel cleaning status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed"],"Count":[panel_done,panel_left]}),
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed tables"],"Count":[panel_done,panel_left]}),
                    names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed":"#e5484d"})
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed tables":"#e5484d"})
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
         st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} tables remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
-        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed"],"Count":[grass_done,grass_left]}),
+        pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed zones"],"Count":[grass_done,grass_left]}),
                    names="Status",values="Count",hole=.38,
-                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed":"#e5484d"})
+                   color="Status",color_discrete_map={"Completed":"#16a66a","Yet to be completed zones":"#e5484d"})
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
