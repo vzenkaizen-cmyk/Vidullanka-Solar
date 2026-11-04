@@ -1978,7 +1978,6 @@ def top_nav(db, user):
         "📊 Plant Summary",
         "🏠 Overview",
         "🧹 Panel Cleaning",
-        "🌱 Weeding Panel Cleaning",
         "🌿 Grass Cutting",
         "🌾 Weeding Grass Cutting",
         "🔧 Maintenance Inspections",
@@ -3053,10 +3052,13 @@ def _render_overview_card(title, icon, pct, done, total, target_text, map_render
 
 
 def plant_summary_page(db, user):
-    """Cross-plant management summary with plant and date filters."""
+    """Cross-plant management summary with graphical plant and worker performance."""
     st.markdown("""<style>
     [data-testid="stSidebar"]{display:none!important;}
     [data-testid="stMainBlockContainer"]{max-width:100%!important;padding-left:2rem!important;padding-right:2rem!important;}
+    .summary-top-worker{background:linear-gradient(120deg,#fff5d6,#fffaf0);border:1px solid #f0d98b;
+        border-radius:14px;padding:15px 18px;margin:8px 0 14px;color:#183153;}
+    .summary-top-worker strong{font-size:23px;color:#092b55;}
     </style>""", unsafe_allow_html=True)
     back_col, _ = st.columns([1, 8])
     with back_col:
@@ -3099,32 +3101,128 @@ def plant_summary_page(db, user):
 
     panel_records = [r for r in records if r.category == "Panel Cleaning" and r.status == "Completed"]
     grass_records = [r for r in records if r.category == "Grass Cutting" and r.status == "Completed"]
-    inspection_records = [r for r in records if r.category in PROCESS_CATEGORIES and r.status in ("Completed", "Failed")]
-    checklist_completed = [r for r in records if r.category in PROCESS_CATEGORIES and r.status == "Completed"]
+    checklist_records = [r for r in records if r.category in PROCESS_CATEGORIES]
+    checklist_completed = [r for r in checklist_records if r.status == "Completed"]
+    checklist_failed = [r for r in checklist_records if r.status == "Failed"]
+    inspection_pending_approvals = [
+        r for r in checklist_records if (r.approval_status or "Pending") == "Pending"
+    ]
+    inspection_approved = [
+        r for r in checklist_records if r.approval_status == "Approved"
+    ]
 
-    k1, k2, k3, k4 = st.columns(4)
+    # Management KPI cards
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Plants included", len(selected_plants))
-    k2.metric("Panel cleaning records", len(panel_records))
-    k3.metric("Grass cutting records", len(grass_records))
-    k4.metric("Inspection checklist records", len(inspection_records))
+    k2.metric("Panel cleaning (tables)", len(panel_records))
+    k3.metric("Grass cutting (zones)", len(grass_records))
+    k4.metric("Inspection checklists completed", len(checklist_completed))
+    k5.metric("Maintenance inspection pending approvals", len(inspection_pending_approvals))
 
+    # Prepare plant-level totals for charts and the detail table.
     rows = []
     for p in selected_plants:
         plant_rows = [r for r in records if r.plant_id == p.id]
         p_done = sum(1 for r in plant_rows if r.category == "Panel Cleaning" and r.status == "Completed")
         g_done = sum(1 for r in plant_rows if r.category == "Grass Cutting" and r.status == "Completed")
         i_done = sum(1 for r in plant_rows if r.category in PROCESS_CATEGORIES and r.status == "Completed")
-        i_failed = sum(1 for r in plant_rows if r.category in PROCESS_CATEGORIES and r.status == "Failed")
-        rows.append({"Plant": display_plant_name(p), "Panel Cleaning": p_done,
-                     "Grass Cutting": g_done, "Inspection Checklists Completed": i_done,
-                     "Inspection Checklists Failed": i_failed})
+        i_pending = sum(1 for r in plant_rows
+                        if r.category in PROCESS_CATEGORIES and (r.approval_status or "Pending") == "Pending")
+        i_approved = sum(1 for r in plant_rows
+                         if r.category in PROCESS_CATEGORIES and r.approval_status == "Approved")
+        rows.append({
+            "Plant": display_plant_name(p),
+            "Panel Cleaning (Tables)": p_done,
+            "Grass Cutting (Zones)": g_done,
+            "Inspection Checklists Completed": i_done,
+            "Maintenance Inspection Pending Approvals": i_pending,
+            "Inspection Checklists Approved": i_approved,
+        })
+    plant_df = pd.DataFrame(rows)
+
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    st.markdown("### Plant-wise maintenance performance")
+    chart_left, chart_middle, chart_right = st.columns(3, gap="medium")
+    with chart_left:
+        st.markdown("**Panel Cleaning (Tables) by Plant**")
+        if not plant_df.empty:
+            fig = px.bar(plant_df.sort_values("Panel Cleaning (Tables)"),
+                         x="Panel Cleaning (Tables)", y="Plant", orientation="h",
+                         text="Panel Cleaning (Tables)", color_discrete_sequence=["#2587df"])
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
+                              xaxis_title="Tables cleaned", yaxis_title="", showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with chart_middle:
+        st.markdown("**Grass Cutting (Zones) by Plant**")
+        if not plant_df.empty:
+            fig = px.bar(plant_df.sort_values("Grass Cutting (Zones)"),
+                         x="Grass Cutting (Zones)", y="Plant", orientation="h",
+                         text="Grass Cutting (Zones)", color_discrete_sequence=["#31b878"])
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
+                              xaxis_title="Zones maintained", yaxis_title="", showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with chart_right:
+        st.markdown("**Inspection Checklist Status by Plant**")
+        if not plant_df.empty:
+            inspection_chart = plant_df[["Plant", "Inspection Checklists Completed",
+                                         "Maintenance Inspection Pending Approvals"]].melt(
+                id_vars="Plant", var_name="Status", value_name="Checklists")
+            inspection_chart["Status"] = inspection_chart["Status"].replace({
+                "Inspection Checklists Completed": "Completed",
+                "Maintenance Inspection Pending Approvals": "Pending Approval",
+            })
+            fig = px.bar(inspection_chart, x="Plant", y="Checklists", color="Status",
+                         barmode="group", text="Checklists",
+                         color_discrete_map={"Completed": "#25ad70", "Pending Approval": "#e5a72e"})
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_layout(height=350, margin=dict(l=5, r=5, t=8, b=5),
+                              xaxis_title="", yaxis_title="Checklists", legend_title_text="")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown("### Maintenance activity distribution")
+    dist_left, dist_right = st.columns(2, gap="medium")
+    with dist_left:
+        st.markdown("**Completed Maintenance Activities**")
+        distribution = pd.DataFrame({
+            "Activity": ["Panel Cleaning (Tables)", "Grass Cutting (Zones)", "Inspection Checklists"],
+            "Completed": [len(panel_records), len(grass_records), len(checklist_completed)]
+        })
+        distribution = distribution[distribution["Completed"] > 0]
+        if not distribution.empty:
+            fig = px.pie(distribution, names="Activity", values="Completed", hole=0.52,
+                         color_discrete_sequence=["#2587df", "#31b878", "#8b5cf6"])
+            fig.update_traces(textinfo="label+value+percent")
+            fig.update_layout(height=330, margin=dict(l=5, r=5, t=8, b=5), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("No completed maintenance activities in this date range.")
+    with dist_right:
+        st.markdown("**Maintenance Inspection Approval Status**")
+        approval_df = pd.DataFrame({
+            "Approval Status": ["Approved", "Pending Approval"],
+            "Count": [len(inspection_approved), len(inspection_pending_approvals)]
+        })
+        approval_df = approval_df[approval_df["Count"] > 0]
+        if not approval_df.empty:
+            fig = px.pie(approval_df, names="Approval Status", values="Count", hole=0.52,
+                         color="Approval Status",
+                         color_discrete_map={"Approved": "#25ad70", "Pending Approval": "#e5a72e"})
+            fig.update_traces(textinfo="label+value+percent")
+            fig.update_layout(height=330, margin=dict(l=5, r=5, t=8, b=5), showlegend=True,
+                              legend_title_text="")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("No inspection checklist approvals in this date range.")
+
     st.markdown("### Plant-wise maintenance activity")
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(plant_df, hide_index=True, use_container_width=True)
 
     def worker_totals(selected_records, use_record_user=False):
         totals = {}
-        # Normalize legacy MTR entries to the same names shown in the
-        # Panel Cleaning and Grass Cutting worker dropdowns.
         mtr_name_aliases = {
             "sudheera": "Sudheera — Assistant Supervisor",
             "sudheera — assistant supervisor": "Sudheera — Assistant Supervisor",
@@ -3145,41 +3243,54 @@ def plant_summary_page(db, user):
                 names = [users.get(rec.worker_id, "Unassigned")]
             else:
                 names = [n.strip() for n in (rec.remarks or "").split(",") if n.strip()]
-
             for name in set(names):
                 clean_name = " ".join(str(name).split()).strip()
-                # Exclude legacy placeholder entries from every site's productivity tables.
-                if clean_name.casefold() in {"worker 1", "worker 2"}:
+                if clean_name.casefold() in {"worker 1", "worker 2", "", "unassigned"}:
                     continue
-
                 if (plant.code or "").strip().upper() == "MTR":
                     clean_name = mtr_name_aliases.get(clean_name.casefold(), clean_name)
-
                 key = (clean_name, plant_name)
                 totals[key] = totals.get(key, 0) + 1
         return sorted(totals.items(), key=lambda item: (-item[1], item[0][0].casefold(), item[0][1].casefold()))
 
-    st.markdown("### Worker productivity")
-    w1, w2, w3 = st.columns(3)
     productivity_sections = [
-        (w1, "Panels completed by worker", panel_records, False, "Panels Completed"),
-        (w2, "Grass-cutting zones completed by worker", grass_records, False, "Zones Completed"),
-        (w3, "Inspection checklists completed by worker", checklist_completed, True, "Checklists Completed"),
+        ("Tables Cleaned", panel_records, False, "Tables Cleaned", "#2587df"),
+        ("Zones Maintained", grass_records, False, "Zones Maintained", "#31b878"),
+        ("Inspection Checklists Completed", checklist_completed, True, "Checklists Completed", "#8b5cf6"),
     ]
-    for col, label, source, use_user, count_label in productivity_sections:
-        with col:
-            st.markdown(f"**{label}**")
-            ranking = worker_totals(source, use_user)
-            if ranking:
-                ranking_rows = [{"Worker": key[0], "Plant": key[1], count_label: count}
-                                for key, count in ranking[:10]]
-                st.dataframe(pd.DataFrame(ranking_rows), hide_index=True, use_container_width=True)
-                st.caption(f"Top performer: {ranking[0][0][0]} at {ranking[0][0][1]} ({ranking[0][1]} {count_label.lower()})")
-            else:
-                st.info("No completed records in this date range.")
+    st.markdown("### Worker Productivity")
+    for section_start in range(0, len(productivity_sections), 3):
+        cols = st.columns(3, gap="medium")
+        for col, (label, source, use_user, count_label, bar_color) in zip(cols, productivity_sections[section_start:section_start+3]):
+            with col:
+                st.markdown(f"**Top Workers — {label}**")
+                ranking = worker_totals(source, use_user)
+                if ranking:
+                    top_name, top_plant = ranking[0][0]
+                    top_count = ranking[0][1]
+                    st.markdown(
+                        f"<div class='summary-top-worker'>"
+                        f"<div>Top Performer</div><strong>{top_name}</strong>"
+                        f"<div>{top_plant}</div><b>{top_count} {count_label}</b></div>",
+                        unsafe_allow_html=True,
+                    )
+                    ranking_df = pd.DataFrame([
+                        {"Worker": key[0], "Plant": key[1], count_label: count}
+                        for key, count in ranking[:10]
+                    ])
+                    fig = px.bar(ranking_df.sort_values(count_label), x=count_label, y="Worker",
+                                 orientation="h", text=count_label,
+                                 color_discrete_sequence=[bar_color])
+                    fig.update_traces(textposition="outside", cliponaxis=False)
+                    fig.update_layout(height=max(280, 42 * len(ranking_df)),
+                                      margin=dict(l=5, r=25, t=8, b=5),
+                                      xaxis_title=count_label, yaxis_title="", showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    st.dataframe(ranking_df, hide_index=True, use_container_width=True)
+                else:
+                    st.info("No completed records in this date range.")
 
     st.caption("Panel cleaning and grass cutting workers are counted from the worker names saved on each completed record. Inspection checklist activity is attributed to the signed-in account that saved the checklist.")
-
 
 def overview_page(db, user, plant):
     header(plant)
@@ -5054,7 +5165,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} tables remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
         pie=px.pie(pd.DataFrame({"Status":["Completed","Yet to be completed"],"Count":[grass_done,grass_left]}),
@@ -5063,7 +5174,7 @@ def reports_page(db,user,plant):
         pie.update_traces(textinfo="label+value+percent")
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} zones remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Activity Report")
     if total:
