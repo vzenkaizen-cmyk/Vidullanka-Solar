@@ -536,6 +536,8 @@ DASHBOARD_CATEGORIES = [
     "All",
     "Panel Cleaning",
     "Grass Cutting",
+    "Weeding Grass Cutting",
+    "Weeding Panel Cleaning",
     *PROCESS_CATEGORIES.keys(),
 ]
 
@@ -1827,6 +1829,7 @@ def login_page():
                         db.commit()
                     st.session_state.user = user
                     st.session_state.selected_plant_id = user.plant_id
+                    st.session_state.top_navigation_page = "📊 Plant Summary"
                     st.rerun()
 
         with tab2:
@@ -1969,19 +1972,24 @@ def top_nav(db, user):
         st.divider()
         st.caption("🟢 System Online")
 
-    if user.role == "supervisor":
-        pages = [
-            "🏠 Overview",
-            "🧹 Panel Cleaning",
-            "🌿 Grass Cutting",
-            "🔧 Maintenance Inspections",
-            "⚠️ Repair & Maintenance",
-            "📋 Activity Log",
-        ]
-    else:
-        pages = ["🏠 Overview", "🧹 Panel Cleaning", "🌿 Grass Cutting", "🔧 Maintenance Inspections", "⚠️ Repair & Maintenance", "📋 Activity Log"]
+    # Plant Summary is the first page after sign-in. The two weeding workflows
+    # are kept separate from the regular cleaning/cutting records.
+    pages = [
+        "📊 Plant Summary",
+        "🏠 Overview",
+        "🧹 Panel Cleaning",
+        "🌱 Weeding Panel Cleaning",
+        "🌿 Grass Cutting",
+        "🌾 Weeding Grass Cutting",
+        "🔧 Maintenance Inspections",
+        "⚠️ Repair & Maintenance",
+    ]
     if user.role in ("admin", "engineer"):
-        pages += ["📊 Reports", "⏰ Reminders"]
+        # Reports takes the former Activity Log position; Activity Log takes
+        # the former Reports position.
+        pages += ["📈 Reports", "📋 Activity Log", "⏰ Reminders"]
+    else:
+        pages += ["📋 Activity Log"]
     if user.role in ("admin", "engineer"):
         pages += ["✅ Approvals & Sign-off"]
     if user.role == "engineer":
@@ -3029,6 +3037,100 @@ def _render_overview_card(title, icon, pct, done, total, target_text, map_render
         map_renderer()
 
 
+def plant_summary_page(db, user):
+    """Cross-plant management summary with plant and date filters."""
+    st.title("📊 Plant Performance Summary")
+    st.caption("Compare panel cleaning, grass cutting and maintenance inspection activity across the available plants.")
+
+    plants = allowed_plants(db, user)
+    plants = sorted(plants, key=lambda p: ("DPV" in f"{p.code} {p.name}".upper(), display_plant_name(p).casefold()))
+    if not plants:
+        st.info("No plants are available for this account.")
+        return
+
+    plant_labels = {display_plant_name(p): p for p in plants}
+    can_view_all = user.role in ("admin", "engineer")
+    options = (["All Plants"] if can_view_all else []) + list(plant_labels.keys())
+    f1, f2, f3 = st.columns([1.35, 1, 1])
+    with f1:
+        chosen = st.selectbox("Filter by plant", options, key="plant_summary_plant_filter")
+    today = date.today()
+    with f2:
+        start_date = st.date_input("From date", date(today.year, 1, 1), key="plant_summary_start")
+    with f3:
+        end_date = st.date_input("To date", today, key="plant_summary_end")
+    if start_date > end_date:
+        st.warning("The start date must be on or before the end date.")
+        start_date, end_date = end_date, start_date
+
+    selected_plants = plants if chosen == "All Plants" else [plant_labels[chosen]]
+    selected_ids = [p.id for p in selected_plants]
+    records = (db.query(MaintenanceRecord)
+        .filter(MaintenanceRecord.plant_id.in_(selected_ids),
+                MaintenanceRecord.task_date >= start_date,
+                MaintenanceRecord.task_date <= end_date)
+        .order_by(MaintenanceRecord.task_date.desc()).all())
+    users = {u.id: u.full_name for u in db.query(User).all()}
+    plant_by_id = {p.id: p for p in selected_plants}
+
+    panel_records = [r for r in records if r.category == "Panel Cleaning" and r.status == "Completed"]
+    grass_records = [r for r in records if r.category == "Grass Cutting" and r.status == "Completed"]
+    inspection_records = [r for r in records if r.category in PROCESS_CATEGORIES and r.status in ("Completed", "Failed")]
+    checklist_completed = [r for r in records if r.category in PROCESS_CATEGORIES and r.status == "Completed"]
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Plants included", len(selected_plants))
+    k2.metric("Panel cleaning records", len(panel_records))
+    k3.metric("Grass cutting records", len(grass_records))
+    k4.metric("Inspection checklist records", len(inspection_records))
+
+    rows = []
+    for p in selected_plants:
+        plant_rows = [r for r in records if r.plant_id == p.id]
+        p_done = sum(1 for r in plant_rows if r.category == "Panel Cleaning" and r.status == "Completed")
+        g_done = sum(1 for r in plant_rows if r.category == "Grass Cutting" and r.status == "Completed")
+        i_done = sum(1 for r in plant_rows if r.category in PROCESS_CATEGORIES and r.status == "Completed")
+        i_failed = sum(1 for r in plant_rows if r.category in PROCESS_CATEGORIES and r.status == "Failed")
+        rows.append({"Plant": display_plant_name(p), "Panel Cleaning": p_done,
+                     "Grass Cutting": g_done, "Inspection Checklists Completed": i_done,
+                     "Inspection Checklists Failed": i_failed})
+    st.markdown("### Plant-wise maintenance activity")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    def worker_totals(selected_records, use_record_user=False):
+        totals = {}
+        for rec in selected_records:
+            plant_name = display_plant_name(plant_by_id[rec.plant_id])
+            if use_record_user:
+                names = [users.get(rec.worker_id, "Unassigned")]
+            else:
+                names = [n.strip() for n in (rec.remarks or "").split(",") if n.strip()]
+            for name in set(names):
+                key = (name, plant_name)
+                totals[key] = totals.get(key, 0) + 1
+        return sorted(totals.items(), key=lambda item: (-item[1], item[0][0].casefold(), item[0][1].casefold()))
+
+    st.markdown("### Worker productivity")
+    w1, w2, w3 = st.columns(3)
+    for col, label, source, use_user in [
+        (w1, "Most panel cleaning", panel_records, False),
+        (w2, "Most grass cutting", grass_records, False),
+        (w3, "Most inspection checklists", checklist_completed, True),
+    ]:
+        with col:
+            st.markdown(f"**{label}**")
+            ranking = worker_totals(source, use_user)
+            if ranking:
+                ranking_rows = [{"Worker": key[0], "Plant": key[1], "Completed": count}
+                                for key, count in ranking[:10]]
+                st.dataframe(pd.DataFrame(ranking_rows), hide_index=True, use_container_width=True)
+                st.caption(f"Top performer: {ranking[0][0][0]} at {ranking[0][0][1]} ({ranking[0][1]} completed)")
+            else:
+                st.info("No completed records in this date range.")
+
+    st.caption("Panel cleaning and grass cutting workers are counted from the worker names saved on each completed record. Inspection checklist activity is attributed to the signed-in account that saved the checklist.")
+
+
 def overview_page(db, user, plant):
     header(plant)
     overview_context(db, user, plant)
@@ -3282,6 +3384,56 @@ def panel_cleaning_page(db, user, plant):
                         "Pending" if done else "Completed",
                         {"items": {"Panel/Table Cleaning": "Not Done" if done else "Done"}},
                         remarks="" if done else worker_name,
+                    )
+                    st.rerun()
+
+
+# ============================================================
+# Weeding tasks (separate records from routine cleaning/cutting)
+# ============================================================
+
+def weeding_task_page(db, user, plant, category, asset_type, title, icon):
+    header(plant)
+    st.markdown(f"## {icon} {title}")
+    st.caption("Record weeding work separately from the regular maintenance activity.")
+    task_date = _period_picker(plant, category)
+    records = _map_status_map(db, plant.id, category, task_date, use_period=True)
+    assets = asset_list(plant, asset_type)
+    completed = sum(1 for rec in records.values() if rec.status == "Completed")
+    total = len(assets)
+    pct = round(completed / total * 100, 1) if total else 0
+    st.progress(pct / 100, text=f"{title} progress: {pct:.1f}% ({completed}/{total})")
+    worker_options = worker_options_for_plant(plant, db, first_names_only=(asset_type == "Zone"))
+    cols = st.columns(5)
+    for i, asset in enumerate(assets):
+        rec = records.get(asset)
+        done = bool(rec and rec.status == "Completed")
+        saved_names = (rec.remarks or "").strip() if rec else ""
+        saved_workers = [name.strip() for name in saved_names.split(",") if name.strip() and name.strip().upper() != "R"]
+        choices = list(dict.fromkeys(saved_workers + worker_options))
+        with cols[i % 5]:
+            st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
+            selected_workers = st.multiselect(
+                "Workers / Supervisors", choices,
+                default=[name for name in saved_workers if name in choices],
+                label_visibility="collapsed",
+                placeholder="Select one or more workers",
+                key=f"weeding_workers_{category}_{plant.id}_{asset}_{task_date}",
+            )
+            worker_names = ", ".join(selected_workers)
+            if st.button(
+                "Mark Pending" if done else "Mark Completed",
+                key=f"weeding_toggle_{category}_{plant.id}_{asset}_{task_date}",
+                use_container_width=True,
+            ):
+                if not done and not worker_names:
+                    st.warning(f"Select at least one worker for {asset} before marking it completed.")
+                else:
+                    upsert_record(
+                        db, plant.id, category, asset, task_date, user.id,
+                        "Pending" if done else "Completed",
+                        {"items": {category: "Not Done" if done else "Done"}},
+                        remarks="" if done else worker_names,
                     )
                     st.rerun()
 
@@ -5149,12 +5301,18 @@ def main():
         db.close()
         return
 
-    if page == "🏠 Overview":
+    if page == "📊 Plant Summary":
+        plant_summary_page(db, user)
+    elif page == "🏠 Overview":
         overview_page(db, user, plant)
     elif page == "🧹 Panel Cleaning":
         panel_cleaning_page(db, user, plant)
+    elif page == "🌱 Weeding Panel Cleaning":
+        weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
     elif page == "🌿 Grass Cutting":
         grass_cutting_page(db, user, plant)
+    elif page == "🌾 Weeding Grass Cutting":
+        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Weeding Grass Cutting", "🌾")
     elif page == "🔧 Maintenance Inspections":
         inspection_page(db, user, plant)
     elif page == "⚠️ Repair & Maintenance":
@@ -5165,7 +5323,7 @@ def main():
         users_page(db, user, plant)
     elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
         plants_page(db)
-    elif page == "📊 Reports" and user.role in ("admin", "engineer"):
+    elif page == "📈 Reports" and user.role in ("admin", "engineer"):
         reports_page(db, user, plant)
     elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
         approvals_page(db, user, plant)
