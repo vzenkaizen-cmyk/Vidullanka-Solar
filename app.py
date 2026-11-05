@@ -2962,12 +2962,12 @@ def render_plant_details_and_specs(db, plant):
 
     # Technical values are populated only where supplied in the plant-specification sheet.
     specs = {
-        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Plant In-Charge": "Roshan"},
-        "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan"},
-        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu"},
-        "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera"},
-        "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres", "Plant In-Charge": "Sansala"},
-        "DPV": {"Power Plant": "DPV (Ranna)", "AC Capacity": "10 MW", "DC Capacity": "12810 kW", "DC-to-AC sizing ratio": "1.281", "Panels": "625 Wp × 20496 Nos", "Panel Size": "2382 × 1134 × 30 mm", "Cell Type": "N-type mono-crystalline", "Inverters": "300 kW × 34 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 366 tables", "Main Transformer": "6600 kVA, 33 kV/800 V"},
+        "HS1": {"Power Plant": "HRN 1 (Horana)", "AC Capacity": "2 MW", "Panels": "535 Wp × 4,480 Nos", "Panel Size": "2285 mm × 1134 mm", "Cell Type": "Mono", "Inverters": "200 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 28 strings", "Table Arrangement": "56 panels × 80 tables", "Main Transformer": "2200 kVA, 33 kV/800 V", "Auxiliary Transformer": "10 kVA, 230 V/800 V", "Plant factor": "21%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "8.99 acres", "Plant In-Charge": "Roshan", "Commissioned": "6/Jun/2023"},
+        "HS2": {"Power Plant": "HRN 2 (Horana)", "AC Capacity": "2 MW", "Panels": "615 Wp × 4,060 Nos", "Panel Size": "2382 mm × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 7 Nos", "Panel Connection for Inverter": "29 panels × 20 strings", "Table Arrangement": "58 panels × 70 tables", "Main Transformer": "2250 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "20%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "6.5 acres", "Plant In-Charge": "Roshan", "Commissioned": "1/Aug/2025"},
+        "ORK": {"Power Plant": "ORK (Monaragala)", "AC Capacity": "0.88 MW", "Panels": "535 Wp × 1,870 Nos", "Panel Size": "2279 × 1134 mm", "Cell Type": "Mono", "Inverters": "100 kW × 8 Nos", "Panel Connection for Inverter": "18 panels × 13 strings", "Table Arrangement": "34 panels × 1 table + 36 panels × 51 tables", "Main Transformer": "1000 kVA, 33 kV/400 V", "Auxiliary Transformer": "NA", "Plant factor": "18%", "Project Company": "Orik Corporation (Pvt) Ltd", "Ownership": "87%", "Land Area": "6.67 acres", "Plant In-Charge": "Pasindu", "Commissioned": "23/Sep/2021"},
+        "MTR": {"Power Plant": "MTR (Matara)", "AC Capacity": "3 MW", "Panels": "615 Wp × 6,160 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 10 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 110 tables", "Main Transformer": "3300 kVA, 33 kV/800 V", "Auxiliary Transformer": "5 kVA, 230 V/800 V", "Plant factor": "21.04%", "Project Company": "Vidul Matara Solar Power (Pvt) Ltd", "Ownership": "100%", "Land Area": "10.5 acres", "Plant In-Charge": "Sudheera", "Commissioned": "19/Sep/2025"},
+        "MDP": {"Power Plant": "MDP (Madampe)", "AC Capacity": "6 MW", "Panels": "615 Wp × 12,320 Nos", "Panel Size": "2382 × 1134 mm", "Cell Type": "N-Type TOPCon", "Inverters": "300 kW × 20 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 220 tables", "Main Transformer": "6000 kVA, 33 kV/800 V", "Auxiliary Transformer": "50 kVA, 230 V/800 V", "Plant factor": "21.00%", "Project Company": "Vidulsolar (Pvt) Ltd", "Ownership": "100%", "Land Area": "20 acres", "Plant In-Charge": "Sansala", "Commissioned": "23/Jan/2026"},
+        "DPV": {"Power Plant": "DPV (Ranna)", "AC Capacity": "10 MW", "DC Capacity": "12810 kW", "DC-to-AC sizing ratio": "1.281", "Panels": "625 Wp × 20496 Nos", "Panel Size": "2382 × 1134 × 30 mm", "Cell Type": "N-type mono-crystalline", "Inverters": "300 kW × 34 Nos", "Panel Connection for Inverter": "28 panels × 22 strings", "Table Arrangement": "56 panels × 366 tables", "Main Transformer": "6600 kVA, 33 kV/800 V", "Commissioned": "23/Sep/2026"},
     }
     # Resolve the specification table from both the database code and display name.
     # This supports canonical codes (HS1/HS2), older HRN codes, and labels such as
@@ -3116,13 +3116,7 @@ def plant_summary_page(db, user):
         r for r in checklist_records if r.approval_status == "Approved"
     ]
 
-    # Management KPI cards
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Plants included", len(selected_plants))
-    k2.metric("Panel cleaning (tables)", len(panel_records))
-    k3.metric("Grass cutting (zones)", len(grass_records))
-    k4.metric("Inspection checklists completed", len(checklist_completed))
-    k5.metric("Maintenance inspection pending approvals", len(inspection_pending_approvals))
+    # The five management KPI cards have been removed as requested.
 
     # Prepare plant-level totals for charts and the detail table.
     rows = []
@@ -3200,7 +3194,7 @@ def plant_summary_page(db, user):
         if not distribution.empty:
             fig = px.pie(distribution, names="Activity", values="Completed", hole=0.52,
                          color_discrete_sequence=["#2587df", "#31b878", "#8b5cf6"])
-            fig.update_traces(textinfo="label+value+percent")
+            fig.update_traces(textinfo="label+value+percent", textposition="outside")
             fig.update_layout(height=330, margin=dict(l=5, r=5, t=8, b=5), showlegend=False)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
@@ -3216,9 +3210,18 @@ def plant_summary_page(db, user):
             fig = px.pie(approval_df, names="Approval Status", values="Count", hole=0.52,
                          color="Approval Status",
                          color_discrete_map={"Approved": "#25ad70", "Pending Approval": "#e5a72e"})
-            fig.update_traces(textinfo="label+value+percent")
-            fig.update_layout(height=330, margin=dict(l=5, r=5, t=8, b=5), showlegend=True,
-                              legend_title_text="")
+            approved_total = len(inspection_approved) + len(inspection_pending_approvals)
+            approved_pct = (len(inspection_approved) / approved_total * 100) if approved_total else 0
+            fig.update_traces(textinfo="label+value", textposition="outside")
+            fig.update_layout(
+                height=330, margin=dict(l=5, r=5, t=8, b=5), showlegend=True,
+                legend_title_text="",
+                annotations=[dict(
+                    text=f"<b>{approved_pct:.0f}%</b><br><span style='font-size:11px'>Approved</span>",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=20, color="#14213d")
+                )]
+            )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.info("No inspection checklist approvals in this date range.")
@@ -3264,36 +3267,48 @@ def plant_summary_page(db, user):
         ("Inspection Checklists Completed", checklist_completed, True, "Checklists Completed", "#8b5cf6"),
     ]
     st.markdown("### Worker Productivity")
-    for section_start in range(0, len(productivity_sections), 3):
-        cols = st.columns(3, gap="medium")
-        for col, (label, source, use_user, count_label, bar_color) in zip(cols, productivity_sections[section_start:section_start+3]):
-            with col:
-                st.markdown(f"**Top Workers — {label}**")
-                ranking = worker_totals(source, use_user)
-                if ranking:
-                    top_name, top_plant = ranking[0][0]
-                    top_count = ranking[0][1]
-                    st.markdown(
-                        f"<div class='summary-top-worker'>"
-                        f"<div>Top Performer</div><strong>{top_name}</strong>"
-                        f"<div>{top_plant}</div><b>{top_count} {count_label}</b></div>",
-                        unsafe_allow_html=True,
-                    )
-                    ranking_df = pd.DataFrame([
-                        {"Worker": key[0], "Plant": key[1], count_label: count}
-                        for key, count in ranking[:10]
-                    ])
-                    fig = px.bar(ranking_df.sort_values(count_label), x=count_label, y="Worker",
-                                 orientation="h", text=count_label,
-                                 color_discrete_sequence=[bar_color])
-                    fig.update_traces(textposition="outside", cliponaxis=False)
-                    fig.update_layout(height=max(280, 42 * len(ranking_df)),
-                                      margin=dict(l=5, r=25, t=8, b=5),
-                                      xaxis_title=count_label, yaxis_title="", showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-                    st.dataframe(ranking_df, hide_index=True, use_container_width=True)
-                else:
-                    st.info("No completed records in this date range.")
+    productivity_rankings = []
+    productivity_tables = []
+
+    # Render all three charts in one row with a consistent height.
+    chart_cols = st.columns(3, gap="medium")
+    for col, (label, source, use_user, count_label, bar_color) in zip(chart_cols, productivity_sections):
+        ranking = worker_totals(source, use_user)
+        productivity_rankings.append((label, ranking, count_label))
+        with col:
+            st.markdown(f"**Top Workers — {label}**")
+            if ranking:
+                top_name, top_plant = ranking[0][0]
+                top_count = ranking[0][1]
+                st.markdown(
+                    f"<div class='summary-top-worker'>"
+                    f"<div>Top Performer</div><strong>{top_name}</strong>"
+                    f"<div>{top_plant}</div><b>{top_count} {count_label}</b></div>",
+                    unsafe_allow_html=True,
+                )
+                ranking_df = pd.DataFrame([
+                    {"Worker": key[0], "Plant": key[1], count_label: count}
+                    for key, count in ranking[:10]
+                ])
+                productivity_tables.append(ranking_df)
+                fig = px.bar(ranking_df.sort_values(count_label), x=count_label, y="Worker",
+                             orientation="h", text=count_label,
+                             color_discrete_sequence=[bar_color])
+                fig.update_traces(textposition="outside", cliponaxis=False)
+                fig.update_layout(height=280,
+                                  margin=dict(l=5, r=25, t=8, b=5),
+                                  xaxis_title=count_label, yaxis_title="", showlegend=False)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            else:
+                productivity_tables.append(pd.DataFrame(columns=["Worker", "Plant", count_label]))
+                st.info("No completed records in this date range.")
+                st.empty()
+
+    # Place the three worker tables together in a second row, aligned at the same level.
+    table_cols = st.columns(3, gap="medium")
+    for col, (_, ranking, count_label), ranking_df in zip(table_cols, productivity_rankings, productivity_tables):
+        with col:
+            st.dataframe(ranking_df, hide_index=True, use_container_width=True)
 
     st.caption("Panel cleaning and grass cutting workers are counted from the worker names saved on each completed record. Inspection checklist activity is attributed to the signed-in account that saved the checklist.")
 
@@ -5175,21 +5190,22 @@ def reports_page(db,user,plant):
                 "Status":["Completed","Yet to be completed tables"],
                 "Count":[panel_done,panel_left],
                 "Label":["Completed","Yet to be completed<br>tables"],
+                "Progress":[f"{pc:.1f}", f"{pc:.1f}"],
             }),
             names="Status",values="Count",hole=.38,
             color="Status",
             color_discrete_map={"Completed":"#16a66a","Yet to be completed tables":"#e5484d"},
-            custom_data=["Label"],
+            custom_data=["Label", "Progress"],
         )
         pie.update_traces(
-            texttemplate="%{customdata[0]}<br>%{value}<br>%{percent}",
+            texttemplate="%{customdata[0]}<br>%{value}<br>%{customdata[1]}% progress",
             textposition="inside",
             insidetextorientation="horizontal",
             textfont_size=11,
         )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed; {panel_left} tables remaining ({pc:.1f}% complete) · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
         pie=px.pie(
@@ -5197,21 +5213,22 @@ def reports_page(db,user,plant):
                 "Status":["Completed","Yet to be completed zones"],
                 "Count":[grass_done,grass_left],
                 "Label":["Completed","Yet to be completed<br>zones"],
+                "Progress":[f"{gc:.1f}", f"{gc:.1f}"],
             }),
             names="Status",values="Count",hole=.38,
             color="Status",
             color_discrete_map={"Completed":"#16a66a","Yet to be completed zones":"#e5484d"},
-            custom_data=["Label"],
+            custom_data=["Label", "Progress"],
         )
         pie.update_traces(
-            texttemplate="%{customdata[0]}<br>%{value}<br>%{percent}",
+            texttemplate="%{customdata[0]}<br>%{value}<br>%{customdata[1]}% progress",
             textposition="inside",
             insidetextorientation="horizontal",
             textfont_size=11,
         )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed; {grass_left} zones remaining ({gc:.1f}% complete) · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Activity Report")
     if total:
