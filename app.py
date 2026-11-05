@@ -3155,7 +3155,7 @@ def plant_summary_page(db, user):
                               xaxis_title="Tables cleaned", yaxis_title="", showlegend=False)
             # Hide numeric axis ticks so only the actual completed-table value
             # (for example, 64) is displayed beside the bar.
-            fig.update_xaxes(showticklabels=False)
+            fig.update_xaxes(showticklabels=False, ticks="", showgrid=False, zeroline=False)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_middle:
         st.markdown("**Grass Cutting (Zones) by Plant**")
@@ -5214,8 +5214,10 @@ def reports_page(db,user,plant):
     )
     c6.metric("Panel Cleaning", f"{pc:.0f}%")
     c7.metric("Grass Cutting", f"{gc:.0f}%")
-    panel_left=max(0,panel_total-panel_done)
-    grass_left=max(0,grass_total-grass_done)
+    panel_done = min(panel_done, panel_total)
+    grass_done = min(grass_done, grass_total)
+    panel_left = max(0, panel_total - panel_done)
+    grass_left = max(0, grass_total - grass_done)
     st.markdown("### Panel Cleaning and Grass Cutting")
     pcol,gcol=st.columns(2)
     with pcol:
@@ -5225,7 +5227,7 @@ def reports_page(db,user,plant):
                 "Status":["Completed","Yet to be completed tables"],
                 "Count":[panel_done,panel_left],
                 "Label":["Completed","Yet to be completed<br>tables"],
-                "Progress":[f"{pc:.1f}", f"{pc:.1f}"],
+                "Progress":[f"{pc:.1f}", f"{100 - pc:.1f}"],
             }),
             names="Status",values="Count",hole=.38,
             color="Status",
@@ -5248,7 +5250,7 @@ def reports_page(db,user,plant):
                 "Status":["Completed","Yet to be completed zones"],
                 "Count":[grass_done,grass_left],
                 "Label":["Completed","Yet to be completed<br>zones"],
-                "Progress":[f"{gc:.1f}", f"{gc:.1f}"],
+                "Progress":[f"{gc:.1f}", f"{100 - gc:.1f}"],
             }),
             names="Status",values="Count",hole=.38,
             color="Status",
