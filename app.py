@@ -3153,6 +3153,9 @@ def plant_summary_page(db, user):
             fig.update_traces(textposition="outside", cliponaxis=False)
             fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
                               xaxis_title="Tables cleaned", yaxis_title="", showlegend=False)
+            # Hide numeric axis ticks so only the actual completed-table value
+            # (for example, 64) is displayed beside the bar.
+            fig.update_xaxes(showticklabels=False)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_middle:
         st.markdown("**Grass Cutting (Zones) by Plant**")
@@ -5152,14 +5155,46 @@ def reports_page(db,user,plant):
         *inspection_filter, MaintenanceRecord.approval_status == "Approved"
     ).count()
     import plotly.express as px
-    pc, panel_done, panel_total = panel_cleaning_percent(db,plant.id,end)
-    # HRN 1 always has 80 tables; use this total in the report even if an
-    # older database record still contains 79.
+
+    # Build report progress from the latest saved record for each table/zone
+    # throughout the selected date range, rather than checking only the end date.
+    # Include the related weeding records in the same way as the Overview page.
+    panel_period_records = status_map_for_period(
+        db, plant.id, "Panel Cleaning", start, end
+    )
+    panel_weeding_period_records = status_map_for_period(
+        db, plant.id, "Weeding Panel Cleaning", start, end
+    )
+    for asset, rec in panel_weeding_period_records.items():
+        if rec.status == "Completed" or asset not in panel_period_records:
+            panel_period_records[asset] = rec
+
+    grass_period_records = status_map_for_period(
+        db, plant.id, "Grass Cutting", start, end
+    )
+    grass_weeding_period_records = status_map_for_period(
+        db, plant.id, "Weeding Grass Cutting", start, end
+    )
+    for asset, rec in grass_weeding_period_records.items():
+        if rec.status == "Completed" or asset not in grass_period_records:
+            grass_period_records[asset] = rec
+
+    panel_total = plant.table_count
+    grass_total = plant.zone_count
+    panel_done = sum(
+        1 for rec in panel_period_records.values() if rec.status == "Completed"
+    )
+    grass_done = sum(
+        1 for rec in grass_period_records.values() if rec.status == "Completed"
+    )
+
+    # HRN 1 always has 80 tables, even if an older database row says 79.
     plant_identity = f"{plant.code} {plant.name}".upper().replace(" ", "")
     if "HS1" in plant_identity or "HRN1" in plant_identity:
         panel_total = 80
-        pc = round(panel_done / panel_total * 100, 1)
-    gc, grass_done, grass_total = grass_cutting_percent(db,plant.id,end)
+
+    pc = round(panel_done / panel_total * 100, 1) if panel_total else 0
+    gc = round(grass_done / grass_total * 100, 1) if grass_total else 0
     c1,c2,c3,c4,c5,c6,c7=st.columns(7)
     c1.metric("Activities",total)
     c2.metric("Green - Completed",completed)
