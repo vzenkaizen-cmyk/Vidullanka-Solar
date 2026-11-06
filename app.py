@@ -310,6 +310,23 @@ def initialize_database(_engine):
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+
+            # Ensure the Panel Inspection PDF table exists in older Neon databases.
+            # create_all() normally creates this model table, but this explicit
+            # migration also repairs databases where the table is missing.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS panel_inspection_reports (
+                    id SERIAL PRIMARY KEY,
+                    plant_id INTEGER NOT NULL REFERENCES plants(id),
+                    category VARCHAR(100) NOT NULL DEFAULT 'Panel Inspection',
+                    task_date DATE NOT NULL,
+                    filename VARCHAR(255) NOT NULL,
+                    file_data BYTEA NOT NULL,
+                    uploaded_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_status VARCHAR(30) DEFAULT 'Pending'"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_by INTEGER"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
