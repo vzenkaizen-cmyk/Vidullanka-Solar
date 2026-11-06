@@ -26,7 +26,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, Date, DateTime,
-    Text, ForeignKey, Float, func, or_, text
+    Text, ForeignKey, Float, LargeBinary, func, or_, text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -211,6 +211,19 @@ class MaintenanceRecord(Base):
     approval_comment = Column(Text, default="")
 
     plant = relationship("Plant", back_populates="records")
+
+
+class PanelInspectionReport(Base):
+    __tablename__ = "panel_inspection_reports"
+
+    id = Column(Integer, primary_key=True)
+    plant_id = Column(Integer, ForeignKey("plants.id"), nullable=False)
+    category = Column(String(100), nullable=False, default="Panel Inspection")
+    task_date = Column(Date, nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_data = Column(LargeBinary, nullable=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class RepairItem(Base):
@@ -500,9 +513,9 @@ PROCESS_CATEGORIES = {
             "Transformer - No Visible Corrosion",
             "Transformer Insulators Are Good",
             "Transformer Surge Protectors Are Good",
-            "OCB Tripping Works",
-            "OCB Tripping Count Recorded",
-            "OCB Auto / Manual Works",
+            "OVCB Tripping Works",
+            "OVCB Tripping Count Recorded",
+            "OVCB Auto / Manual Works",
             "DDLO ",
             "Fence ",
             "Warning Signs clear and visible",
@@ -1984,7 +1997,7 @@ def top_nav(db, user):
         "🏠 Overview",
         "🧹 Panel Cleaning",
         "🌿 Grass Cutting",
-        "🌾 Weeding Grass Cutting",
+        "🌾 Chemical Weeding",
         "🔧 Maintenance Inspections",
         "⚠️ Repair & Maintenance",
     ]
@@ -3070,7 +3083,7 @@ def plant_summary_page(db, user):
         if st.button("← Back to Navigation", key="plant_summary_back"):
             st.session_state.top_navigation_page = "🏠 Overview"
             st.rerun()
-    st.title("Plant Performance Summary")
+    st.title("Plant Wise Performance Summary")
     st.caption("Compare panel cleaning, grass cutting and maintenance inspection activity across the available plants.")
 
     plants = allowed_plants(db, user)
@@ -3396,12 +3409,18 @@ def overview_page(db, user, plant):
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
+        all_repair_items = db.query(RepairItem).filter(
+            RepairItem.plant_id == plant.id
+        ).all()
+        repair_total = len(all_repair_items)
+        repair_completed = sum(1 for repair in all_repair_items if repair.status == "Completed")
+        repair_percent = round(repair_completed / repair_total * 100, 1) if repair_total else 0
         _render_overview_card(
             "Repair & Maintenance", "",
-            100 if metrics["open_repairs"] == 0 else 0,
-            plant.inverter_count - len([a for a in asset_list(plant, "Inverter") if repair_counts.get(a, 0)]),
-            plant.inverter_count,
-            _overview_target_label(0 if metrics["open_repairs"] else 1, 1, REPAIR_MAINTENANCE_TARGET_DAYS, "days")
+            repair_percent,
+            repair_completed,
+            repair_total,
+            _overview_target_label(repair_completed, repair_total, REPAIR_MAINTENANCE_TARGET_DAYS, "days")
         )
         st.markdown("**Inverter status**")
         inverter_items = []
@@ -3885,7 +3904,7 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     else:
         values[asset][f"{item}__reason"] = ""
 
-    if category == "Switch Yard Inspection" and item.strip() == "OCB Tripping Count Recorded" and status == "GREEN":
+    if category == "Switch Yard Inspection" and item.strip() == "OVCB Tripping Count Recorded" and status == "GREEN":
         saved_items = parse_details(old_record).get("items", {}) if old_record else {}
         previous_count = saved_items.get(f"{item}__count", 0)
         try:
@@ -3897,6 +3916,21 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
             key=f"inspection_trip_count_{category}_{task_date}_{asset}_{item_index}",
         )
         values[asset][f"{item}__count"] = int(count)
+
+        saved_image = saved_items.get(f"{item}__meter_image", "")
+        if saved_image:
+            try:
+                st.image(base64.b64decode(saved_image), caption="Previously uploaded tripping count meter")
+            except Exception:
+                pass
+        meter_image = st.file_uploader(
+            "Upload tripping count meter image",
+            type=["png", "jpg", "jpeg"],
+            key=f"inspection_trip_meter_{category}_{task_date}_{asset}_{item_index}",
+        )
+        if meter_image is not None:
+            values[asset][f"{item}__meter_image"] = base64.b64encode(meter_image.getvalue()).decode("ascii")
+            values[asset][f"{item}__meter_image_name"] = meter_image.name
 
 
 def _render_inspection_category(db, user, plant, category):
@@ -3970,11 +4004,35 @@ def _render_inspection_category(db, user, plant, category):
 
     # Daily inspection gets separate tabs so CCTV, Lightning Arresters and Fire
     # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
+    panel_report_upload = None
+    existing_panel_report = None
     if category == "Panel Inspection":
-        tab_titles = ["Front Glass Condition", "Back Glass Condition", "Diode Damage"]
+        tab_titles = ["Front Glass Condition", "Back Glass Condition", "Diode Damage", "Panel Inspection Report"]
         tabs = st.tabs(tab_titles)
         groups = [(tab_titles[i], [item], group_assets) for i, (group_title, group_items, group_assets) in enumerate(groups) for item in group_items]
-        group_contexts = list(zip(tabs, groups))
+        group_contexts = list(zip(tabs[:3], groups))
+        existing_panel_report = db.query(PanelInspectionReport).filter(
+            PanelInspectionReport.plant_id == plant.id,
+            PanelInspectionReport.category == category,
+            PanelInspectionReport.task_date == task_date,
+        ).first()
+        with tabs[3]:
+            st.markdown("### Panel Inspection Report")
+            st.caption("Upload the PDF report before saving the Front Glass, Back Glass and Diode Damage inspection.")
+            panel_report_upload = st.file_uploader(
+                "Upload Panel Inspection Report (PDF)",
+                type=["pdf"],
+                key=f"panel_inspection_report_pdf_{plant.id}_{task_date}",
+            )
+            if existing_panel_report:
+                st.success(f"PDF report already uploaded: {existing_panel_report.filename}")
+                st.download_button(
+                    "Download uploaded PDF",
+                    data=bytes(existing_panel_report.file_data),
+                    file_name=existing_panel_report.filename,
+                    mime="application/pdf",
+                    key=f"download_panel_report_{plant.id}_{task_date}",
+                )
     elif category in ("Daily Inspection", "AC Inspection"):
         tabs = st.tabs([title for title, _, _ in groups])
         group_contexts = list(zip(tabs, groups))
@@ -4101,6 +4159,32 @@ def _render_inspection_category(db, user, plant, category):
         use_container_width=True,
         key=f"save_inspection_{category}",
     ):
+        if category == "Panel Inspection":
+            current_report = db.query(PanelInspectionReport).filter(
+                PanelInspectionReport.plant_id == plant.id,
+                PanelInspectionReport.category == category,
+                PanelInspectionReport.task_date == task_date,
+            ).first()
+            if current_report is None and panel_report_upload is None:
+                st.error("Upload the Panel Inspection Report PDF before saving this inspection.")
+                return
+            if panel_report_upload is not None:
+                if current_report is None:
+                    current_report = PanelInspectionReport(
+                        plant_id=plant.id,
+                        category=category,
+                        task_date=task_date,
+                        filename=panel_report_upload.name,
+                        file_data=panel_report_upload.getvalue(),
+                        uploaded_by=user.id,
+                    )
+                    db.add(current_report)
+                else:
+                    current_report.filename = panel_report_upload.name
+                    current_report.file_data = panel_report_upload.getvalue()
+                    current_report.uploaded_by = user.id
+                db.commit()
+
         missing = [item for item, reason in reason_widgets if not reason.strip()]
         if missing:
             st.error("Please enter the reason / issue for every item marked ✗ Not OK.")
@@ -4131,6 +4215,9 @@ def _render_inspection_category(db, user, plant, category):
                     continue
                 if item.endswith("__count"):
                     merged_items[item] = int(selected_status or 0)
+                    continue
+                if item.endswith("__meter_image") or item.endswith("__meter_image_name"):
+                    merged_items[item] = selected_status
                     continue
                 if selected_status == "UNRECORDED":
                     # Do not create a record for a never-recorded item. If the user
@@ -5568,8 +5655,8 @@ def main():
         weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
     elif page == "🌿 Grass Cutting":
         grass_cutting_page(db, user, plant)
-    elif page == "🌾 Weeding Grass Cutting":
-        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Weeding Grass Cutting", "🌾")
+    elif page == "🌾 Chemical Weeding":
+        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
     elif page == "🔧 Maintenance Inspections":
         inspection_page(db, user, plant)
     elif page == "⚠️ Repair & Maintenance":
