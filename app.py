@@ -3175,45 +3175,48 @@ def plant_summary_page(db, user):
     st.markdown("### Plant-wise maintenance performance")
     chart_left, chart_middle, chart_right = st.columns(3, gap="medium")
     with chart_left:
-        st.markdown("**Panel Cleaning (Tables) by Plant**")
-        if not plant_df.empty:
-            fig = px.bar(plant_df.sort_values("Panel Cleaning (Tables)"),
-                         x="Panel Cleaning (Tables)", y="Plant", orientation="h",
-                         text="Panel Cleaning (Tables)", color_discrete_sequence=["#2587df"])
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
-                              xaxis_title="Tables cleaned", yaxis_title="", showlegend=False)
-            # Hide numeric axis ticks so only the actual completed-table value
-            # (for example, 64) is displayed beside the bar.
-            fig.update_xaxes(showticklabels=False, ticks="", showgrid=False, zeroline=False)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with st.container(border=True):
+            st.markdown("**Panel Cleaning (Tables) by Plant**")
+            if not plant_df.empty:
+                fig = px.bar(plant_df.sort_values("Panel Cleaning (Tables)"),
+                             x="Panel Cleaning (Tables)", y="Plant", orientation="h",
+                             text="Panel Cleaning (Tables)", color_discrete_sequence=["#2587df"])
+                fig.update_traces(textposition="outside", cliponaxis=False)
+                fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
+                                  xaxis_title="Tables cleaned", yaxis_title="", showlegend=False)
+                # Hide numeric axis ticks so only the actual completed-table value
+                # (for example, 64) is displayed beside the bar.
+                fig.update_xaxes(showticklabels=False, ticks="", showgrid=False, zeroline=False)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_middle:
-        st.markdown("**Grass Cutting (Zones) by Plant**")
-        if not plant_df.empty:
-            fig = px.bar(plant_df.sort_values("Grass Cutting (Zones)"),
-                         x="Grass Cutting (Zones)", y="Plant", orientation="h",
-                         text="Grass Cutting (Zones)", color_discrete_sequence=["#31b878"])
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
-                              xaxis_title="Zones maintained", yaxis_title="", showlegend=False)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with st.container(border=True):
+            st.markdown("**Grass Cutting (Zones) by Plant**")
+            if not plant_df.empty:
+                fig = px.bar(plant_df.sort_values("Grass Cutting (Zones)"),
+                             x="Grass Cutting (Zones)", y="Plant", orientation="h",
+                             text="Grass Cutting (Zones)", color_discrete_sequence=["#31b878"])
+                fig.update_traces(textposition="outside", cliponaxis=False)
+                fig.update_layout(height=max(280, 48 * len(plant_df)), margin=dict(l=5, r=25, t=8, b=5),
+                                  xaxis_title="Zones maintained", yaxis_title="", showlegend=False)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_right:
-        st.markdown("**Inspection Checklist Status by Plant**")
-        if not plant_df.empty:
-            inspection_chart = plant_df[["Plant", "Inspection Checklists Completed",
-                                         "Maintenance Inspection Pending Approvals"]].melt(
-                id_vars="Plant", var_name="Status", value_name="Checklists")
-            inspection_chart["Status"] = inspection_chart["Status"].replace({
-                "Inspection Checklists Completed": "Completed",
-                "Maintenance Inspection Pending Approvals": "Pending Approval",
-            })
-            fig = px.bar(inspection_chart, x="Plant", y="Checklists", color="Status",
-                         barmode="group", text="Checklists",
-                         color_discrete_map={"Completed": "#25ad70", "Pending Approval": "#e5a72e"})
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(height=350, margin=dict(l=5, r=5, t=8, b=5),
-                              xaxis_title="", yaxis_title="Checklists", legend_title_text="")
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with st.container(border=True):
+            st.markdown("**Inspection Checklist Status by Plant**")
+            if not plant_df.empty:
+                inspection_chart = plant_df[["Plant", "Inspection Checklists Completed",
+                                             "Maintenance Inspection Pending Approvals"]].melt(
+                    id_vars="Plant", var_name="Status", value_name="Checklists")
+                inspection_chart["Status"] = inspection_chart["Status"].replace({
+                    "Inspection Checklists Completed": "Completed",
+                    "Maintenance Inspection Pending Approvals": "Pending Approval",
+                })
+                fig = px.bar(inspection_chart, x="Plant", y="Checklists", color="Status",
+                             barmode="group", text="Checklists",
+                             color_discrete_map={"Completed": "#25ad70", "Pending Approval": "#e5a72e"})
+                fig.update_traces(textposition="outside", cliponaxis=False)
+                fig.update_layout(height=350, margin=dict(l=5, r=5, t=8, b=5),
+                                  xaxis_title="", yaxis_title="Checklists", legend_title_text="")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown("### Maintenance activity distribution")
     dist_left, dist_right = st.columns(2, gap="medium")
