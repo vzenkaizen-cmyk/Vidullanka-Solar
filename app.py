@@ -3175,7 +3175,7 @@ def plant_summary_page(db, user):
     st.markdown("### Plant-wise maintenance performance")
     chart_left, chart_middle, chart_right = st.columns(3, gap="medium")
     with chart_left:
-        with st.container(border=True):
+        with st.container(border=True, height=460):
             st.markdown("**Panel Cleaning (Tables) by Plant**")
             if not plant_df.empty:
                 fig = px.bar(plant_df.sort_values("Panel Cleaning (Tables)"),
@@ -3189,7 +3189,7 @@ def plant_summary_page(db, user):
                 fig.update_xaxes(showticklabels=False, ticks="", showgrid=False, zeroline=False)
                 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_middle:
-        with st.container(border=True):
+        with st.container(border=True, height=460):
             st.markdown("**Grass Cutting (Zones) by Plant**")
             if not plant_df.empty:
                 fig = px.bar(plant_df.sort_values("Grass Cutting (Zones)"),
@@ -3200,7 +3200,7 @@ def plant_summary_page(db, user):
                                   xaxis_title="Zones maintained", yaxis_title="", showlegend=False)
                 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with chart_right:
-        with st.container(border=True):
+        with st.container(border=True, height=460):
             st.markdown("**Inspection Checklist Status by Plant**")
             if not plant_df.empty:
                 inspection_chart = plant_df[["Plant", "Inspection Checklists Completed",
