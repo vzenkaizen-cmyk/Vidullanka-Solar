@@ -3166,6 +3166,7 @@ def plant_summary_page(db, user):
         c_submitted = sum(1 for r in plant_rows if r.category == "Civil Works")
         c_approved = sum(1 for r in plant_rows if r.category == "Civil Works" and r.approval_status == "Approved")
         c_pending = sum(1 for r in plant_rows if r.category == "Civil Works" and (r.approval_status or "Pending") == "Pending")
+        c_declined = sum(1 for r in plant_rows if r.category == "Civil Works" and (r.approval_status or "Pending") == "Declined")
         rows.append({
             "Plant": display_plant_name(p),
             "Panel Cleaning (Tables)": p_done,
@@ -3176,6 +3177,7 @@ def plant_summary_page(db, user):
             "Civil Works Submitted": c_submitted,
             "Civil Works Approved": c_approved,
             "Civil Works Pending Approval": c_pending,
+            "Civil Works Declined": c_declined,
         })
     plant_df = pd.DataFrame(rows)
 
@@ -3272,35 +3274,65 @@ def plant_summary_page(db, user):
         else:
             st.info("No inspection checklist approvals in this date range.")
 
-    # Civil Works progress card — uses the same plant/date filters as this summary.
-    # Approval is treated as completed progress because Civil Works submissions
-    # are tracked through the existing engineer approval workflow.
+    # Management-focused Civil Works view: show workload and approval decisions
+    # by plant, without adding a separate Civil Works Progress bar to Plant Summary.
     civil_submitted_total = len(civil_records)
     civil_approved_total = len(civil_completed)
     civil_pending_total = len(civil_pending)
     civil_declined_total = sum(
         1 for r in civil_records if (r.approval_status or "Pending") == "Declined"
     )
-    civil_progress_pct = (
-        round(civil_approved_total / civil_submitted_total * 100, 1)
-        if civil_submitted_total else 0
-    )
 
-    st.markdown("### Civil Works Progress")
+    st.markdown("### Civil Works Management Overview")
     with st.container(border=True):
-        st.markdown("**Civil Works approval and completion progress**")
-        cw1, cw2, cw3, cw4 = st.columns(4)
-        cw1.metric("Total Submitted", civil_submitted_total)
-        cw2.metric("Approved", civil_approved_total)
-        cw3.metric("Pending Approval", civil_pending_total)
-        cw4.metric("Declined", civil_declined_total)
-        st.progress(
-            civil_progress_pct / 100,
-            text=f"Approved progress: {civil_progress_pct:.1f}% "
-                 f"({civil_approved_total} of {civil_submitted_total} civil works approved)"
+        st.caption(
+            "Monitor submitted work, engineer decisions and outstanding approvals "
+            "across the selected plant(s) and reporting period."
         )
-        if civil_submitted_total == 0:
-            st.caption("No civil works have been submitted for the selected plant(s) and date range.")
+        cw1, cw2, cw3, cw4 = st.columns(4)
+        cw1.metric("Works Submitted", civil_submitted_total)
+        cw2.metric("Approved Works", civil_approved_total)
+        cw3.metric("Awaiting Approval", civil_pending_total)
+        cw4.metric("Declined Works", civil_declined_total)
+
+        civil_chart_data = plant_df[[
+            "Plant", "Civil Works Approved", "Civil Works Pending Approval",
+            "Civil Works Declined"
+        ]].melt(id_vars="Plant", var_name="Decision", value_name="Works")
+        civil_chart_data["Decision"] = civil_chart_data["Decision"].replace({
+            "Civil Works Approved": "Approved",
+            "Civil Works Pending Approval": "Pending Approval",
+            "Civil Works Declined": "Declined",
+        })
+        if civil_submitted_total:
+            civil_fig = px.bar(
+                civil_chart_data, x="Works", y="Plant", color="Decision",
+                orientation="h", barmode="stack", text="Works",
+                color_discrete_map={
+                    "Approved": "#25ad70",
+                    "Pending Approval": "#e5a72e",
+                    "Declined": "#e55353",
+                },
+            )
+            civil_fig.update_traces(textposition="inside", insidetextanchor="middle")
+            civil_fig.update_layout(
+                height=max(240, 48 * len(plant_df)),
+                margin=dict(l=5, r=10, t=8, b=5),
+                xaxis_title="Number of civil works",
+                yaxis_title="",
+                legend_title_text="Engineer decision",
+            )
+            st.plotly_chart(civil_fig, use_container_width=True,
+                            config={"displayModeBar": False})
+        else:
+            st.info("No civil works have been submitted for the selected plant(s) and date range.")
+        st.dataframe(
+            plant_df[[
+                "Plant", "Civil Works Submitted", "Civil Works Approved",
+                "Civil Works Pending Approval", "Civil Works Declined"
+            ]],
+            hide_index=True, use_container_width=True,
+        )
 
     st.markdown("### Plant-wise maintenance activity")
     st.dataframe(plant_df, hide_index=True, use_container_width=True)
@@ -5265,6 +5297,22 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         approved = approval_db.query(MaintenanceRecord).filter(
             *inspection_filter, MaintenanceRecord.approval_status == "Approved"
         ).count()
+        civil_filter = [
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category == "Civil Works",
+            MaintenanceRecord.task_date >= start,
+            MaintenanceRecord.task_date <= end,
+        ]
+        civil_submitted = approval_db.query(MaintenanceRecord).filter(*civil_filter).count()
+        civil_approved = approval_db.query(MaintenanceRecord).filter(
+            *civil_filter, MaintenanceRecord.approval_status == "Approved"
+        ).count()
+        civil_pending = approval_db.query(MaintenanceRecord).filter(
+            *civil_filter, MaintenanceRecord.approval_status == "Pending"
+        ).count()
+        civil_declined = approval_db.query(MaintenanceRecord).filter(
+            *civil_filter, MaintenanceRecord.approval_status == "Declined"
+        ).count()
     finally:
         approval_db.close()
 
@@ -5285,8 +5333,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<font size='10'><b>{approved}</b></font><br/><font size='6'>Approved Inspection<br/>Approvals</font>", small),
         Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</font>", small),
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</font>", small),
+        Paragraph(
+            f"<b>{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.0f}%</b>"
+            f"<br/><font size='8'>Civil Works Approval</font>"
+            f"<br/><font size='7'>{civil_approved}/{civil_submitted} approved</font>",
+            small,
+        ),
     ]]
-    kpi_table = Table(kpi_data, colWidths=[35*mm]*7, rowHeights=[15*mm])
+    kpi_table = Table(kpi_data, colWidths=[33.5*mm]*8, rowHeights=[15*mm])
     kpi_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
         ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#d7e0ea")),
@@ -5303,22 +5357,32 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     # Graphical summary focuses on the actual site work areas: tables and zones.
     status_rows = []
     work_summary = [
-        ("Panel Cleaning", panel_pct, "tables"),
-        ("Grass Cutting", grass_pct, "zones"),
+        ("Panel Cleaning", panel_pct, "tables", panel_done, panel_total),
+        ("Grass Cutting", grass_pct, "zones", grass_done, grass_total),
+        ("Civil Works Approval", (civil_approved / civil_submitted * 100) if civil_submitted else 0,
+         "works approved", civil_approved, civil_submitted),
     ]
-    for label, pct_value, unit in work_summary:
+    for label, pct_value, unit, done_value, total_value in work_summary:
         bar_width = max(2, min(100, float(pct_value)))
         bar = Table([[""]], colWidths=[bar_width * 0.75 * mm], rowHeights=[4 * mm])
         bar.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if pct_value >= 100 else "#e55353")),
             ("BOX", (0,0), (-1,-1), 0, colors.white),
         ]))
-        done_count = panel_done if label == "Panel Cleaning" else grass_done
-        total_count = panel_total if label == "Panel Cleaning" else grass_total
-        cycles_per_year = 4 if label == "Panel Cleaning" else 6
-        state = f"{cycles_per_year}/{cycles_per_year} cycles completed" if total_count > 0 and done_count >= total_count else f"0/{cycles_per_year} cycles completed"
-        status_rows.append([Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small), Paragraph(f"{done_count}/{total_count} {unit} • {state}", small)])
-    status_table = Table(status_rows, colWidths=[27*mm, 55*mm, 17*mm, 42*mm])
+        if label == "Civil Works Approval":
+            state = f"{civil_pending} pending • {civil_declined} declined"
+        else:
+            cycles_per_year = 4 if label == "Panel Cleaning" else 6
+            state = (
+                f"{cycles_per_year}/{cycles_per_year} cycles completed"
+                if total_value > 0 and done_value >= total_value
+                else f"0/{cycles_per_year} cycles completed"
+            )
+        status_rows.append([
+            Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small),
+            Paragraph(f"{done_value}/{total_value} {unit} • {state}", small)
+        ])
+    status_table = Table(status_rows, colWidths=[32*mm, 50*mm, 17*mm, 42*mm])
     status_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (2,0), (2,-1), "RIGHT"), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
 
     category_counts = df["Category"].value_counts().head(8).to_dict() if total else {}
@@ -5349,8 +5413,13 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     progress_data = [
         [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'4/4 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/4 cycles completed'}", small)],
         [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'6/6 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/6 cycles completed'}", small)],
+        [Paragraph("Civil Works approval", small), Paragraph(
+            f"{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.1f}% — "
+            f"{civil_approved}/{civil_submitted} approved; {civil_pending} pending; {civil_declined} declined",
+            small,
+        )],
     ]
-    progress_table = Table(progress_data, colWidths=[45*mm, 25*mm])
+    progress_table = Table(progress_data, colWidths=[45*mm, 65*mm])
     progress_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
         ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#d7e0ea")),
