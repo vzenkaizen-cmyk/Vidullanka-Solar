@@ -3283,7 +3283,7 @@ def plant_summary_page(db, user):
         1 for r in civil_records if (r.approval_status or "Pending") == "Declined"
     )
 
-    st.markdown("### Civil Works Management Overview")
+    st.markdown("### Civil Works Management")
     with st.container(border=True):
         st.caption(
             "Monitor submitted work, engineer decisions and outstanding approvals "
