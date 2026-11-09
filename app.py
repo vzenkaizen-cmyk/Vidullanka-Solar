@@ -2016,6 +2016,7 @@ def top_nav(db, user):
         "🌿 Grass Cutting",
         "🌾 Chemical Weeding",
         "🔧 Maintenance Inspections",
+        "🏗️ Civil Works",
         "⚠️ Repair & Maintenance",
     ]
     if user.role in ("admin", "engineer"):
@@ -3101,7 +3102,7 @@ def plant_summary_page(db, user):
             st.session_state.top_navigation_page = "🏠 Overview"
             st.rerun()
     st.title("Plant Wise Performance Summary")
-    st.caption("Compare panel cleaning, grass cutting and maintenance inspection activity across the available plants.")
+    st.caption("Compare panel cleaning, grass cutting, civil works and maintenance inspection activity across the available plants.")
 
     plants = allowed_plants(db, user)
     plants = sorted(plants, key=lambda p: ("DPV" in f"{p.code} {p.name}".upper(), display_plant_name(p).casefold()))
@@ -3137,6 +3138,9 @@ def plant_summary_page(db, user):
     panel_records = [r for r in records if r.category == "Panel Cleaning" and r.status == "Completed"]
     grass_records = [r for r in records if r.category == "Grass Cutting" and r.status == "Completed"]
     checklist_records = [r for r in records if r.category in PROCESS_CATEGORIES]
+    civil_records = [r for r in records if r.category == "Civil Works"]
+    civil_completed = [r for r in civil_records if r.approval_status == "Approved"]
+    civil_pending = [r for r in civil_records if (r.approval_status or "Pending") == "Pending"]
     checklist_completed = [r for r in checklist_records if r.status == "Completed"]
     checklist_failed = [r for r in checklist_records if r.status == "Failed"]
     inspection_pending_approvals = [
@@ -3159,6 +3163,9 @@ def plant_summary_page(db, user):
                         if r.category in PROCESS_CATEGORIES and (r.approval_status or "Pending") == "Pending")
         i_approved = sum(1 for r in plant_rows
                          if r.category in PROCESS_CATEGORIES and r.approval_status == "Approved")
+        c_submitted = sum(1 for r in plant_rows if r.category == "Civil Works")
+        c_approved = sum(1 for r in plant_rows if r.category == "Civil Works" and r.approval_status == "Approved")
+        c_pending = sum(1 for r in plant_rows if r.category == "Civil Works" and (r.approval_status or "Pending") == "Pending")
         rows.append({
             "Plant": display_plant_name(p),
             "Panel Cleaning (Tables)": p_done,
@@ -3166,6 +3173,9 @@ def plant_summary_page(db, user):
             "Inspection Checklists Completed": i_done,
             "Maintenance Inspection Pending Approvals": i_pending,
             "Inspection Checklists Approved": i_approved,
+            "Civil Works Submitted": c_submitted,
+            "Civil Works Approved": c_approved,
+            "Civil Works Pending Approval": c_pending,
         })
     plant_df = pd.DataFrame(rows)
 
@@ -3223,8 +3233,8 @@ def plant_summary_page(db, user):
     with dist_left:
         st.markdown("**Completed Maintenance Activities**")
         distribution = pd.DataFrame({
-            "Activity": ["Panel Cleaning (Tables)", "Grass Cutting (Zones)", "Inspection Checklists"],
-            "Completed": [len(panel_records), len(grass_records), len(checklist_completed)]
+            "Activity": ["Panel Cleaning (Tables)", "Grass Cutting (Zones)", "Inspection Checklists", "Civil Works Approved"],
+            "Completed": [len(panel_records), len(grass_records), len(checklist_completed), len(civil_completed)]
         })
         distribution = distribution[distribution["Completed"] > 0]
         if not distribution.empty:
@@ -3455,6 +3465,32 @@ def overview_page(db, user, plant):
             st.error(f"{metrics['open_repairs']} active repair/maintenance item(s)")
         else:
             st.success("No repair maintenance items")
+
+    civil_records = (db.query(MaintenanceRecord)
+        .filter(MaintenanceRecord.plant_id == plant.id,
+                MaintenanceRecord.category == "Civil Works",
+                MaintenanceRecord.task_date >= start_date,
+                MaintenanceRecord.task_date <= end_date)
+        .order_by(MaintenanceRecord.task_date.desc(), MaintenanceRecord.id.desc()).all())
+    civil_total = len(civil_records)
+    civil_approved = sum(1 for rec in civil_records if rec.approval_status == "Approved")
+    civil_pending = sum(1 for rec in civil_records if (rec.approval_status or "Pending") == "Pending")
+    civil_pct = round(civil_approved / civil_total * 100, 1) if civil_total else 0
+    st.markdown("### Civil Works Progress")
+    _render_overview_card(
+        "Civil Works", "", civil_pct, civil_approved, civil_total,
+        f"{civil_approved} approved • {civil_pending} awaiting engineer approval",
+    )
+    if civil_records:
+        civil_summary = pd.DataFrame([{
+            "Work": rec.asset_id, "Date": rec.task_date,
+            "Progress": "Approved" if rec.approval_status == "Approved" else
+                        "Declined" if rec.approval_status == "Declined" else "Pending Approval",
+            "Description": parse_details(rec).get("description", rec.remarks or ""),
+        } for rec in civil_records])
+        st.dataframe(civil_summary, hide_index=True, use_container_width=True)
+    else:
+        st.caption("No civil works submitted during the selected date range.")
 
     # Historical cycle completion for the full calendar year (January to December).
     # Months with no completed records remain visible with a zero value.
@@ -4334,6 +4370,65 @@ def inspection_page(db, user, plant):
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     _render_inspection_category(db, user, plant, selected)
 
+def civil_works_page(db, user, plant):
+    """Create free-text civil work requests and track their engineer approval."""
+    header(plant)
+    st.title("Civil Works")
+    st.caption("Record civil works for this plant. Submitted items are sent to engineers for review.")
+
+    with st.container(border=True):
+        st.subheader("Create Civil Works")
+        with st.form(f"civil_works_form_{plant.id}", clear_on_submit=True):
+            work_title = st.text_input("Work title", placeholder="e.g. Repair the access road near the inverter area")
+            work_description = st.text_area("Civil works description", placeholder="Type the civil work details here...", height=150)
+            work_date = st.date_input("Work date", value=date.today())
+            submitted = st.form_submit_button("Submit Civil Works for Approval", type="primary", use_container_width=True)
+
+        if submitted:
+            if not work_title.strip() or not work_description.strip():
+                st.error("Enter both a work title and a description.")
+            else:
+                record = MaintenanceRecord(
+                    plant_id=plant.id, category="Civil Works", asset_id=work_title.strip()[:100],
+                    task_date=work_date, worker_id=user.id, status="Pending",
+                    details_json=json.dumps({"description": work_description.strip()}, ensure_ascii=False),
+                    remarks=work_description.strip(), approval_status="Pending",
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record)
+                notify_users(
+                    db, plant.id, f"New Civil Works submitted: {record.asset_id}",
+                    f"Plant: {plant.name}\nWork: {record.asset_id}\nDate: {work_date:%d %b %Y}\n"
+                    f"Submitted by: {user.full_name}\n\nDescription: {work_description.strip()}\n\n"
+                    "Please review this item in Approvals & Sign-off.",
+                    "Civil Works", str(record.id), notification_type="APPROVAL_REQUEST",
+                )
+                st.success("Civil Works submitted successfully for engineer approval.")
+                st.rerun()
+
+    st.markdown("### Submitted Civil Works")
+    records = (db.query(MaintenanceRecord)
+        .filter(MaintenanceRecord.plant_id == plant.id, MaintenanceRecord.category == "Civil Works")
+        .order_by(MaintenanceRecord.task_date.desc(), MaintenanceRecord.id.desc()).all())
+    if not records:
+        st.info("No civil works have been submitted for this plant yet.")
+        return
+    workers = {u.id: u.full_name for u in db.query(User).all()}
+    for rec in records:
+        details = parse_details(rec)
+        approval = rec.approval_status or "Pending"
+        icon = "🟢" if approval == "Approved" else "🔴" if approval == "Declined" else "🟠"
+        with st.expander(f"{icon} {rec.asset_id} • {rec.task_date:%d %b %Y} • {approval}"):
+            st.write(f"**Description:** {details.get('description', rec.remarks or '')}")
+            st.write(f"**Submitted by:** {workers.get(rec.worker_id, 'Unassigned')}")
+            st.write(f"**Approval status:** {approval}")
+            if rec.approval_comment:
+                st.write(f"**Engineer comment:** {rec.approval_comment}")
+            if rec.approval_signature:
+                st.write(f"**Reviewed by:** {rec.approval_signature}")
+
+
 def loss_repair_page(db, user, plant):
     header(plant)
     st.markdown("## Repair & Maintenance")
@@ -4934,6 +5029,76 @@ def _excel_bytes(df,sheet_name="Maintenance Report"):
 
 def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="Overall Summary"):
     """Create a one-page work-category report or the full overall management report."""
+    if report_type == "Civil Works":
+        from xml.sax.saxutils import escape
+
+        output = io.BytesIO()
+        doc = SimpleDocTemplate(
+            output, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm,
+            topMargin=9*mm, bottomMargin=9*mm,
+            title=f"{plant.name} - Civil Works Report",
+            author="Solar Operation and Maintenance Platform",
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "CivilWorksTitle", parent=styles["Title"], alignment=TA_CENTER,
+            fontSize=17, leading=20, spaceAfter=5, textColor=colors.HexColor("#123b63"),
+        )
+        small = ParagraphStyle("CivilWorksSmall", parent=styles["Normal"], fontSize=8, leading=10)
+        total_civil = len(df)
+        approved_civil = int((df["Approval"] == "Approved").sum()) if total_civil else 0
+        pending_civil = int((df["Approval"] == "Pending").sum()) if total_civil else 0
+        declined_civil = int((df["Approval"] == "Declined").sum()) if total_civil else 0
+        story = [
+            Paragraph("Civil Works Report", title_style),
+            Paragraph(
+                f"<b>{escape(str(plant.name))}</b> | Period: {start:%d %b %Y} - {end:%d %b %Y} | "
+                f"Generated: {datetime.now():%d %b %Y %H:%M}", small,
+            ),
+            Spacer(1, 5*mm),
+        ]
+        kpi = Table([[
+            f"Submitted: {total_civil}", f"Approved: {approved_civil}",
+            f"Pending: {pending_civil}", f"Declined: {declined_civil}",
+        ]], colWidths=[55*mm]*4, rowHeights=[12*mm])
+        kpi.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f4f7fb")),
+            ("BOX", (0,0), (-1,-1), .6, colors.HexColor("#d7e0ea")),
+            ("INNERGRID", (0,0), (-1,-1), .4, colors.HexColor("#e2e8f0")),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ]))
+        story += [kpi, Spacer(1, 5*mm), Paragraph("Civil Works Activities", styles["Heading2"])]
+        table_rows = [[Paragraph(f"<b>{label}</b>", small) for label in
+                       ["Date", "Work", "Submitted By", "Status", "Approval", "Description"]]]
+        for _, row in df.iterrows():
+            values = [
+                row.get("Date", ""), row.get("Asset", ""), row.get("Worker", ""),
+                row.get("Status", ""), row.get("Approval", ""), row.get("Remarks", ""),
+            ]
+            cells = []
+            for value in values:
+                if pd.isna(value):
+                    value = ""
+                if hasattr(value, "strftime"):
+                    value = value.strftime("%d %b %Y")
+                cells.append(Paragraph(escape(str(value)), small))
+            table_rows.append(cells)
+        if len(table_rows) == 1:
+            table_rows.append([Paragraph("No civil works submitted in this period.", small)] + [""]*5)
+        activity = Table(table_rows, colWidths=[25*mm, 38*mm, 35*mm, 25*mm, 25*mm, 72*mm], repeatRows=1)
+        activity.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#d9ecfb")),
+            ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#d7e0ea")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7fafc")]),
+            ("LEFTPADDING", (0,0), (-1,-1), 4), ("RIGHTPADDING", (0,0), (-1,-1), 4),
+            ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ]))
+        story.append(activity)
+        doc.build(story)
+        return output.getvalue()
+
     if report_type in ("Panel Cleaning", "Grass Cutting"):
         # Dedicated work reports contain only their own category; inspections and
         # approvals, as well as the other work category, are intentionally excluded.
@@ -5236,7 +5401,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 def reports_page(db,user,plant):
     header(plant)
     st.title("Management Reports")
-    st.caption("Readable operational reports for panel cleaning, grass cutting, and overall maintenance.")
+    st.caption("Readable operational reports for panel cleaning, grass cutting, civil works, and overall maintenance.")
     c1,c2=st.columns(2)
     with c1: start=st.date_input("From",date.today()-timedelta(days=30),key="report_start")
     with c2: end=st.date_input("To",date.today(),key="report_end")
@@ -5407,6 +5572,23 @@ def reports_page(db,user,plant):
                 f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.pdf",
                 "application/pdf", key=f"pdf_{category}", use_container_width=True)
 
+    civil_df = df[df["Category"] == "Civil Works"].copy() if total else pd.DataFrame(columns=df.columns)
+    st.markdown("### Civil Works Report")
+    with st.container(border=True):
+        st.markdown(f"**Civil Works report** — {len(civil_df)} submitted activities in the selected period")
+        x1, x2 = st.columns(2)
+        x1.download_button(
+            "⬇️ Civil Works Excel", _excel_bytes(civil_df, "Civil Works"),
+            f"{plant.code.lower()}_civil_works_report.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="excel_civil_works", use_container_width=True,
+        )
+        x2.download_button(
+            "📄 Civil Works PDF", _pdf_report_bytes(civil_df, plant, start, end, pc, gc, report_type="Civil Works"),
+            f"{plant.code.lower()}_civil_works_report.pdf", "application/pdf",
+            key="pdf_civil_works", use_container_width=True,
+        )
+
     st.markdown("### Overall Summary Downloads")
     x1,x2=st.columns(2)
     x1.download_button("⬇️ Export overall report to Excel",_excel_bytes(df,"Overall Summary"),
@@ -5431,7 +5613,7 @@ def approvals_page(db, user, plant):
 
     base_filter = [
         MaintenanceRecord.plant_id == plant.id,
-        MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
+        MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys()) + ["Civil Works"]),
     ]
     latest_pending_date = (
         db.query(func.max(MaintenanceRecord.task_date))
@@ -5460,7 +5642,7 @@ def approvals_page(db, user, plant):
     c3.metric("Declined", sum(1 for rec in reviewed if rec.approval_status == "Declined"))
 
     workers = {u.id: u.full_name for u in db.query(User).all()}
-    categories = list(PROCESS_CATEGORIES.keys())
+    categories = list(PROCESS_CATEGORIES.keys()) + ["Civil Works"]
     selected = st.session_state.get("approval_category", categories[0])
     if selected not in categories:
         selected = categories[0]
@@ -5472,8 +5654,9 @@ def approvals_page(db, user, plant):
         "MDB Inspection": "MDB Inspection",
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
+        "Civil Works": "Civil Works",
     }
-    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85], gap="small")
+    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85, 1.0], gap="small")
     for col, category in zip(tab_cols, categories):
         count = sum(1 for rec in pending if rec.category == category)
         with col:
@@ -5489,6 +5672,10 @@ def approvals_page(db, user, plant):
 
     def render_checklist_summary(rec):
         details = parse_details(rec)
+        if rec.category == "Civil Works":
+            st.markdown("**Civil Works Description**")
+            st.write(details.get("description", rec.remarks or "No description provided."))
+            return
         saved_items = details.get("items", {}) if isinstance(details, dict) else {}
         rows = []
         for item in PROCESS_CATEGORIES[rec.category]["items"]:
@@ -5549,6 +5736,9 @@ def approvals_page(db, user, plant):
                 a, b = st.columns(2)
                 if a.button("✅ Accept & Sign", key=f"approve_{rec.id}", type="primary", use_container_width=True):
                     rec.approval_status = "Approved"
+                    if rec.category == "Civil Works":
+                        rec.status = "Completed"
+                        rec.completed_at = datetime.utcnow()
                     rec.approved_by = user.id
                     rec.approved_at = datetime.utcnow()
                     rec.approval_signature = signature
@@ -5561,6 +5751,8 @@ def approvals_page(db, user, plant):
                         st.error("Add a reason when declining an inspection.")
                     else:
                         rec.approval_status = "Declined"
+                        if rec.category == "Civil Works":
+                            rec.status = "Pending"
                         rec.approved_by = user.id
                         rec.approved_at = datetime.utcnow()
                         rec.approval_signature = signature
@@ -5679,6 +5871,8 @@ def main():
         weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
     elif page == "🔧 Maintenance Inspections":
         inspection_page(db, user, plant)
+    elif page == "🏗️ Civil Works":
+        civil_works_page(db, user, plant)
     elif page == "⚠️ Repair & Maintenance":
         loss_repair_page(db, user, plant)
     elif page == "📋 Activity Log":
