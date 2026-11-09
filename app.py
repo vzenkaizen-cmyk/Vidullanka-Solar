@@ -3326,13 +3326,6 @@ def plant_summary_page(db, user):
                             config={"displayModeBar": False})
         else:
             st.info("No civil works have been submitted for the selected plant(s) and date range.")
-        st.dataframe(
-            plant_df[[
-                "Plant", "Civil Works Submitted", "Civil Works Approved",
-                "Civil Works Pending Approval", "Civil Works Declined"
-            ]],
-            hide_index=True, use_container_width=True,
-        )
 
     st.markdown("### Plant-wise maintenance activity")
     st.dataframe(plant_df, hide_index=True, use_container_width=True)
@@ -5335,7 +5328,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</font>", small),
         Paragraph(
             f"<b>{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.0f}%</b>"
-            f"<br/><font size='8'>Civil Works Approval</font>"
+            f"<br/><font size='8'>Civil Works Progress</font>"
             f"<br/><font size='7'>{civil_approved}/{civil_submitted} approved</font>",
             small,
         ),
@@ -5359,7 +5352,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     work_summary = [
         ("Panel Cleaning", panel_pct, "tables", panel_done, panel_total),
         ("Grass Cutting", grass_pct, "zones", grass_done, grass_total),
-        ("Civil Works Approval", (civil_approved / civil_submitted * 100) if civil_submitted else 0,
+        ("Civil Works Progress", (civil_approved / civil_submitted * 100) if civil_submitted else 0,
          "works approved", civil_approved, civil_submitted),
     ]
     for label, pct_value, unit, done_value, total_value in work_summary:
@@ -5369,7 +5362,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
             ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#18a66a" if pct_value >= 100 else "#e55353")),
             ("BOX", (0,0), (-1,-1), 0, colors.white),
         ]))
-        if label == "Civil Works Approval":
+        if label == "Civil Works Progress":
             state = f"{civil_pending} pending • {civil_declined} declined"
         else:
             cycles_per_year = 4 if label == "Panel Cleaning" else 6
@@ -5413,7 +5406,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     progress_data = [
         [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'4/4 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/4 cycles completed'}", small)],
         [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'6/6 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/6 cycles completed'}", small)],
-        [Paragraph("Civil Works approval", small), Paragraph(
+        [Paragraph("Civil Works progress", small), Paragraph(
             f"{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.1f}% — "
             f"{civil_approved}/{civil_submitted} approved; {civil_pending} pending; {civil_declined} declined",
             small,
@@ -5525,6 +5518,15 @@ def reports_page(db,user,plant):
     approved_approvals = db.query(MaintenanceRecord).filter(
         *inspection_filter, MaintenanceRecord.approval_status == "Approved"
     ).count()
+
+    # Civil Works progress is reported separately from maintenance inspection approvals.
+    civil_report_df = df[df["Category"] == "Civil Works"].copy() if total else pd.DataFrame(columns=df.columns)
+    civil_submitted = len(civil_report_df)
+    civil_approved = int((civil_report_df["Approval"] == "Approved").sum()) if civil_submitted else 0
+    civil_pending = int((civil_report_df["Approval"] == "Pending").sum()) if civil_submitted else 0
+    civil_declined = int((civil_report_df["Approval"] == "Declined").sum()) if civil_submitted else 0
+    civil_progress_pct = round(civil_approved / civil_submitted * 100, 1) if civil_submitted else 0
+
     import plotly.express as px
 
     # Build report progress from the latest saved record for each table/zone
@@ -5566,7 +5568,7 @@ def reports_page(db,user,plant):
 
     pc = round(panel_done / panel_total * 100, 1) if panel_total else 0
     gc = round(grass_done / grass_total * 100, 1) if grass_total else 0
-    c1,c2,c3,c4,c5,c6,c7=st.columns(7)
+    c1,c2,c3,c4,c5,c6,c7,c8=st.columns(8)
     c1.metric("Activities",total)
     c2.metric("Green - Completed",completed)
     c3.metric("Red - Not Completed",failed)
@@ -5585,6 +5587,11 @@ def reports_page(db,user,plant):
     )
     c6.metric("Panel Cleaning", f"{pc:.0f}%")
     c7.metric("Grass Cutting", f"{gc:.0f}%")
+    c8.metric(
+        "Civil Works Progress", f"{civil_progress_pct:.0f}%",
+        f"{civil_approved}/{civil_submitted} approved · {civil_pending} pending · {civil_declined} declined",
+        help="Approval progress for civil works submitted within the selected reporting period.",
+    )
     panel_done = min(panel_done, panel_total)
     grass_done = min(grass_done, grass_total)
     panel_left = max(0, panel_total - panel_done)
