@@ -3272,6 +3272,36 @@ def plant_summary_page(db, user):
         else:
             st.info("No inspection checklist approvals in this date range.")
 
+    # Civil Works progress card — uses the same plant/date filters as this summary.
+    # Approval is treated as completed progress because Civil Works submissions
+    # are tracked through the existing engineer approval workflow.
+    civil_submitted_total = len(civil_records)
+    civil_approved_total = len(civil_completed)
+    civil_pending_total = len(civil_pending)
+    civil_declined_total = sum(
+        1 for r in civil_records if (r.approval_status or "Pending") == "Declined"
+    )
+    civil_progress_pct = (
+        round(civil_approved_total / civil_submitted_total * 100, 1)
+        if civil_submitted_total else 0
+    )
+
+    st.markdown("### Civil Works Progress")
+    with st.container(border=True):
+        st.markdown("**Civil Works approval and completion progress**")
+        cw1, cw2, cw3, cw4 = st.columns(4)
+        cw1.metric("Total Submitted", civil_submitted_total)
+        cw2.metric("Approved", civil_approved_total)
+        cw3.metric("Pending Approval", civil_pending_total)
+        cw4.metric("Declined", civil_declined_total)
+        st.progress(
+            civil_progress_pct / 100,
+            text=f"Approved progress: {civil_progress_pct:.1f}% "
+                 f"({civil_approved_total} of {civil_submitted_total} civil works approved)"
+        )
+        if civil_submitted_total == 0:
+            st.caption("No civil works have been submitted for the selected plant(s) and date range.")
+
     st.markdown("### Plant-wise maintenance activity")
     st.dataframe(plant_df, hide_index=True, use_container_width=True)
 
