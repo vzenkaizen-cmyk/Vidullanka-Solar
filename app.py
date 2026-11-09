@@ -5589,8 +5589,6 @@ def reports_page(db,user,plant):
     c7.metric("Grass Cutting", f"{gc:.0f}%")
     c8.metric(
         "Civil Works Progress", f"{civil_progress_pct:.0f}%",
-        f"{civil_approved}/{civil_submitted} approved · {civil_pending} pending · {civil_declined} declined",
-        help="Approval progress for civil works submitted within the selected reporting period.",
     )
     panel_done = min(panel_done, panel_total)
     grass_done = min(grass_done, grass_total)
