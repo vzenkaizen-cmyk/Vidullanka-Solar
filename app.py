@@ -3532,9 +3532,11 @@ def overview_page(db, user, plant):
     civil_pending = sum(1 for rec in civil_records if (rec.approval_status or "Pending") == "Pending")
     civil_pct = round(civil_approved / civil_total * 100, 1) if civil_total else 0
     st.markdown("### Civil Works Progress")
-    _render_overview_card(
-        "Civil Works", "", civil_pct, civil_approved, civil_total,
-        f"{civil_approved} approved • {civil_pending} awaiting engineer approval",
+    st.markdown(
+        f'<div class="overview-work-card"><div class="overview-work-title">Civil Works</div>'
+        f'<div class="overview-work-percent">{civil_pct:.0f}%</div>'
+        f'<div class="small-muted">{civil_approved} / {civil_total} completed</div></div>',
+        unsafe_allow_html=True,
     )
     if civil_records:
         civil_summary = pd.DataFrame([{
