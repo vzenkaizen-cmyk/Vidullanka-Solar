@@ -3778,7 +3778,7 @@ def weeding_task_page(db, user, plant, category, asset_type, title, icon):
 
 def grass_cutting_page(db, user, plant):
     header(plant)
-    st.markdown("##  Grass Cutting")
+    st.markdown("## 🌿 Grass Cutting")
 
     task_date = _period_picker(plant, "Grass Cutting")
     # Compact map — same size as the Panel Cleaning map.
@@ -5967,10 +5967,12 @@ def main():
         overview_page(db, user, plant)
     elif page == "🧹 Panel Cleaning":
         panel_cleaning_page(db, user, plant)
+    elif page == "🌱 Weeding Panel Cleaning":
+        weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
     elif page == "🌿 Grass Cutting":
         grass_cutting_page(db, user, plant)
     elif page == "🌾 Chemical Weeding":
-        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding")
+        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
     elif page == "🔧 Maintenance Inspections":
         inspection_page(db, user, plant)
     elif page == "🏗️ Civil Works":
