@@ -3786,7 +3786,7 @@ def weeding_task_page(db, user, plant, category, asset_type, title, icon):
 
             with zone_cols[zone_index % 5]:
                 zone_done = bool(traces) and all(bool(saved_checks.get(trace, False)) for trace in traces)
-                st.markdown(f"**{zone}**  \\n{'🟢 Completed' if zone_done else '🔴 Pending'}")
+                st.markdown(f"**{zone}**  {'🟢 Completed' if zone_done else '🔴 Pending'}")
                 worker_names = st.multiselect(
                     "Workers / Supervisors", worker_choices,
                     default=[name for name in saved_workers if name in worker_choices],
