@@ -3725,6 +3725,11 @@ def weeding_task_page(db, user, plant, category, asset_type, title, icon):
     st.markdown(f"## {icon} {title}")
     st.caption("Record weeding work separately from the regular maintenance activity.")
     task_date = _period_picker(plant, category)
+
+    plant_code = (plant.code or "").strip().upper()
+    is_hrn1 = plant_code in {"HS1", "HRN1", "HRN", "HRN 1"} or "HRN 1" in (plant.name or "").upper()
+    is_hrn1_chemical_weeding = title == "Chemical Weeding" and is_hrn1
+
     map_mode = "panel" if asset_type == "Table" else "grass"
     satellite_table_map_page(
         db, user, plant, embedded=True, task_date=task_date,
@@ -3732,44 +3737,141 @@ def weeding_task_page(db, user, plant, category, asset_type, title, icon):
         status_category=category,
     )
     records = _map_status_map(db, plant.id, category, task_date, use_period=True)
-    assets = asset_list(plant, asset_type)
-    completed = sum(1 for rec in records.values() if rec.status == "Completed")
-    total = len(assets)
-    pct = round(completed / total * 100, 1) if total else 0
-    st.progress(pct / 100, text=f"{title} progress: {pct:.1f}% ({completed}/{total})")
-    worker_options = worker_options_for_plant(plant, db, first_names_only=(asset_type == "Zone"))
-    cols = st.columns(5)
-    for i, asset in enumerate(assets):
-        rec = records.get(asset)
-        done = bool(rec and rec.status == "Completed")
-        saved_names = (rec.remarks or "").strip() if rec else ""
-        saved_workers = [name.strip() for name in saved_names.split(",") if name.strip() and name.strip().upper() != "R"]
-        choices = list(dict.fromkeys(saved_workers + worker_options))
-        with cols[i % 5]:
-            st.markdown(f"**{asset}**  \n{'🟢 Completed' if done else '🔴 Pending'}")
-            selected_workers = st.multiselect(
-                "Workers / Supervisors", choices,
-                default=[name for name in saved_workers if name in choices],
-                label_visibility="collapsed",
-                placeholder="Select one or more workers",
-                key=f"weeding_workers_{category}_{plant.id}_{asset}_{task_date}",
-            )
-            worker_names = ", ".join(selected_workers)
-            if st.button(
-                "Mark Pending" if done else "Mark Completed",
-                key=f"weeding_toggle_{category}_{plant.id}_{asset}_{task_date}",
-                use_container_width=True,
-            ):
-                if not done and not worker_names:
-                    st.warning(f"Select at least one worker for {asset} before marking it completed.")
-                else:
-                    upsert_record(
-                        db, plant.id, category, asset, task_date, user.id,
-                        "Pending" if done else "Completed",
-                        {"items": {category: "Not Done" if done else "Done"}},
-                        remarks="" if done else worker_names,
-                    )
-                    st.rerun()
+
+    # HRN 1 Chemical Weeding follows the same 80-table / 10-zone layout
+    # used by HRN 1 Grass Cutting. Records remain under the existing
+    # "Weeding Grass Cutting" category so existing data and reports are retained.
+    if is_hrn1_chemical_weeding:
+        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        table_assets = [f"T-{i:02d}" for i in range(1, 81)]
+        zone_trace_map = {}
+        cursor = 0
+        for zone_index, count in enumerate(zone_trace_counts, start=1):
+            zone_trace_map[f"Z-{zone_index:02d}"] = table_assets[cursor:cursor + count]
+            cursor += count
+
+        total_traces = len(table_assets)
+        completed_traces = 0
+        for zone_name, traces in zone_trace_map.items():
+            zone_record = records.get(zone_name)
+            zone_details = parse_details(zone_record) if zone_record else {}
+            zone_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
+            if zone_record and zone_record.status == "Completed" and not zone_checks:
+                zone_checks = {trace: True for trace in traces}
+            completed_traces += sum(bool(zone_checks.get(trace, False)) for trace in traces)
+
+        pct = round(completed_traces / total_traces * 100, 1) if total_traces else 0
+        st.progress(
+            pct / 100,
+            text=f"{title} progress: {pct:.1f}% ({completed_traces}/{total_traces} tables)"
+        )
+
+        worker_options = worker_options_for_plant(plant, db, first_names_only=True)
+        zone_cols = st.columns(5)
+        for zone_index, (zone, traces) in enumerate(zone_trace_map.items()):
+            rec = records.get(zone)
+            saved_details = parse_details(rec) if rec else {}
+            saved_checks = saved_details.get("table_checks", {}) if isinstance(saved_details, dict) else {}
+            if rec and rec.status == "Completed" and not saved_checks:
+                saved_checks = {trace: True for trace in traces}
+
+            saved_worker_name = (rec.remarks or "").strip() if rec else ""
+            if saved_worker_name.upper() == "R":
+                saved_worker_name = ""
+            saved_workers = [
+                name.strip() for name in saved_worker_name.split(",")
+                if name.strip() and name.strip().upper() != "R"
+            ]
+            worker_choices = list(dict.fromkeys(saved_workers + worker_options))
+
+            with zone_cols[zone_index % 5]:
+                zone_done = bool(traces) and all(bool(saved_checks.get(trace, False)) for trace in traces)
+                st.markdown(f"**{zone}**  \\n{'🟢 Completed' if zone_done else '🔴 Pending'}")
+                worker_names = st.multiselect(
+                    "Workers / Supervisors", worker_choices,
+                    default=[name for name in saved_workers if name in worker_choices],
+                    label_visibility="collapsed",
+                    placeholder="Select one or more workers",
+                    key=f"chemical_weeding_worker_names_{plant.id}_{zone}_{task_date}",
+                )
+                worker_name = ", ".join(worker_names)
+                st.caption(
+                    f"Traces {traces[0].replace('T-', '')}–{traces[-1].replace('T-', '')} · "
+                    f"{len(traces)} tables"
+                )
+
+                current_checks = {}
+                trace_cols = st.columns(2)
+                for trace_index, trace_id in enumerate(traces):
+                    saved_value = bool(saved_checks.get(trace_id, False))
+                    with trace_cols[trace_index % 2]:
+                        current_checks[trace_id] = st.checkbox(
+                            trace_id,
+                            value=saved_value,
+                            key=f"hrn1_chemical_weeding_trace_{plant.id}_{zone}_{trace_id}_{task_date}",
+                            disabled=not bool(worker_name),
+                        )
+
+                checked_count = sum(current_checks.values())
+                st.caption(f"{checked_count}/{len(traces)} tables completed")
+
+                if current_checks != {
+                    trace: bool(saved_checks.get(trace, False)) for trace in traces
+                }:
+                    if any(current_checks.values()) and not worker_name:
+                        st.warning(f"Select at least one worker for {zone} before saving table progress.")
+                    else:
+                        all_done = all(current_checks.values())
+                        upsert_record(
+                            db, plant.id, category, zone, task_date, user.id,
+                            "Completed" if all_done else "Pending",
+                            {
+                                "items": {category: "Done" if all_done else "Not Done"},
+                                "table_checks": current_checks,
+                            },
+                            remarks=worker_name or saved_worker_name,
+                        )
+                        st.rerun()
+
+    else:
+        assets = asset_list(plant, asset_type)
+        completed = sum(1 for rec in records.values() if rec.status == "Completed")
+        total = len(assets)
+        pct = round(completed / total * 100, 1) if total else 0
+        st.progress(pct / 100, text=f"{title} progress: {pct:.1f}% ({completed}/{total})")
+        worker_options = worker_options_for_plant(plant, db, first_names_only=(asset_type == "Zone"))
+        cols = st.columns(5)
+        for i, asset in enumerate(assets):
+            rec = records.get(asset)
+            done = bool(rec and rec.status == "Completed")
+            saved_names = (rec.remarks or "").strip() if rec else ""
+            saved_workers = [name.strip() for name in saved_names.split(",") if name.strip() and name.strip().upper() != "R"]
+            choices = list(dict.fromkeys(saved_workers + worker_options))
+            with cols[i % 5]:
+                st.markdown(f"**{asset}**  \\n{'🟢 Completed' if done else '🔴 Pending'}")
+                selected_workers = st.multiselect(
+                    "Workers / Supervisors", choices,
+                    default=[name for name in saved_workers if name in choices],
+                    label_visibility="collapsed",
+                    placeholder="Select one or more workers",
+                    key=f"weeding_workers_{category}_{plant.id}_{asset}_{task_date}",
+                )
+                worker_names = ", ".join(selected_workers)
+                if st.button(
+                    "Mark Pending" if done else "Mark Completed",
+                    key=f"weeding_toggle_{category}_{plant.id}_{asset}_{task_date}",
+                    use_container_width=True,
+                ):
+                    if not done and not worker_names:
+                        st.warning(f"Select at least one worker for {asset} before marking it completed.")
+                    else:
+                        upsert_record(
+                            db, plant.id, category, asset, task_date, user.id,
+                            "Pending" if done else "Completed",
+                            {"items": {category: "Not Done" if done else "Done"}},
+                            remarks="" if done else worker_names,
+                        )
+                        st.rerun()
 
 
 # ============================================================
