@@ -4604,6 +4604,10 @@ def _render_inspection_category(db, user, plant, category):
                             )
                             old_record = old_records.get(asset)
                             for item in group_items:
+                                # Keep the five CCTV checklist items together under
+                                # a dedicated heading within the Safety Checks tab.
+                                if item == "CCTV powercable":
+                                    st.markdown("**CCTV Checks**")
                                 item_index = item_number_map[item] - 1
                                 st.markdown(
                                     f'<div class="inspection-item-name" style="margin-top:8px;">'
@@ -6430,7 +6434,9 @@ def approvals_page(db, user, plant):
             st.markdown("**Inverter Checks**")
             st.dataframe(pd.DataFrame(rows[:3]), hide_index=True, use_container_width=True)
             st.markdown("**Safety Checks**")
-            st.dataframe(pd.DataFrame(rows[3:]), hide_index=True, use_container_width=True)
+            st.markdown("**CCTV Checks**")
+            st.dataframe(pd.DataFrame(rows[3:8]), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(rows[8:]), hide_index=True, use_container_width=True)
         elif rec.category == "AC Inspection":
             outdoor_rows = [row for row in rows if any(
                 str(item).strip() == row["Checklist item"] and str(item).strip().startswith("Outdoor -")
