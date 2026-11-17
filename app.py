@@ -4222,6 +4222,10 @@ def _inspection_display_item(item):
 
     if label == "Inverter Shelter":
         label = "Inverter Shelter (Check indicator dash box)"
+    if label == "CCTV powercable":
+        label = "CCTV Power Cable"
+    elif label == "Lightning Arresters":
+        label = "Lightning Arrester"
     if label.startswith("CT "):
         label = "Current Transformers " + label[3:]
     elif label == "CT":
@@ -4556,6 +4560,7 @@ def _render_inspection_category(db, user, plant, category):
         group_contexts = [(st.container(), group) for group in groups]
 
     item_number_map = {item: i + 1 for i, item in enumerate(cfg["items"])}
+    item_index_map = {item: i for i, item in enumerate(cfg["items"])}
 
     for context, (group_title, group_items, group_assets) in group_contexts:
         with context:
@@ -4604,16 +4609,38 @@ def _render_inspection_category(db, user, plant, category):
                             )
                             old_record = old_records.get(asset)
                             for item in group_items:
-                                # Keep the five CCTV checklist items together under
-                                # a dedicated heading within the Safety Checks tab.
+                                # CCTV is displayed as checklist item 4, with its
+                                # five individual checks listed underneath it.
                                 if item == "CCTV powercable":
-                                    st.markdown("**CCTV Checks**")
-                                item_index = item_number_map[item] - 1
-                                st.markdown(
-                                    f'<div class="inspection-item-name" style="margin-top:8px;">'
-                                    f'{item_number_map[item]}. {_inspection_display_item(item)}</div>',
-                                    unsafe_allow_html=True,
-                                )
+                                    st.markdown("**4. CCTV Checks**")
+                                    display_label = _inspection_display_item(item)
+                                    show_item_number = False
+                                elif item in ("DVR", "CCTV UPS", "CCTV Camera", "CCTV Monitor"):
+                                    display_label = _inspection_display_item(item)
+                                    show_item_number = False
+                                elif item == "Lightning Arresters ":
+                                    display_label = "5. Lightning Arrester"
+                                    show_item_number = True
+                                elif item == "Plant Fire Extinguisher":
+                                    display_label = "6. Plant Fire Extinguisher"
+                                    show_item_number = True
+                                else:
+                                    display_label = f"{item_index_map[item] + 1}. {_inspection_display_item(item)}"
+                                    show_item_number = True
+
+                                item_index = item_index_map[item]
+                                if show_item_number:
+                                    st.markdown(
+                                        f'<div class="inspection-item-name" style="margin-top:8px;">'
+                                        f'{display_label}</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                else:
+                                    st.markdown(
+                                        f'<div class="inspection-item-name" style="margin-top:8px;">'
+                                        f'{display_label}</div>',
+                                        unsafe_allow_html=True,
+                                    )
                                 _render_inspection_status(
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
@@ -6434,9 +6461,12 @@ def approvals_page(db, user, plant):
             st.markdown("**Inverter Checks**")
             st.dataframe(pd.DataFrame(rows[:3]), hide_index=True, use_container_width=True)
             st.markdown("**Safety Checks**")
-            st.markdown("**CCTV Checks**")
+            st.markdown("**4. CCTV Checks**")
             st.dataframe(pd.DataFrame(rows[3:8]), hide_index=True, use_container_width=True)
-            st.dataframe(pd.DataFrame(rows[8:]), hide_index=True, use_container_width=True)
+            st.markdown("**5. Lightning Arrester**")
+            st.dataframe(pd.DataFrame(rows[8:9]), hide_index=True, use_container_width=True)
+            st.markdown("**6. Plant Fire Extinguisher**")
+            st.dataframe(pd.DataFrame(rows[9:10]), hide_index=True, use_container_width=True)
         elif rec.category == "AC Inspection":
             outdoor_rows = [row for row in rows if any(
                 str(item).strip() == row["Checklist item"] and str(item).strip().startswith("Outdoor -")
