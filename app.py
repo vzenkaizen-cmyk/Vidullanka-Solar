@@ -958,8 +958,15 @@ def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_
             query = query.filter(MaintenanceRecord.task_date >= start_date)
         if end_date:
             query = query.filter(MaintenanceRecord.task_date <= end_date)
+        # For a selected historical reporting period, a table remains marked
+        # completed when its activity log contains a completed entry anywhere
+        # in that period. Do not let a later Pending entry erase evidence that
+        # the table was completed during the year being reviewed.
         for record in query.order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc()).all():
-            trace_records[record.asset_id] = record
+            if record.status == "Completed":
+                trace_records[record.asset_id] = record
+            elif record.asset_id not in trace_records:
+                trace_records[record.asset_id] = record
 
     def checked(value):
         if value is True:
@@ -4346,7 +4353,7 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
                 if not reason_value.strip():
                     reason_widgets.append((f"{asset} – {field_name}", reason_value))
 
-    if item == "Inverter Communication" and category in ("Daily Inspection", "Inverter Inspection") and status != "UNRECORDED":
+    if item == "Inverter Communication" and category == "Inverter Inspection" and status != "UNRECORDED":
         st.markdown("**MPPT Communication**")
         for field_name in ("MPPT 1", "MPPT 2"):
             prior = saved_items.get(f"{detail_key}__{field_name}", "UNRECORDED")
