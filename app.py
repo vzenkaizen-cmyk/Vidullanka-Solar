@@ -4612,9 +4612,8 @@ def _render_inspection_category(db, user, plant, category):
                                 # CCTV is displayed as checklist item 4, with its
                                 # five individual checks listed underneath it.
                                 if item == "CCTV powercable":
-                                    st.markdown("**4. CCTV Checks**")
-                                    display_label = _inspection_display_item(item)
-                                    show_item_number = False
+                                    display_label = "4. CCTV Checks"
+                                    show_item_number = True
                                 elif item in ("DVR", "CCTV UPS", "CCTV Camera", "CCTV Monitor"):
                                     display_label = _inspection_display_item(item)
                                     show_item_number = False
