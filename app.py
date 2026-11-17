@@ -579,7 +579,6 @@ DASHBOARD_CATEGORIES = [
     "Panel Cleaning",
     "Grass Cutting",
     "Weeding Grass Cutting",
-    "Weeding Panel Cleaning",
     *PROCESS_CATEGORIES.keys(),
 ]
 
@@ -977,6 +976,25 @@ def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_
             "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
         }
 
+    # Keep historical zone completion visible even when a later Pending
+    # record exists for the same zone in the selected reporting period.
+    zone_names = list(zone_trace_map.keys())
+    completed_zone_records = set()
+    if zone_names:
+        zone_query = db.query(MaintenanceRecord).filter(
+            MaintenanceRecord.plant_id == plant_id,
+            MaintenanceRecord.category.in_(["Grass Cutting", "Weeding Grass Cutting"]),
+            MaintenanceRecord.asset_id.in_(zone_names),
+            MaintenanceRecord.status == "Completed",
+        )
+        if start_date:
+            zone_query = zone_query.filter(MaintenanceRecord.task_date >= start_date)
+        if end_date:
+            zone_query = zone_query.filter(MaintenanceRecord.task_date <= end_date)
+        completed_zone_records = {
+            record.asset_id for record in zone_query.all()
+        }
+
     completed = {}
     for zone_name, traces in zone_trace_map.items():
         zone_record = zone_records.get(zone_name)
@@ -992,7 +1010,8 @@ def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_
         # counts as complete. Once table-level checks exist, every assigned
         # table must be checked before the zone is marked complete.
         legacy_zone_complete = bool(
-            zone_record and zone_record.status == "Completed" and not table_checks
+            zone_name in completed_zone_records
+            or (zone_record and zone_record.status == "Completed" and not table_checks)
         )
         completed[zone_name] = bool(
             legacy_zone_complete or all_zone_checks or all_table_records
@@ -1522,6 +1541,10 @@ def css():
             flex-wrap:nowrap!important;
         }
         .st-key-inspection_tabs [data-testid="stButton"]{min-width:max-content!important}
+        .st-key-inspection_tabs{width:100%!important;max-width:100%!important}
+        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{width:max-content!important;min-width:max-content!important;flex-wrap:nowrap!important}
+        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]>div{min-width:150px!important;flex:0 0 auto!important}
+        .st-key-inspection_tabs [data-testid="stButton"]{min-width:150px!important;flex:0 0 auto!important}
         .st-key-inspection_tabs [data-testid="stButton"]>button{
             min-width:max-content!important;
             white-space:nowrap!important;
@@ -4591,8 +4614,8 @@ def _render_inspection_category(db, user, plant, category):
             if category == "Daily Inspection":
                 # Each inverter is shown once, with its applicable checks beneath it.
                 # Site Safety & Security checks intentionally apply only to INV-01.
-                if group_title.startswith("🛡️"):
-                    st.caption("Site Safety & Security Checks are recorded against INV-01 only.")
+                is_safety_group = group_title.startswith("🛡️")
+                if is_safety_group:
                     asset_rows = [group_assets[0] if group_assets else "INV-01"]
                 else:
                     asset_rows = group_assets
@@ -4603,10 +4626,11 @@ def _render_inspection_category(db, user, plant, category):
                     cols = st.columns(len(row_assets), gap="small")
                     for col, asset in zip(cols, row_assets):
                         with col:
-                            st.markdown(
-                                f'<div class="inspection-asset-box">{asset}</div>',
-                                unsafe_allow_html=True,
-                            )
+                            if not is_safety_group:
+                                st.markdown(
+                                    f'<div class="inspection-asset-box">{asset}</div>',
+                                    unsafe_allow_html=True,
+                                )
                             old_record = old_records.get(asset)
                             for item in group_items:
                                 item_index = item_index_map[item]
@@ -4861,10 +4885,9 @@ def inspection_page(db, user, plant):
         "Switch Yard Inspection": "Switch Yard Inspection",
         "AC Inspection": "AC Inspection",
     }
-    for row_start in range(0, len(categories), 3):
-        row_categories = categories[row_start:row_start + 3]
-        tab_cols = st.columns(3, gap="medium")
-        for col, category in zip(tab_cols, row_categories):
+    with st.container(key="inspection_tabs"):
+        tab_cols = st.columns(len(categories), gap="small")
+        for col, category in zip(tab_cols, categories):
             with col:
                 if st.button(
                     tab_labels[category],
@@ -4875,7 +4898,6 @@ def inspection_page(db, user, plant):
                     st.session_state.inspection_category = category
                     st.rerun()
 
-    st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     if selected == "Switch Yard Inspection":
         switch_tab, transformer_tab = st.tabs([
             "Switch Yard Inspection", "Main Transformer Inspection"
