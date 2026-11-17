@@ -209,6 +209,7 @@ class MaintenanceRecord(Base):
     approved_at = Column(DateTime, nullable=True)
     approval_signature = Column(Text, default="")
     approval_comment = Column(Text, default="")
+    last_saved_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     plant = relationship("Plant", back_populates="records")
 
@@ -332,6 +333,8 @@ def initialize_database(_engine):
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_signature TEXT DEFAULT ''"))
             conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS approval_comment TEXT DEFAULT ''"))
+            conn.execute(text("ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS last_saved_at TIMESTAMP"))
+            conn.execute(text("UPDATE maintenance_records SET last_saved_at = COALESCE(completed_at, CURRENT_TIMESTAMP) WHERE last_saved_at IS NULL"))
 
             # Older versions of this app may have created a CHECK constraint on
             # users.role that does not allow the current role values. The seed
@@ -1079,6 +1082,7 @@ def upsert_record(db, plant_id, category, asset_id, task_date, worker_id, status
     rec.status = status
     rec.details_json = json.dumps(details, ensure_ascii=False)
     rec.remarks = remarks
+    rec.last_saved_at = datetime.utcnow()
     rec.completed_at = datetime.utcnow() if status in ("Completed", "Failed") else None
     db.commit()
     db.refresh(rec)
@@ -1449,29 +1453,34 @@ def css():
             outline:none!important;
             transition:none!important;
         }
-        /* Inspection labels wrap onto a second line when needed, rather than truncating. */
+        /* Keep inspection tabs on one line; allow horizontal scrolling on smaller screens. */
+        .st-key-inspection_tabs{overflow-x:auto!important;overflow-y:hidden!important}
         .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{
             gap:.8rem!important;
             align-items:stretch!important;
+            min-width:max-content!important;
+            flex-wrap:nowrap!important;
         }
+        .st-key-inspection_tabs [data-testid="stButton"]{min-width:max-content!important}
         .st-key-inspection_tabs [data-testid="stButton"]>button{
-            min-width:0!important;
-            white-space:normal!important;
+            min-width:max-content!important;
+            white-space:nowrap!important;
             overflow:visible!important;
             overflow-wrap:normal!important;
-            word-break:normal!important;
+            word-break:keep-all!important;
             height:auto!important;
             min-height:40px!important;
-            padding:7px 6px!important;
+            padding:7px 10px!important;
         }
+        .st-key-inspection_tabs [data-testid="stButton"]>button{white-space:nowrap!important;min-width:max-content!important}
         .st-key-inspection_tabs [data-testid="stButton"]>button p,
         .st-key-inspection_tabs [data-testid="stButton"]>button span,
         .st-key-inspection_tabs [data-testid="stButton"]>button div{
-            white-space:normal!important;
+            white-space:nowrap!important;
             overflow:visible!important;
             text-overflow:clip!important;
             overflow-wrap:normal!important;
-            word-break:normal!important;
+            word-break:keep-all!important;
             text-align:center!important;
             font-size:12px!important;
             line-height:1.2!important;
@@ -2425,9 +2434,9 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             zone_record = grass_records.get(zone_name)
             zone_details = parse_details(zone_record) if zone_record else {}
             trace_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
-            if zone_record and zone_record.status == "Completed" and not trace_checks:
-                completed_grass.add(zone_name)
-            elif trace_count and sum(bool(v) for v in trace_checks.values()) >= trace_count:
+            if (zone_record and zone_record.status == "Completed") or (
+                trace_count and sum(bool(v) for v in trace_checks.values()) >= trace_count
+            ):
                 completed_grass.add(zone_name)
             else:
                 completed_grass.discard(zone_name)
@@ -3448,7 +3457,7 @@ def overview_page(db, user, plant):
     range_col1, range_col2 = st.columns(2)
     with range_col1:
         start_date = st.date_input(
-            "From date", value=date(today.year, today.month, 1),
+            "From date", value=date(2023, 1, 1),
             key=f"overview_start_date_{plant.id}"
         )
     with range_col2:
@@ -3494,9 +3503,9 @@ def overview_page(db, user, plant):
             zone_rec = grass_records.get(f"Z-{zone_index:02d}")
             zone_details = parse_details(zone_rec) if zone_rec else {}
             checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
-            if zone_rec and zone_rec.status == "Completed" and not checks:
-                grass_done += 1
-            elif trace_count and sum(bool(v) for v in checks.values()) >= trace_count:
+            if (zone_rec and zone_rec.status == "Completed") or (
+                trace_count and sum(bool(v) for v in checks.values()) >= trace_count
+            ):
                 grass_done += 1
     panel_pct = round(panel_done / panel_total * 100, 1) if panel_total else 0
     grass_pct = round(grass_done / grass_total * 100, 1) if grass_total else 0
@@ -4093,11 +4102,26 @@ def _inspection_display_item(item):
     elif label.startswith("Indoor -"):
         label = label[len("Indoor -"):].strip()
 
+    if label == "Inverter Shelter":
+        label = "Inverter Shelter (Check indicator dash box)"
     if label.startswith("CT "):
         label = "Current Transformers " + label[3:]
     elif label == "CT":
         label = "Current Transformers"
     return label
+
+
+def _render_inspection_substatus(label, prior, key):
+    """Use the same icon-only three-state control as the main checklist."""
+    prior = "GREEN" if prior in ("OK", "GREEN", "Stable", "OK / Green", "Completed", "DONE") else (
+        "RED" if prior in ("Not OK", "RED", "Not Done", "Failed") else "UNRECORDED"
+    )
+    options = ["UNRECORDED", "GREEN", "RED"]
+    return st.radio(
+        label, options, index=options.index(prior),
+        format_func=lambda value: "○" if value == "UNRECORDED" else ("✓" if value == "GREEN" else "✗"),
+        horizontal=True, key=key, label_visibility="visible",
+    )
 
 
 def _inspection_groups(category, assets):
@@ -4108,7 +4132,8 @@ def _inspection_groups(category, assets):
         one_inverter = [assets[0]] if assets else ["INV-01"]
         return [
             ("🔌 Inverter Checks", cfg["items"][:3], list(assets)),
-            ("🛡️ Safety Checks", cfg["items"][3:], one_inverter),
+            ("📹 CCTV", cfg["items"][3:8], one_inverter),
+            ("🛡️ Safety Checks", cfg["items"][8:], one_inverter),
         ]
 
     if category == "AC Inspection":
@@ -4137,7 +4162,6 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
         key=f"inspection_status_{category}_{task_date}_{asset}_{item_index}",
         horizontal=True,
         label_visibility="collapsed",
-        disabled=old_record is not None,
     )
     values.setdefault(asset, {})[item] = status
 
@@ -4167,18 +4191,24 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
 
     if category == "Daily Inspection" and item == "Plant Fire Extinguisher" and status != "UNRECORDED":
         st.markdown("**Fire Extinguisher Condition**")
-        for field_name, options in [
-            ("Pressure", ["OK", "Not OK"]),
-            ("Tank condition", ["OK", "Not OK"]),
+        for field_name, legacy_name in [
+            ("Pressure Low", "Pressure"),
+            ("Tank condition", "Tank condition"),
         ]:
-            prior = saved_items.get(f"{detail_key}__{field_name}", "OK")
-            chosen = st.selectbox(field_name, options, index=options.index(prior) if prior in options else 0,
-                                  key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            prior = saved_items.get(f"{detail_key}__{field_name}",
+                                    saved_items.get(f"{detail_key}__{legacy_name}", "UNRECORDED"))
+            chosen = _render_inspection_substatus(
+                field_name, prior,
+                f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+            )
             save_detail(field_name, chosen)
-            if chosen == "Not OK":
-                reason_value = st.text_input(f"{field_name} reason",
-                    value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
-                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            if chosen == "RED":
+                reason_value = st.text_input(
+                    f"{field_name} reason",
+                    value=saved_items.get(f"{detail_key}__{field_name}__reason",
+                                          saved_items.get(f"{detail_key}__{legacy_name}__reason", "")),
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+                )
                 save_detail(f"{field_name}__reason", reason_value)
                 if not reason_value.strip():
                     reason_widgets.append((f"{asset} – {field_name}", reason_value))
@@ -4190,15 +4220,18 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     if category == "Daily Inspection" and item == "Lightning Arresters " and status != "UNRECORDED":
         st.markdown("**Lightning Arrester Checks**")
         for field_name in ("Earth cable", "Earthing unit"):
-            prior = saved_items.get(f"{detail_key}__{field_name}", "Stable")
-            chosen = st.selectbox(field_name, ["Stable", "OK", "Not OK"],
-                index=["Stable", "OK", "Not OK"].index(prior) if prior in ["Stable", "OK", "Not OK"] else 0,
-                key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            prior = saved_items.get(f"{detail_key}__{field_name}", "UNRECORDED")
+            chosen = _render_inspection_substatus(
+                field_name, prior,
+                f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+            )
             save_detail(field_name, chosen)
-            if chosen == "Not OK":
-                reason_value = st.text_input(f"{field_name} reason",
+            if chosen == "RED":
+                reason_value = st.text_input(
+                    f"{field_name} reason",
                     value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
-                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+                )
                 save_detail(f"{field_name}__reason", reason_value)
                 if not reason_value.strip():
                     reason_widgets.append((f"{asset} – {field_name}", reason_value))
@@ -4206,26 +4239,30 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     if item == "Inverter Communication" and category in ("Daily Inspection", "Inverter Inspection") and status != "UNRECORDED":
         st.markdown("**MPPT Communication**")
         for field_name in ("MPPT 1", "MPPT 2"):
-            prior = saved_items.get(f"{detail_key}__{field_name}", "OK")
-            chosen = st.radio(field_name, ["OK", "Not OK"],
-                index=["OK", "Not OK"].index(prior) if prior in ["OK", "Not OK"] else 0,
-                horizontal=True, key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            prior = saved_items.get(f"{detail_key}__{field_name}", "UNRECORDED")
+            chosen = _render_inspection_substatus(
+                field_name, prior,
+                f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+            )
             save_detail(field_name, chosen)
-            if chosen == "Not OK":
-                reason_value = st.text_input(f"{field_name} reason",
+            if chosen == "RED":
+                reason_value = st.text_input(
+                    f"{field_name} reason",
                     value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
-                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}"
+                )
                 save_detail(f"{field_name}__reason", reason_value)
                 if not reason_value.strip():
                     reason_widgets.append((f"{asset} – {field_name}", reason_value))
 
     if category == "Inverter Inspection" and item == "AC Combiner Box" and status != "UNRECORDED":
-        prior = saved_items.get(f"{detail_key}__800V cable nuts and bolts", "OK")
-        chosen = st.radio("Nuts and bolts of 800V cables", ["OK", "Not OK"],
-            index=["OK", "Not OK"].index(prior) if prior in ["OK", "Not OK"] else 0,
-            horizontal=True, key=f"detail_{category}_{task_date}_{asset}_{item_index}_800v")
+        prior = saved_items.get(f"{detail_key}__800V cable nuts and bolts", "UNRECORDED")
+        chosen = _render_inspection_substatus(
+            "Nuts and bolts of 800V cables", prior,
+            f"detail_{category}_{task_date}_{asset}_{item_index}_800v"
+        )
         save_detail("800V cable nuts and bolts", chosen)
-        if chosen == "Not OK":
+        if chosen == "RED":
             reason_value = st.text_input("800V cable nuts and bolts reason",
                 value=saved_items.get(f"{detail_key}__800V cable nuts and bolts__reason", ""),
                 key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_800v")
@@ -4233,10 +4270,6 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
             if not reason_value.strip():
                 reason_widgets.append((f"{asset} – 800V cable nuts and bolts", reason_value))
 
-    if category == "Inverter Inspection" and item == "Inverter Shelter" and status != "UNRECORDED":
-        prior = bool(saved_items.get(f"{detail_key}__Indicator dash box", False))
-        save_detail("Indicator dash box", st.checkbox("Indicator dash box checked",
-            value=prior, key=f"detail_{category}_{task_date}_{asset}_{item_index}_dash"))
 
     if category == "DC Cable Inspection" and status == "RED":
         prior = saved_items.get(f"{detail_key}__Failure type", "MC4")
@@ -4319,7 +4352,7 @@ def _render_inspection_category(db, user, plant, category):
     if single_asset:
         st.markdown(
             '<div class="inspection-single-box">'
-            f'<div class="inspection-single-title">{asset_label} Inspection</div>'
+            f'<div class="inspection-single-title">{category}</div>'
             '<div class="inspection-status-legend"><span class="unrecorded">○</span>&nbsp;&nbsp;'
             '<span class="done">✓</span>&nbsp;&nbsp;'
             '<span class="notdone">✗</span>&nbsp;&nbsp;'
@@ -4579,9 +4612,8 @@ def _render_inspection_category(db, user, plant, category):
                 continue
 
             rec = old_records.get(asset)
-            # Saved records cannot be changed for the same plant/category/asset/date.
-            if rec is not None:
-                continue
+            # Merge with the existing row so a saved inspection can be reopened,
+            # edited and saved again without losing previously entered detail fields.
             existing_details = parse_details(rec) if rec else {}
             merged_items = dict(existing_details.get("items", {}) if isinstance(existing_details, dict) else {})
 
@@ -5945,6 +5977,75 @@ def reports_page(db,user,plant):
         st.dataframe(report_df,use_container_width=True,hide_index=True)
     else:
         st.info("No activities found for the selected period.")
+
+    st.markdown("### Detailed Maintenance Inspection Report")
+    inspection_records = (
+        db.query(MaintenanceRecord)
+        .filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
+            MaintenanceRecord.task_date >= start,
+            MaintenanceRecord.task_date <= end,
+        )
+        .order_by(MaintenanceRecord.task_date.desc(), MaintenanceRecord.category, MaintenanceRecord.asset_id)
+        .all()
+    )
+    user_names = {u.id: u.full_name for u in db.query(User).all()}
+    detailed_rows = []
+    for rec in inspection_records:
+        details = parse_details(rec)
+        saved_items = details.get("items", {}) if isinstance(details, dict) else {}
+        checklist_text = []
+        for checklist_item in PROCESS_CATEGORIES.get(rec.category, {}).get("items", []):
+            result = saved_items.get(checklist_item, "Not recorded")
+            reason = str(saved_items.get(f"{checklist_item}__reason", "") or "").strip()
+            checklist_text.append(
+                f"{checklist_item.strip()}: {result}"
+                + (f" | Reason: {reason}" if reason else "")
+            )
+            for detail_key, detail_value in saved_items.items():
+                if detail_key.startswith(f"{checklist_item}__detail__"):
+                    detail_label = detail_key.split("__detail__", 1)[1]
+                    if not detail_label.endswith("__reason"):
+                        detail_reason = str(saved_items.get(f"{detail_key}__reason", "") or "").strip()
+                        checklist_text.append(
+                            f"  {detail_label}: {detail_value}"
+                            + (f" | Reason: {detail_reason}" if detail_reason else "")
+                        )
+        detailed_rows.append({
+            "Plant": plant.name,
+            "Inspection Date": rec.task_date,
+            "Inspection Type": rec.category,
+            "Asset": rec.asset_id,
+            "Overall Status": rec.status,
+            "Checklist Details": "\n".join(checklist_text),
+            "Performed / Last Saved By": user_names.get(rec.worker_id, "—"),
+            "Last Saved At": rec.last_saved_at or rec.completed_at or "—",
+            "Approval Status": rec.approval_status or "Pending",
+            "Approved / Reviewed By": user_names.get(rec.approved_by, "—"),
+            "Approval Date & Time": rec.approved_at or "—",
+            "Approval Comment": rec.approval_comment or "",
+            "Approval Signature": rec.approval_signature or "",
+            "Remarks": rec.remarks or "",
+        })
+    detailed_df = pd.DataFrame(detailed_rows, columns=[
+        "Plant", "Inspection Date", "Inspection Type", "Asset", "Overall Status",
+        "Checklist Details", "Performed / Last Saved By", "Last Saved At",
+        "Approval Status", "Approved / Reviewed By", "Approval Date & Time",
+        "Approval Comment", "Approval Signature", "Remarks",
+    ])
+    if not detailed_df.empty:
+        st.dataframe(detailed_df, use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇️ Export Full Maintenance Inspection Report (Excel)",
+            _excel_bytes(detailed_df, "Detailed Maintenance Inspections"),
+            f"{plant.code.lower()}_detailed_maintenance_inspections.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"detailed_inspection_excel_{plant.id}",
+            use_container_width=True,
+        )
+    else:
+        st.info("No maintenance inspection records were found in the selected date range.")
 
     st.markdown("### Separate Panel Cleaning and Grass Cutting Reports")
     for category, label, pct in [
