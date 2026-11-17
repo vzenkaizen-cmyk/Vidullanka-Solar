@@ -6627,6 +6627,175 @@ def admin_page(db):
 
 
 # ============================================================
+# SOLAR SOP ASSISTANT — MDP SOP DOCUMENT ONLY
+# ============================================================
+@st.cache_resource(show_spinner=False)
+def load_mdp_sop_pages():
+    """Load the MDP SOP PDF shipped alongside this Streamlit application."""
+    from pathlib import Path
+    from pypdf import PdfReader
+
+    base_dir = Path(__file__).resolve().parent
+    candidates = [
+        base_dir / "MDP_SOP_2026_Draft(1).pdf",
+        base_dir / "MDP_SOP_2026_Draft.pdf",
+        base_dir / "MDP_SOP_2026.pdf",
+    ]
+    pdf_path = next((item for item in candidates if item.is_file()), None)
+    if pdf_path is None:
+        return [], None
+
+    reader = PdfReader(str(pdf_path))
+    pages = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        page_text = (page.extract_text() or "").strip()
+        if not page_text:
+            continue
+        # Keep page boundaries intact so answers can cite the exact PDF page.
+        paragraphs = [part.strip() for part in page_text.split("\n\n") if part.strip()]
+        if not paragraphs:
+            paragraphs = [page_text]
+        for paragraph in paragraphs:
+            if len(paragraph) <= 1800:
+                pages.append({"page": page_number, "text": paragraph})
+            else:
+                for start in range(0, len(paragraph), 1500):
+                    pages.append({"page": page_number, "text": paragraph[start:start + 1500]})
+    return pages, pdf_path.name
+
+
+def retrieve_mdp_sop_context(question, pages, limit=4):
+    """Simple local keyword retrieval; never invents details outside the PDF."""
+    import re
+    from collections import Counter
+
+    stop_words = {
+        "what", "when", "where", "which", "who", "why", "how", "does", "do",
+        "the", "and", "for", "from", "with", "that", "this", "are", "is",
+        "was", "were", "can", "could", "should", "would", "please", "tell",
+        "about", "according", "procedure", "sop", "mdp", "solar", "plant",
+    }
+    tokens = [w for w in re.findall(r"[a-zA-Z0-9]+", question.lower()) if len(w) > 2 and w not in stop_words]
+    if not tokens:
+        return []
+    query_counts = Counter(tokens)
+    scored = []
+    for item in pages:
+        body = item["text"].lower()
+        words = re.findall(r"[a-zA-Z0-9]+", body)
+        counts = Counter(words)
+        score = sum(min(counts[token], 3) * weight for token, weight in query_counts.items())
+        # Reward exact multi-word phrase matches and matching SOP/checklist identifiers.
+        normalized_question = " ".join(tokens)
+        if normalized_question and normalized_question in " ".join(words):
+            score += 5
+        if score:
+            scored.append((score, item))
+    scored.sort(key=lambda pair: (pair[0], -pair[1]["page"]), reverse=True)
+    selected = []
+    seen_pages = set()
+    for score, item in scored:
+        if item["page"] not in seen_pages:
+            selected.append(item)
+            seen_pages.add(item["page"])
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def answer_from_mdp_sop(question, pages):
+    matches = retrieve_mdp_sop_context(question, pages)
+    if not matches:
+        return (
+            "I couldn't find a relevant answer in the uploaded MDP SOP. "
+            "Please try a more specific question or mention the equipment/checklist name. "
+            "I will not assume a procedure that is not stated in this document."
+        ), []
+    excerpts = []
+    for item in matches:
+        excerpt = " ".join(item["text"].split())
+        if len(excerpt) > 950:
+            excerpt = excerpt[:950].rsplit(" ", 1)[0] + "…"
+        excerpts.append(f"**PDF page {item['page']}**\n\n{excerpt}")
+    response = (
+        "I found the following relevant information in the **Vidul Madampe Solar Power Plant (MDP) SOP**. "
+        "The points below are retrieved from the document; check the cited PDF pages for the full procedure.\n\n"
+        + "\n\n---\n\n".join(excerpts)
+    )
+    return response, matches
+
+
+def render_solar_sop_agent():
+    """Render a fixed right-side SOP chat panel; it is not a navigation page."""
+    st.markdown("""
+    <style>
+    .st-key-solar_sop_agent{
+        position:fixed!important;right:18px!important;bottom:18px!important;
+        width:360px!important;max-width:calc(100vw - 36px)!important;
+        max-height:76vh!important;overflow-y:auto!important;z-index:99999!important;
+        background:#f7fbff!important;border:1px solid #b9d8f4!important;
+        border-radius:16px!important;padding:13px 14px 10px!important;
+        box-shadow:0 12px 36px rgba(14,45,78,.24)!important;
+    }
+    .st-key-solar_sop_agent [data-testid="stMarkdownContainer"] p{font-size:12px;line-height:1.45}
+    .st-key-solar_sop_agent [data-testid="stTextInput"] input{font-size:13px!important}
+    .st-key-solar_sop_agent [data-testid="stButton"] button{border-radius:9px!important}
+    .sop-agent-heading{font-size:18px;font-weight:800;color:#12345b;margin:0 0 2px}
+    .sop-agent-sub{font-size:11px;color:#5e7895;margin-bottom:8px}
+    .sop-agent-note{font-size:10px;color:#60758d;border-top:1px solid #d9e7f4;padding-top:7px;margin-top:5px}
+    @media(max-width:700px){.st-key-solar_sop_agent{right:8px!important;bottom:8px!important;width:calc(100vw - 16px)!important;max-height:62vh!important}}
+    </style>
+    """, unsafe_allow_html=True)
+
+    with st.container(key="solar_sop_agent"):
+        st.markdown('<div class="sop-agent-heading">☀️ Solar SOP Assistant</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sop-agent-sub">Ask questions from the MDP Solar SOP document</div>', unsafe_allow_html=True)
+        try:
+            pages, source_name = load_mdp_sop_pages()
+        except Exception as exc:
+            pages, source_name = [], None
+            st.error(f"Unable to read the MDP SOP PDF: {exc}")
+
+        if not source_name:
+            st.warning("MDP SOP PDF not found. Add MDP_SOP_2026_Draft(1).pdf to the same project folder as this Python file.")
+        elif not pages:
+            st.warning("The MDP SOP PDF was found, but no searchable text could be extracted.")
+        else:
+            st.caption(f"Knowledge source: {source_name} • {len(pages)} indexed text sections")
+
+        if "solar_sop_chat_history" not in st.session_state:
+            st.session_state.solar_sop_chat_history = []
+
+        with st.container(height=270, border=False):
+            if not st.session_state.solar_sop_chat_history:
+                st.markdown("**Hello!** I can help with the MDP SOP, including LOTO, plant start-up, daily inspection, panel inspection, inverter inspection, DC cables, MDB, switchyard and A/C maintenance.")
+                st.caption("Example: What checks are required before restarting the plant?")
+            for entry in st.session_state.solar_sop_chat_history[-8:]:
+                with st.chat_message(entry["role"]):
+                    st.markdown(entry["content"])
+
+        with st.form("solar_sop_question_form", clear_on_submit=True):
+            question = st.text_input(
+                "Ask about the MDP SOP",
+                placeholder="Type your SOP question…",
+                label_visibility="collapsed",
+                key="solar_sop_question_input",
+            )
+            submitted = st.form_submit_button("Send", use_container_width=True, disabled=not bool(pages))
+        if submitted and question.strip():
+            st.session_state.solar_sop_chat_history.append({"role": "user", "content": question.strip()})
+            response, _sources = answer_from_mdp_sop(question.strip(), pages)
+            st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
+
+        if st.session_state.solar_sop_chat_history:
+            if st.button("Clear conversation", key="clear_solar_sop_chat", use_container_width=True):
+                st.session_state.solar_sop_chat_history = []
+                st.rerun()
+        st.markdown('<div class="sop-agent-note">Answers are limited to the MDP SOP currently provided. For safety-critical work, follow the approved site procedure and authorised personnel.</div>', unsafe_allow_html=True)
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -6691,6 +6860,10 @@ def main():
         reminders_page(db)
     elif page == "⚙️ Admin" and user.role == "admin":
         admin_page(db)
+
+    # The MDP SOP assistant stays on the right side of the website and is
+    # intentionally not added to the navigation menu.
+    render_solar_sop_agent()
 
     db.close()
 
