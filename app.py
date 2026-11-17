@@ -462,7 +462,11 @@ PROCESS_CATEGORIES = {
             "Inverter Communication",
             "Inverter Fan",
             "Inverter AC, DC Parameters",
-            "All CCTV Cameras",
+            "CCTV powercable",
+            "DVR",
+            "CCTV UPS",
+            "CCTV Camera",
+            "CCTV Monitor",
             "Lightning Arresters ",
             "Plant Fire Extinguisher",
         ],
@@ -474,10 +478,9 @@ PROCESS_CATEGORIES = {
             "Inverter Communication",
             "MC4 Connection",
             "DC Switches",
-            "Cooling Fans Works",
+            "Cooling Fans and Ventilation Duct",
             "AC Combiner Box",
             "No Corrosion",
-            "Ventilation Duct",
             "Inverter Shelter",
         ],
     },
@@ -487,14 +490,14 @@ PROCESS_CATEGORIES = {
         "items": [
             "Front Glass Condition",
             "Back Glass Condition",
-            "Diode Damage",
+            "Diode and Junction Box Condition",
         ],
     },
     "DC Cable Inspection": {
         "frequency": "Monthly",
         "asset_type": "Table",
         "items": [
-            "DC Cable Condition ",
+            "DC Cable Condition",
         ],
     },
     "MDB Inspection": {
@@ -525,17 +528,23 @@ PROCESS_CATEGORIES = {
         "frequency": "Monthly",
         "asset_type": "Switch Yard",
         "items": [
-            "Transformer - No Abnormal Sound",
-            "Transformer - No Oil Leaks",
-            "Transformer - No Visible Corrosion",
-            "Transformer Insulators Are Good",
-            "Transformer Surge Protectors Are Good",
             "OVCB Tripping Works",
             "OVCB Tripping Count Recorded",
             "OVCB Auto / Manual Works",
             "DDLO ",
             "Fence ",
             "Warning Signs clear and visible",
+        ],
+    },
+    "Main Transformer Inspection": {
+        "frequency": "Monthly",
+        "asset_type": "Switch Yard",
+        "items": [
+            "Transformer - No Abnormal Sound",
+            "Transformer - No Oil Leaks",
+            "Transformer - No Visible Corrosion",
+            "Transformer Insulators Are Good",
+            "Transformer Surge Protectors Are Good",
         ],
     },
     "AC Inspection": {
@@ -2149,7 +2158,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         merged = dict(primary)
         for asset, record in weeding.items():
             existing = merged.get(asset)
-            if record.status == "Completed" or existing is None:
+            if existing is None or (record.task_date, record.id) > (existing.task_date, existing.id):
                 merged[asset] = record
         return merged
 
@@ -2405,6 +2414,23 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
     zone_assets = asset_list(plant, "Zone")
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
+    # HRN 1 zone completion is determined from its individual table trace
+    # checkboxes. Older zone records can retain a Pending status after the
+    # final traces were checked, so derive the map colour from the saved detail.
+    plant_identity_for_grass = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper().replace(" ", "")
+    if "HS1" in plant_identity_for_grass or "HRN1" in plant_identity_for_grass:
+        trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        for zone_index, trace_count in enumerate(trace_counts, start=1):
+            zone_name = f"Z-{zone_index:02d}"
+            zone_record = grass_records.get(zone_name)
+            zone_details = parse_details(zone_record) if zone_record else {}
+            trace_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
+            if zone_record and zone_record.status == "Completed" and not trace_checks:
+                completed_grass.add(zone_name)
+            elif trace_count and sum(bool(v) for v in trace_checks.values()) >= trace_count:
+                completed_grass.add(zone_name)
+            else:
+                completed_grass.discard(zone_name)
     pending_count = max(0, len(assets) - len(completed))
 
     # Plant-specific array footprints. Coordinates are normalized to each image,
@@ -3448,16 +3474,30 @@ def overview_page(db, user, plant):
     grass_weeding_records = status_map_for_period(db, plant.id, "Weeding Grass Cutting", start_date, end_date)
     panel_records = dict(panel_records)
     for asset, rec in panel_weeding_records.items():
-        if rec.status == "Completed" or asset not in panel_records:
+        current = panel_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
             panel_records[asset] = rec
     grass_records = dict(grass_records)
     for asset, rec in grass_weeding_records.items():
-        if rec.status == "Completed" or asset not in grass_records:
+        current = grass_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
             grass_records[asset] = rec
     panel_total = plant.table_count
     grass_total = plant.zone_count
     panel_done = sum(1 for r in panel_records.values() if r.status == "Completed")
     grass_done = sum(1 for r in grass_records.values() if r.status == "Completed")
+    plant_identity = f"{plant.code} {plant.name}".upper().replace(" ", "")
+    if "HS1" in plant_identity or "HRN1" in plant_identity:
+        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        grass_done = 0
+        for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
+            zone_rec = grass_records.get(f"Z-{zone_index:02d}")
+            zone_details = parse_details(zone_rec) if zone_rec else {}
+            checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
+            if zone_rec and zone_rec.status == "Completed" and not checks:
+                grass_done += 1
+            elif trace_count and sum(bool(v) for v in checks.values()) >= trace_count:
+                grass_done += 1
     panel_pct = round(panel_done / panel_total * 100, 1) if panel_total else 0
     grass_pct = round(grass_done / grass_total * 100, 1) if grass_total else 0
     metrics["panel_pct"] = panel_pct
@@ -4117,7 +4157,95 @@ def _render_inspection_status(db, user, plant, category, task_date, item, item_i
     else:
         values[asset][f"{item}__reason"] = ""
 
-    if category == "Switch Yard Inspection" and item.strip() == "OVCB Tripping Count Recorded" and status == "GREEN":
+    # Structured sub-checks requested for specific inspection items. These are
+    # saved inside the existing details_json field, so no destructive DB migration is needed.
+    saved_items = parse_details(old_record).get("items", {}) if old_record else {}
+    detail_key = f"{item}__detail"
+
+    def save_detail(name, value):
+        values[asset][f"{detail_key}__{name}"] = value
+
+    if category == "Daily Inspection" and item == "Plant Fire Extinguisher" and status != "UNRECORDED":
+        st.markdown("**Fire Extinguisher Condition**")
+        for field_name, options in [
+            ("Pressure", ["OK", "Not OK"]),
+            ("Tank condition", ["OK", "Not OK"]),
+        ]:
+            prior = saved_items.get(f"{detail_key}__{field_name}", "OK")
+            chosen = st.selectbox(field_name, options, index=options.index(prior) if prior in options else 0,
+                                  key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            save_detail(field_name, chosen)
+            if chosen == "Not OK":
+                reason_value = st.text_input(f"{field_name} reason",
+                    value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+                save_detail(f"{field_name}__reason", reason_value)
+                if not reason_value.strip():
+                    reason_widgets.append((f"{asset} – {field_name}", reason_value))
+        expiry = st.date_input("Fire extinguisher expiry date",
+            value=date.fromisoformat(saved_items[f"{detail_key}__Expiry date"]) if saved_items.get(f"{detail_key}__Expiry date") else date.today(),
+            key=f"detail_expiry_{category}_{task_date}_{asset}_{item_index}")
+        save_detail("Expiry date", expiry.isoformat())
+
+    if category == "Daily Inspection" and item == "Lightning Arresters " and status != "UNRECORDED":
+        st.markdown("**Lightning Arrester Checks**")
+        for field_name in ("Earth cable", "Earthing unit"):
+            prior = saved_items.get(f"{detail_key}__{field_name}", "Stable")
+            chosen = st.selectbox(field_name, ["Stable", "OK", "Not OK"],
+                index=["Stable", "OK", "Not OK"].index(prior) if prior in ["Stable", "OK", "Not OK"] else 0,
+                key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            save_detail(field_name, chosen)
+            if chosen == "Not OK":
+                reason_value = st.text_input(f"{field_name} reason",
+                    value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+                save_detail(f"{field_name}__reason", reason_value)
+                if not reason_value.strip():
+                    reason_widgets.append((f"{asset} – {field_name}", reason_value))
+
+    if item == "Inverter Communication" and category in ("Daily Inspection", "Inverter Inspection") and status != "UNRECORDED":
+        st.markdown("**MPPT Communication**")
+        for field_name in ("MPPT 1", "MPPT 2"):
+            prior = saved_items.get(f"{detail_key}__{field_name}", "OK")
+            chosen = st.radio(field_name, ["OK", "Not OK"],
+                index=["OK", "Not OK"].index(prior) if prior in ["OK", "Not OK"] else 0,
+                horizontal=True, key=f"detail_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+            save_detail(field_name, chosen)
+            if chosen == "Not OK":
+                reason_value = st.text_input(f"{field_name} reason",
+                    value=saved_items.get(f"{detail_key}__{field_name}__reason", ""),
+                    key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_{field_name}")
+                save_detail(f"{field_name}__reason", reason_value)
+                if not reason_value.strip():
+                    reason_widgets.append((f"{asset} – {field_name}", reason_value))
+
+    if category == "Inverter Inspection" and item == "AC Combiner Box" and status != "UNRECORDED":
+        prior = saved_items.get(f"{detail_key}__800V cable nuts and bolts", "OK")
+        chosen = st.radio("Nuts and bolts of 800V cables", ["OK", "Not OK"],
+            index=["OK", "Not OK"].index(prior) if prior in ["OK", "Not OK"] else 0,
+            horizontal=True, key=f"detail_{category}_{task_date}_{asset}_{item_index}_800v")
+        save_detail("800V cable nuts and bolts", chosen)
+        if chosen == "Not OK":
+            reason_value = st.text_input("800V cable nuts and bolts reason",
+                value=saved_items.get(f"{detail_key}__800V cable nuts and bolts__reason", ""),
+                key=f"detail_reason_{category}_{task_date}_{asset}_{item_index}_800v")
+            save_detail("800V cable nuts and bolts__reason", reason_value)
+            if not reason_value.strip():
+                reason_widgets.append((f"{asset} – 800V cable nuts and bolts", reason_value))
+
+    if category == "Inverter Inspection" and item == "Inverter Shelter" and status != "UNRECORDED":
+        prior = bool(saved_items.get(f"{detail_key}__Indicator dash box", False))
+        save_detail("Indicator dash box", st.checkbox("Indicator dash box checked",
+            value=prior, key=f"detail_{category}_{task_date}_{asset}_{item_index}_dash"))
+
+    if category == "DC Cable Inspection" and status == "RED":
+        prior = saved_items.get(f"{detail_key}__Failure type", "MC4")
+        chosen = st.selectbox("Issue category", ["MC4", "Installator condition", "Other"],
+            index=["MC4", "Installator condition", "Other"].index(prior) if prior in ["MC4", "Installator condition", "Other"] else 0,
+            key=f"detail_{category}_{task_date}_{asset}_{item_index}_failure")
+        save_detail("Failure type", chosen)
+
+    if category == "Switch Yard Inspection" and item == "OVCB Tripping Count Recorded" and status == "GREEN":
         saved_items = parse_details(old_record).get("items", {}) if old_record else {}
         previous_count = saved_items.get(f"{item}__count", 0)
         try:
@@ -4219,33 +4347,58 @@ def _render_inspection_category(db, user, plant, category):
     # Extinguishers each use only one inverter (INV-01) and are not repeated 10 times.
     panel_report_upload = None
     existing_panel_report = None
-    if category == "Panel Inspection":
-        tab_titles = ["Front Glass Condition", "Back Glass Condition", "Diode Damage", "Panel Inspection Report"]
-        tabs = st.tabs(tab_titles)
-        groups = [(tab_titles[i], [item], group_assets) for i, (group_title, group_items, group_assets) in enumerate(groups) for item in group_items]
-        group_contexts = list(zip(tabs[:3], groups))
+    if category in ("Panel Inspection", "Main Transformer Inspection"):
+        report_category = category
+        report_key = "panel" if category == "Panel Inspection" else "main_transformer"
         existing_panel_report = db.query(PanelInspectionReport).filter(
             PanelInspectionReport.plant_id == plant.id,
-            PanelInspectionReport.category == category,
+            PanelInspectionReport.category == report_category,
             PanelInspectionReport.task_date == task_date,
         ).first()
-        with tabs[3]:
-            st.markdown("### Panel Inspection Report")
-            st.caption("Upload the PDF report before saving the Front Glass, Back Glass and Diode Damage inspection.")
-            panel_report_upload = st.file_uploader(
-                "Upload Panel Inspection Report (PDF)",
-                type=["pdf"],
-                key=f"panel_inspection_report_pdf_{plant.id}_{task_date}",
-            )
-            if existing_panel_report:
-                st.success(f"PDF report already uploaded: {existing_panel_report.filename}")
-                st.download_button(
-                    "Download uploaded PDF",
-                    data=bytes(existing_panel_report.file_data),
-                    file_name=existing_panel_report.filename,
-                    mime="application/pdf",
-                    key=f"download_panel_report_{plant.id}_{task_date}",
+        if category == "Panel Inspection":
+            tab_titles = [
+                "Front Glass Condition", "Back Glass Condition",
+                "Diode and Junction Box Condition", "Panel Inspection Report (Monthly)"
+            ]
+            tabs = st.tabs(tab_titles)
+            groups = [
+                (tab_titles[i], [item], group_assets)
+                for i, (group_title, group_items, group_assets) in enumerate(groups)
+                for item in group_items
+            ]
+            group_contexts = list(zip(tabs[:3], groups))
+            with tabs[3]:
+                st.markdown("### Panel Inspection Report (Monthly)")
+                st.caption("Upload the monthly panel inspection report.")
+                panel_report_upload = st.file_uploader(
+                    "Upload Panel Inspection Report (PDF or image)",
+                    type=["pdf", "png", "jpg", "jpeg"],
+                    key=f"panel_inspection_report_{plant.id}_{task_date}",
                 )
+        else:
+            st.markdown("### Main Transformer Testing Report")
+            st.caption("Upload the transformer testing report as a PDF or image.")
+            panel_report_upload = st.file_uploader(
+                "Upload Transformer Testing Report (PDF or image)",
+                type=["pdf", "png", "jpg", "jpeg"],
+                key=f"transformer_testing_report_{plant.id}_{task_date}",
+            )
+            group_contexts = [(st.container(), group) for group in groups]
+
+        if existing_panel_report:
+            st.success(f"Report already uploaded: {existing_panel_report.filename}")
+            report_mime = (
+                "application/pdf" if existing_panel_report.filename.lower().endswith(".pdf")
+                else "image/png" if existing_panel_report.filename.lower().endswith(".png")
+                else "image/jpeg"
+            )
+            st.download_button(
+                "Download uploaded report",
+                data=bytes(existing_panel_report.file_data),
+                file_name=existing_panel_report.filename,
+                mime=report_mime,
+                key=f"download_inspection_report_{report_key}_{plant.id}_{task_date}",
+            )
     elif category in ("Daily Inspection", "AC Inspection"):
         tabs = st.tabs([title for title, _, _ in groups])
         group_contexts = list(zip(tabs, groups))
@@ -4379,24 +4532,33 @@ def _render_inspection_category(db, user, plant, category):
                 PanelInspectionReport.task_date == task_date,
             ).first()
             if current_report is None and panel_report_upload is None:
-                st.error("Upload the Panel Inspection Report PDF before saving this inspection.")
+                st.error("Upload the Panel Inspection Report before saving this inspection.")
                 return
-            if panel_report_upload is not None:
-                if current_report is None:
-                    current_report = PanelInspectionReport(
-                        plant_id=plant.id,
-                        category=category,
-                        task_date=task_date,
-                        filename=panel_report_upload.name,
-                        file_data=panel_report_upload.getvalue(),
-                        uploaded_by=user.id,
-                    )
-                    db.add(current_report)
-                else:
-                    current_report.filename = panel_report_upload.name
-                    current_report.file_data = panel_report_upload.getvalue()
-                    current_report.uploaded_by = user.id
-                db.commit()
+        elif category == "Main Transformer Inspection":
+            current_report = db.query(PanelInspectionReport).filter(
+                PanelInspectionReport.plant_id == plant.id,
+                PanelInspectionReport.category == category,
+                PanelInspectionReport.task_date == task_date,
+            ).first()
+        else:
+            current_report = None
+
+        if panel_report_upload is not None:
+            if current_report is None:
+                current_report = PanelInspectionReport(
+                    plant_id=plant.id,
+                    category=category,
+                    task_date=task_date,
+                    filename=panel_report_upload.name,
+                    file_data=panel_report_upload.getvalue(),
+                    uploaded_by=user.id,
+                )
+                db.add(current_report)
+            else:
+                current_report.filename = panel_report_upload.name
+                current_report.file_data = panel_report_upload.getvalue()
+                current_report.uploaded_by = user.id
+            db.commit()
 
         missing = [item for item, reason in reason_widgets if not reason.strip()]
         if missing:
@@ -4424,12 +4586,12 @@ def _render_inspection_category(db, user, plant, category):
             merged_items = dict(existing_details.get("items", {}) if isinstance(existing_details, dict) else {})
 
             for item, selected_status in asset_values.items():
-                if item.endswith("__reason"):
+                if item.endswith("__reason") and "__detail__" not in item:
                     continue
                 if item.endswith("__count"):
                     merged_items[item] = int(selected_status or 0)
                     continue
-                if item.endswith("__meter_image") or item.endswith("__meter_image_name"):
+                if item.endswith("__meter_image") or item.endswith("__meter_image_name") or "__detail__" in item:
                     merged_items[item] = selected_status
                     continue
                 if selected_status == "UNRECORDED":
@@ -4460,6 +4622,11 @@ def _render_inspection_category(db, user, plant, category):
 
             all_recorded = len(recorded_items) == len(cfg["items"])
             any_red = any(merged_items.get(item) in ("RED", "Not Done", "Failed") for item in cfg["items"])
+            any_red = any_red or any(
+                str(value).strip().lower() == "not ok"
+                for key, value in merged_items.items()
+                if "__detail__" in key and not key.endswith("__reason")
+            )
             overall = "Failed" if any_red else ("Completed" if all_recorded else "Pending")
 
             upsert_record(
@@ -4509,10 +4676,11 @@ def inspection_page(db, user, plant):
         "DC Cable Inspection": "DC Cable Inspection",
         "MDB Inspection": "MDB Inspection",
         "Switch Yard Inspection": "Switch Yard Inspection",
+        "Main Transformer Inspection": "Main Transformer Inspection",
         "AC Inspection": "AC Inspection",
     }
     with st.container(key="inspection_tabs"):
-        tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85], gap="small")
+        tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, 1.15, .85], gap="small")
         for col, category in zip(tab_cols, categories):
             with col:
                 if st.button(
@@ -5156,6 +5324,14 @@ maintenance_reminders""",
 def _records_dataframe(db,plant_id,start,end):
     rows=db.query(MaintenanceRecord).filter(MaintenanceRecord.plant_id==plant_id,MaintenanceRecord.task_date>=start,MaintenanceRecord.task_date<=end).order_by(MaintenanceRecord.task_date.desc()).all()
     users={u.id:u.full_name for u in db.query(User).all()}
+    report_uploads = {
+        (item.category, item.task_date): item.filename
+        for item in db.query(PanelInspectionReport).filter(
+            PanelInspectionReport.plant_id == plant_id,
+            PanelInspectionReport.task_date >= start,
+            PanelInspectionReport.task_date <= end,
+        ).all()
+    }
     report_rows=[]
     for r in rows:
         details=parse_details(r)
@@ -5166,8 +5342,19 @@ def _records_dataframe(db,plant_id,start,end):
                 issue_details.append(f"{key[:-8]}: {str(value).strip()}")
             elif key.endswith("__count"):
                 issue_details.append(f"{key[:-7]}: {value}")
+            elif "__detail__" in key and key.endswith("__reason"):
+                issue_details.append(f"{key.replace('__detail__', ' / ').replace('__reason', ' reason')}: {value}")
+            elif "__detail__" in key:
+                issue_details.append(f"{key.replace('__detail__', ' / ')}: {value}")
         remarks="; ".join(filter(None, [r.remarks or "", *issue_details]))
-        report_rows.append({"Date":r.task_date,"Category":r.category,"Asset":r.asset_id,"Worker":users.get(r.worker_id,"Unassigned"),"Status":r.status,"Approval":getattr(r,"approval_status","Pending") or "Pending","Remarks":remarks,"Completed At":r.completed_at,"Approved At":getattr(r,"approved_at",None),"Approved By":users.get(getattr(r,"approved_by",None),"")})
+        report_rows.append({"Date":r.task_date,"Category":r.category,"Asset":r.asset_id,
+            "Submitted By":users.get(r.worker_id,"Unassigned"),"Worker":users.get(r.worker_id,"Unassigned"),
+            "Status":r.status,"Approval":getattr(r,"approval_status","Pending") or "Pending",
+            "Remarks":remarks,"Completed At":r.completed_at,
+            "Engineer Approved By":users.get(getattr(r,"approved_by",None),"Awaiting engineer approval"),
+            "Engineer Approval Date":getattr(r,"approved_at",None),
+            "Engineer Comment":getattr(r,"approval_comment",""),
+            "Inspection / Testing Report":report_uploads.get((r.category, r.task_date), "")})
     return pd.DataFrame(report_rows)
 
 def _excel_bytes(df,sheet_name="Maintenance Report"):
@@ -5641,7 +5828,8 @@ def reports_page(db,user,plant):
         db, plant.id, "Weeding Panel Cleaning", start, end
     )
     for asset, rec in panel_weeding_period_records.items():
-        if rec.status == "Completed" or asset not in panel_period_records:
+        current = panel_period_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
             panel_period_records[asset] = rec
 
     grass_period_records = status_map_for_period(
@@ -5651,7 +5839,8 @@ def reports_page(db,user,plant):
         db, plant.id, "Weeding Grass Cutting", start, end
     )
     for asset, rec in grass_weeding_period_records.items():
-        if rec.status == "Completed" or asset not in grass_period_records:
+        current = grass_period_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
             grass_period_records[asset] = rec
 
     panel_total = plant.table_count
@@ -5859,10 +6048,11 @@ def approvals_page(db, user, plant):
         "DC Cable Inspection": "DC Cable Inspection",
         "MDB Inspection": "MDB Inspection",
         "Switch Yard Inspection": "Switch Yard Inspection",
+        "Main Transformer Inspection": "Main Transformer Inspection",
         "AC Inspection": "AC Inspection",
         "Civil Works": "Civil Works",
     }
-    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, .85, 1.0], gap="small")
+    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, 1.15, .85, 1.0], gap="small")
     for col, category in zip(tab_cols, categories):
         count = sum(1 for rec in pending if rec.category == category)
         with col:
