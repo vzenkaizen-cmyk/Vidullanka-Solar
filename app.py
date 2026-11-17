@@ -117,9 +117,9 @@ if not DATABASE_URL:
 
 # Accept both postgres:// and postgresql:// forms returned by Neon.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"): ]
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
 elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"): ]
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
 
 ADMIN_EMAIL = get_config("ADMIN_EMAIL", "samodas@vidullanka.com")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD", "ChangeThisPassword123!")
@@ -6614,371 +6614,6 @@ def approvals_page(db, user, plant):
                 st.text_area("Approval comment", value=rec.approval_comment or "", key=f"review_comment_{rec.id}", disabled=True)
 
 
-
-# ============================================================
-# MDP SOLAR SOP ASSISTANT
-# Knowledge source: MDP_SOP_2026_Draft.pdf (the supplied MDP SOP)
-# ============================================================
-
-import re as _sop_re
-from pathlib import Path as _SOPPath
-
-MDP_SOP_FILE = _SOPPath(__file__).resolve().parent / "MDP_SOP_2026_Draft.pdf"
-
-
-def _sop_tokens(value):
-    """Tokenize English and Sinhala text without requiring an NLP package."""
-    return _sop_re.findall(r"[a-zA-Z0-9]+|[\u0D80-\u0DFF]+", str(value).lower())
-
-
-@st.cache_data(show_spinner=False)
-def load_mdp_sop_chunks(pdf_path, file_mtime):
-    """Read the supplied MDP SOP PDF and split it into page-aware chunks."""
-    try:
-        from pypdf import PdfReader
-    except ImportError as exc:
-        raise RuntimeError(
-            "The pypdf package is missing. Add 'pypdf' to requirements.txt."
-        ) from exc
-
-    if not _SOPPath(pdf_path).exists():
-        raise FileNotFoundError(
-            "MDP_SOP_2026_Draft.pdf was not found beside app.py. "
-            "Upload this PDF to the same GitHub/Streamlit project folder."
-        )
-
-    reader = PdfReader(str(pdf_path))
-    chunks = []
-    for page_number, page in enumerate(reader.pages, start=1):
-        page_text = (page.extract_text() or "").strip()
-        if not page_text:
-            continue
-
-        # Split on paragraph boundaries first, then cap long paragraphs.
-        paragraphs = [
-            part.strip() for part in _sop_re.split(r"\n\s*\n", page_text)
-            if part.strip()
-        ]
-        if not paragraphs:
-            paragraphs = [page_text]
-
-        current = ""
-        for paragraph in paragraphs:
-            if len(paragraph) > 1800:
-                if current:
-                    chunks.append({
-                        "page": page_number,
-                        "text": current.strip(),
-                    })
-                    current = ""
-                start = 0
-                while start < len(paragraph):
-                    piece = paragraph[start:start + 1500]
-                    chunks.append({
-                        "page": page_number,
-                        "text": piece.strip(),
-                    })
-                    start += 1250
-                continue
-
-            if current and len(current) + len(paragraph) > 1500:
-                chunks.append({
-                    "page": page_number,
-                    "text": current.strip(),
-                })
-                current = paragraph
-            else:
-                current = (current + "\n\n" + paragraph).strip()
-
-        if current:
-            chunks.append({"page": page_number, "text": current.strip()})
-
-    if not chunks:
-        raise RuntimeError(
-            "No searchable text could be extracted from the MDP SOP PDF."
-        )
-    return chunks
-
-
-def retrieve_mdp_sop_context(question, chunks, top_k=7):
-    """Rank page chunks by query-term overlap, with a phrase-match bonus."""
-    query_tokens = _sop_tokens(question)
-    if not query_tokens:
-        return []
-
-    query_terms = set(query_tokens)
-    scored = []
-    question_lower = question.lower()
-
-    for chunk in chunks:
-        text_value = chunk["text"]
-        tokens = _sop_tokens(text_value)
-        if not tokens:
-            continue
-
-        token_set = set(tokens)
-        overlap = len(query_terms.intersection(token_set))
-        # Prefer focused passages rather than very long pages.
-        density = overlap / max(1, len(token_set) ** 0.35)
-        phrase_bonus = 2.0 if question_lower.strip() in text_value.lower() else 0.0
-
-        # Give exact SOP identifiers and checklist references extra weight.
-        id_bonus = 0.0
-        for identifier in _sop_re.findall(
-            r"(?:VLL\s*[/\\-]\s*MDP\s*[/\\-]\s*(?:SOP|CHK)\s*[-/]?\s*\d+)",
-            question,
-            flags=_sop_re.IGNORECASE,
-        ):
-            if identifier.lower().replace(" ", "") in text_value.lower().replace(" ", ""):
-                id_bonus += 3.0
-
-        score = density + phrase_bonus + id_bonus
-        if score > 0:
-            scored.append((score, chunk))
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-
-    selected = []
-    seen_pages = set()
-    for score, chunk in scored:
-        # Allow more than one chunk from a page, but avoid repetitive passages.
-        if any(
-            existing["page"] == chunk["page"]
-            and existing["text"][:100] == chunk["text"][:100]
-            for existing in selected
-        ):
-            continue
-        selected.append({**chunk, "score": round(score, 3)})
-        seen_pages.add(chunk["page"])
-        if len(selected) >= top_k:
-            break
-    return selected
-
-
-def generate_mdp_sop_answer(question, retrieved, chat_history):
-    """Use the retrieved MDP SOP passages; never fill gaps with general advice."""
-    if not retrieved:
-        return (
-            "I could not find a relevant passage in the supplied MDP Solar SOP. "
-            "Please try using the equipment name, procedure title, or SOP/checklist number."
-        )
-
-    context = "\n\n".join(
-        f"[PDF page {item['page']}]\n{item['text']}"
-        for item in retrieved
-    )
-
-    api_key = get_config("OPENAI_API_KEY", "")
-    model_name = get_config("SOP_AGENT_MODEL", "gpt-4o-mini")
-
-    if not api_key:
-        # Safe fallback: provide retrieved source passages rather than fabricate
-        # a procedural answer when the language model is not configured.
-        excerpts = "\n\n".join(
-            f"**PDF page {item['page']}**\n\n{item['text']}"
-            for item in retrieved[:5]
-        )
-        return (
-            "The relevant MDP SOP passages are retrieved below. "
-            "To enable conversational answers and summaries, configure "
-            "`OPENAI_API_KEY` in Streamlit Secrets.\n\n"
-            + excerpts
-        )
-
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Vidullanka's MDP Solar Power Plant SOP Assistant. "
-                    "Answer only from the supplied MDP SOP context. Do not use "
-                    "general knowledge to add, correct, infer, or invent steps, "
-                    "limits, PPE, responsibilities, or technical values. "
-                    "If the SOP does not state something, say that it is not "
-                    "specified in the supplied MDP SOP. Preserve the SOP's "
-                    "terminology and sequence. Give clear numbered steps when "
-                    "the source provides a procedure. Include page citations "
-                    "such as (MDP SOP, PDF page 14) for each material section. "
-                    "Answer in the same language as the question: English, "
-                    "Sinhala, or both if the question mixes them. "
-                    "If the user asks about a different solar plant, clarify "
-                    "that this knowledge base contains only the Vidul Madampe "
-                    "Solar Power Plant (MDP) SOP."
-                ),
-            }
-        ]
-
-        for turn in chat_history[-6:]:
-            if turn.get("role") in ("user", "assistant"):
-                messages.append({
-                    "role": turn["role"],
-                    "content": turn["content"],
-                })
-
-        messages.append({
-            "role": "user",
-            "content": (
-                f"Question:\n{question}\n\n"
-                f"Retrieved source passages from MDP_SOP_2026_Draft.pdf:\n"
-                f"{context}\n\n"
-                "Answer using only these passages. If the retrieved passages "
-                "are insufficient, state exactly what is missing."
-            ),
-        })
-
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.1,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as exc:
-        return (
-            "The SOP passages were retrieved, but the AI answer service could "
-            f"not be reached ({exc}). Please check OPENAI_API_KEY and the "
-            "configured model. Relevant source passages are shown below.\n\n"
-            + "\n\n".join(
-                f"**PDF page {item['page']}**\n\n{item['text']}"
-                for item in retrieved[:5]
-            )
-        )
-
-
-def solar_sop_agent_page(db, user, plant):
-    """Right-side MDP SOP assistant; does not modify maintenance records."""
-    st.subheader("☀️ MDP Solar SOP Assistant")
-    st.caption(
-        "Ask questions about the Vidul Madampe Solar Power Plant (MDP) "
-        "using the supplied MDP Standard Operating Procedure."
-    )
-
-    plant_identity = (
-        f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
-    ).upper()
-    if "MDP" not in plant_identity and "MADAMPE" not in plant_identity:
-        st.info(
-            "The currently selected site is not identified as MDP. "
-            "This assistant currently contains only the MDP Solar SOP, "
-            "so its procedures must not be assumed to apply to this site."
-        )
-
-    if "solar_sop_chat_history" not in st.session_state:
-        st.session_state.solar_sop_chat_history = []
-
-    if not MDP_SOP_FILE.exists():
-        st.error(
-            "MDP_SOP_2026_Draft.pdf is missing. Keep the PDF in the same "
-            "repository folder as app.py and redeploy the app."
-        )
-        return
-
-    try:
-        chunks = load_mdp_sop_chunks(
-            str(MDP_SOP_FILE),
-            MDP_SOP_FILE.stat().st_mtime,
-        )
-    except Exception as exc:
-        st.error(f"Unable to load the MDP SOP: {exc}")
-        return
-
-    st.success(
-        f"MDP SOP loaded • {len(chunks)} searchable sections • "
-        f"{len(set(item['page'] for item in chunks))} pages with extracted text"
-    )
-
-    with st.expander("SOP coverage and example questions", expanded=False):
-        st.markdown(
-            """
-            **The supplied MDP SOP includes topics such as:**
-            - Function and location responsibilities
-            - Lockout/Tagout (LOTO)
-            - Short-term plant startup after suspension
-            - Daily inspection
-            - Solar panel inspection
-            - Inverter inspection
-            - DC cable inspection
-            - MDB inspection
-            - Switchyard inspection
-            - A/C maintenance
-            - Plant shutdown authority and inventory process
-
-            **Example questions**
-            - What checks are required before starting the plant after a short-term shutdown?
-            - Explain the LOTO responsibilities and procedure.
-            - What should be monitored during the first 30 minutes after startup?
-            - What are the inspection requirements for the switchyard?
-            - Which PPE and safety precautions are stated for inverter inspection?
-            """
-        )
-
-    for index, turn in enumerate(st.session_state.solar_sop_chat_history):
-        with st.chat_message(turn["role"]):
-            st.markdown(turn["content"])
-            if turn["role"] == "assistant" and turn.get("sources"):
-                with st.expander("Relevant MDP SOP source passages", expanded=False):
-                    for source in turn["sources"]:
-                        st.markdown(f"**MDP SOP — PDF page {source['page']}**")
-                        st.text(source["text"])
-
-    with st.form("solar_mdp_sop_question_form", clear_on_submit=True):
-        question = st.text_area(
-            "Ask the MDP Solar SOP Assistant",
-            height=115,
-            placeholder=(
-                "Ask in English or Sinhala. Example: Explain the plant startup procedure."
-            ),
-        )
-        submitted = st.form_submit_button(
-            "Send question",
-            type="primary",
-            use_container_width=False,
-        )
-
-    if submitted:
-        question = (question or "").strip()
-        if not question:
-            st.warning("Please enter a question.")
-            return
-
-        st.session_state.solar_sop_chat_history.append({
-            "role": "user",
-            "content": question,
-        })
-        with st.chat_message("user"):
-            st.markdown(question)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Searching the MDP SOP..."):
-                retrieved = retrieve_mdp_sop_context(question, chunks)
-                answer = generate_mdp_sop_answer(
-                    question,
-                    retrieved,
-                    st.session_state.solar_sop_chat_history[:-1],
-                )
-            st.markdown(answer)
-            if retrieved:
-                with st.expander("Relevant MDP SOP source passages", expanded=False):
-                    for source in retrieved:
-                        st.markdown(f"**MDP SOP — PDF page {source['page']}**")
-                        st.text(source["text"])
-
-        st.session_state.solar_sop_chat_history.append({
-            "role": "assistant",
-            "content": answer,
-            "sources": retrieved,
-        })
-
-    if st.session_state.solar_sop_chat_history:
-        if st.button("Clear SOP conversation", key="clear_solar_sop_chat"):
-            st.session_state.solar_sop_chat_history = []
-            st.rerun()
-
-
-
-
 # ============================================================
 # Admin settings
 
@@ -7024,52 +6659,45 @@ def main():
         db.close()
         return
 
-    # Keep the selected maintenance page on the left and the MDP SOP assistant
-    # permanently available in a dedicated panel on the right.
-    main_column, sop_column = st.columns([0.70, 0.30], gap="large")
-
-    with main_column:
-        if page == "📊 Plant Summary":
-            plant_summary_page(db, user)
-        elif page == "🏠 Overview":
-            overview_page(db, user, plant)
-        elif page == "🧹 Panel Cleaning":
-            panel_cleaning_page(db, user, plant)
-        elif page == "🌱 Weeding Panel Cleaning":
-            weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
-        elif page == "🌿 Grass Cutting":
-            grass_cutting_page(db, user, plant)
-        elif page == "🌾 Chemical Weeding":
-            weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
-        elif page == "🔧 Maintenance Inspections":
-            inspection_page(db, user, plant)
-        elif page == "🏗️ Civil Works":
-            civil_works_page(db, user, plant)
-        elif page == "⚠️ Repair & Maintenance":
-            loss_repair_page(db, user, plant)
-        elif page == "📋 Activity Log":
-            activity_page(db, user, plant)
-        elif page == "👥 Users" and user.role in ("admin", "engineer"):
-            users_page(db, user, plant)
-        elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
-            plants_page(db)
-        elif page == "📈 Reports" and user.role in ("admin", "engineer"):
-            reports_page(db, user, plant)
-        elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
-            approvals_page(db, user, plant)
-        elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
-            reminders_page(db)
-        elif page == "⚙️ Admin" and user.role == "admin":
-            admin_page(db)
-
-    with sop_column:
-        solar_sop_agent_page(db, user, plant)
+    if page == "📊 Plant Summary":
+        plant_summary_page(db, user)
+    elif page == "🏠 Overview":
+        overview_page(db, user, plant)
+    elif page == "🧹 Panel Cleaning":
+        panel_cleaning_page(db, user, plant)
+    elif page == "🌱 Weeding Panel Cleaning":
+        weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
+    elif page == "🌿 Grass Cutting":
+        grass_cutting_page(db, user, plant)
+    elif page == "🌾 Chemical Weeding":
+        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
+    elif page == "🔧 Maintenance Inspections":
+        inspection_page(db, user, plant)
+    elif page == "🏗️ Civil Works":
+        civil_works_page(db, user, plant)
+    elif page == "⚠️ Repair & Maintenance":
+        loss_repair_page(db, user, plant)
+    elif page == "📋 Activity Log":
+        activity_page(db, user, plant)
+    elif page == "👥 Users" and user.role in ("admin", "engineer"):
+        users_page(db, user, plant)
+    elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
+        plants_page(db)
+    elif page == "📈 Reports" and user.role in ("admin", "engineer"):
+        reports_page(db, user, plant)
+    elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
+        approvals_page(db, user, plant)
+    elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
+        reminders_page(db)
+    elif page == "⚙️ Admin" and user.role == "admin":
+        admin_page(db)
 
     db.close()
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
