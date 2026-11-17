@@ -4609,37 +4609,36 @@ def _render_inspection_category(db, user, plant, category):
                             )
                             old_record = old_records.get(asset)
                             for item in group_items:
-                                # CCTV is displayed as checklist item 4, with its
-                                # five individual checks listed underneath it.
+                                item_index = item_index_map[item]
+
+                                # CCTV Checks is the main checklist heading. Its five
+                                # individual checks are displayed underneath with indentation.
                                 if item == "CCTV powercable":
-                                    display_label = "4. CCTV Checks"
-                                    show_item_number = True
+                                    st.markdown(
+                                        '<div class="inspection-item-name" '
+                                        'style="margin-top:8px;font-weight:400;">4. CCTV Checks</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    display_label = "CCTV Power Cable"
+                                    child_style = "margin-left:14px;font-weight:400;"
                                 elif item in ("DVR", "CCTV UPS", "CCTV Camera", "CCTV Monitor"):
                                     display_label = _inspection_display_item(item)
-                                    show_item_number = False
+                                    child_style = "margin-left:14px;font-weight:400;"
                                 elif item == "Lightning Arresters ":
                                     display_label = "5. Lightning Arrester"
-                                    show_item_number = True
+                                    child_style = "font-weight:400;"
                                 elif item == "Plant Fire Extinguisher":
                                     display_label = "6. Plant Fire Extinguisher"
-                                    show_item_number = True
+                                    child_style = "font-weight:400;"
                                 else:
                                     display_label = f"{item_index_map[item] + 1}. {_inspection_display_item(item)}"
-                                    show_item_number = True
+                                    child_style = "font-weight:400;"
 
-                                item_index = item_index_map[item]
-                                if show_item_number:
-                                    st.markdown(
-                                        f'<div class="inspection-item-name" style="margin-top:8px;">'
-                                        f'{display_label}</div>',
-                                        unsafe_allow_html=True,
-                                    )
-                                else:
-                                    st.markdown(
-                                        f'<div class="inspection-item-name" style="margin-top:8px;">'
-                                        f'{display_label}</div>',
-                                        unsafe_allow_html=True,
-                                    )
+                                st.markdown(
+                                    f'<div class="inspection-item-name" '
+                                    f'style="margin-top:8px;{child_style}">{display_label}</div>',
+                                    unsafe_allow_html=True,
+                                )
                                 _render_inspection_status(
                                     db, user, plant, category, task_date, item,
                                     item_index, asset, old_record, values, reason_widgets,
