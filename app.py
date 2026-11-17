@@ -6726,30 +6726,87 @@ def answer_from_mdp_sop(question, pages):
 
 
 def render_solar_sop_agent():
-    """Render a fixed right-side SOP chat panel; it is not a navigation page."""
-    st.markdown("""
-    <style>
-    .st-key-solar_sop_agent{
-        position:fixed!important;right:18px!important;bottom:18px!important;
-        width:360px!important;max-width:calc(100vw - 36px)!important;
-        max-height:76vh!important;overflow-y:auto!important;z-index:99999!important;
-        background:#f7fbff!important;border:1px solid #b9d8f4!important;
-        border-radius:16px!important;padding:13px 14px 10px!important;
-        box-shadow:0 12px 36px rgba(14,45,78,.24)!important;
-    }
-    .st-key-solar_sop_agent [data-testid="stMarkdownContainer"] p{font-size:12px;line-height:1.45}
-    .st-key-solar_sop_agent [data-testid="stTextInput"] input{font-size:13px!important}
-    .st-key-solar_sop_agent [data-testid="stButton"] button{border-radius:9px!important}
-    .sop-agent-heading{font-size:18px;font-weight:800;color:#12345b;margin:0 0 2px}
-    .sop-agent-sub{font-size:11px;color:#5e7895;margin-bottom:8px}
-    .sop-agent-note{font-size:10px;color:#60758d;border-top:1px solid #d9e7f4;padding-top:7px;margin-top:5px}
-    @media(max-width:700px){.st-key-solar_sop_agent{right:8px!important;bottom:8px!important;width:calc(100vw - 16px)!important;max-height:62vh!important}}
-    </style>
-    """, unsafe_allow_html=True)
+    """Show a small fixed launcher; open the SOP chat only when requested."""
+    if "solar_sop_agent_open" not in st.session_state:
+        st.session_state.solar_sop_agent_open = False
+
+    is_open = st.session_state.solar_sop_agent_open
+
+    # The closed state is only a compact launcher, so it does not cover the
+    # maintenance dashboard. The full chat appears only after the user clicks it.
+    if is_open:
+        panel_css = """
+        <style>
+        .st-key-solar_sop_agent{
+            position:fixed!important;right:18px!important;bottom:18px!important;
+            width:360px!important;max-width:calc(100vw - 36px)!important;
+            max-height:76vh!important;overflow-y:auto!important;z-index:99999!important;
+            background:#f7fbff!important;border:1px solid #b9d8f4!important;
+            border-radius:16px!important;padding:12px 13px 10px!important;
+            box-shadow:0 12px 36px rgba(14,45,78,.24)!important;
+        }
+        .st-key-solar_sop_agent [data-testid="stMarkdownContainer"] p{
+            font-size:12px;line-height:1.45
+        }
+        .st-key-solar_sop_agent [data-testid="stTextInput"] input{font-size:13px!important}
+        .st-key-solar_sop_agent [data-testid="stButton"] button{
+            border-radius:9px!important;min-height:34px!important
+        }
+        .sop-agent-heading{font-size:17px;font-weight:800;color:#12345b;margin:0 0 2px}
+        .sop-agent-sub{font-size:11px;color:#5e7895;margin-bottom:7px}
+        .sop-agent-note{font-size:10px;color:#60758d;border-top:1px solid #d9e7f4;padding-top:7px;margin-top:5px}
+        @media(max-width:700px){
+            .st-key-solar_sop_agent{
+                right:8px!important;bottom:8px!important;
+                width:calc(100vw - 16px)!important;max-height:70vh!important
+            }
+        }
+        </style>
+        """
+    else:
+        panel_css = """
+        <style>
+        .st-key-solar_sop_agent{
+            position:fixed!important;right:18px!important;bottom:18px!important;
+            width:176px!important;max-width:calc(100vw - 36px)!important;
+            z-index:99999!important;background:transparent!important;
+            border:0!important;padding:0!important;box-shadow:none!important;
+        }
+        .st-key-solar_sop_agent [data-testid="stButton"] button{
+            width:100%!important;min-height:42px!important;
+            border:1px solid #b9d8f4!important;border-radius:22px!important;
+            background:#f7fbff!important;color:#12345b!important;
+            box-shadow:0 5px 18px rgba(14,45,78,.18)!important;
+            font-size:12px!important;font-weight:700!important;
+            white-space:nowrap!important;
+        }
+        .st-key-solar_sop_agent [data-testid="stButton"] button:hover{
+            border-color:#79b7eb!important;background:#edf6ff!important
+        }
+        @media(max-width:700px){
+            .st-key-solar_sop_agent{right:10px!important;bottom:10px!important;width:158px!important}
+        }
+        </style>
+        """
+
+    st.markdown(panel_css, unsafe_allow_html=True)
 
     with st.container(key="solar_sop_agent"):
-        st.markdown('<div class="sop-agent-heading">☀️ Solar SOP Assistant</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sop-agent-sub">Ask questions from the MDP Solar SOP document</div>', unsafe_allow_html=True)
+        if not is_open:
+            if st.button("☀️ Ask Solar SOP", key="open_solar_sop_agent", use_container_width=True):
+                st.session_state.solar_sop_agent_open = True
+                st.rerun()
+            return
+
+        title_col, close_col = st.columns([5, 1])
+        with title_col:
+            st.markdown('<div class="sop-agent-heading">☀️ Solar SOP Assistant</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sop-agent-sub">Ask questions from the MDP Solar SOP document</div>', unsafe_allow_html=True)
+        with close_col:
+            if st.button("✕", key="close_solar_sop_agent", help="Minimise SOP Assistant"):
+                st.session_state.solar_sop_agent_open = False
+                st.rerun()
+
         try:
             pages, source_name = load_mdp_sop_pages()
         except Exception as exc:
