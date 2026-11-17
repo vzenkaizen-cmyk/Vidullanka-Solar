@@ -1532,30 +1532,41 @@ def css():
             outline:none!important;
             transition:none!important;
         }
-        /* Keep inspection tabs on one line; allow horizontal scrolling on smaller screens. */
-        .st-key-inspection_tabs{overflow-x:auto!important;overflow-y:hidden!important}
+        /* Keep all inspection tabs on one line without horizontal scrolling. */
+        .st-key-inspection_tabs{
+            width:100%!important;
+            max-width:100%!important;
+            overflow-x:hidden!important;
+            overflow-y:hidden!important;
+        }
         .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{
-            gap:.8rem!important;
+            width:100%!important;
+            min-width:0!important;
+            gap:.35rem!important;
             align-items:stretch!important;
-            min-width:max-content!important;
             flex-wrap:nowrap!important;
         }
-        .st-key-inspection_tabs [data-testid="stButton"]{min-width:max-content!important}
-        .st-key-inspection_tabs{width:100%!important;max-width:100%!important}
-        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]{width:max-content!important;min-width:max-content!important;flex-wrap:nowrap!important}
-        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]>div{min-width:150px!important;flex:0 0 auto!important}
-        .st-key-inspection_tabs [data-testid="stButton"]{min-width:150px!important;flex:0 0 auto!important}
+        .st-key-inspection_tabs [data-testid="stHorizontalBlock"]>div{
+            min-width:0!important;
+            flex:1 1 0!important;
+        }
+        .st-key-inspection_tabs [data-testid="stButton"]{
+            width:100%!important;
+            min-width:0!important;
+            flex:1 1 0!important;
+        }
         .st-key-inspection_tabs [data-testid="stButton"]>button{
-            min-width:max-content!important;
+            width:100%!important;
+            min-width:0!important;
             white-space:nowrap!important;
             overflow:visible!important;
             overflow-wrap:normal!important;
             word-break:keep-all!important;
             height:auto!important;
             min-height:40px!important;
-            padding:7px 10px!important;
+            padding:7px 4px!important;
+            font-size:10px!important;
         }
-        .st-key-inspection_tabs [data-testid="stButton"]>button{white-space:nowrap!important;min-width:max-content!important}
         .st-key-inspection_tabs [data-testid="stButton"]>button p,
         .st-key-inspection_tabs [data-testid="stButton"]>button span,
         .st-key-inspection_tabs [data-testid="stButton"]>button div{
