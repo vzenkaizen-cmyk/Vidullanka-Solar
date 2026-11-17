@@ -940,6 +940,59 @@ def parse_details(rec):
         return {}
 
 
+def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_date=None, end_date=None):
+    """Determine zone completion from saved zone checks or complete table-level history.
+
+    This supports both the current zone-level checkbox format and older records
+    where grass-cutting progress was saved against individual table IDs.
+    """
+    all_traces = [trace for traces in zone_trace_map.values() for trace in traces]
+    trace_records = {}
+    if all_traces:
+        query = db.query(MaintenanceRecord).filter(
+            MaintenanceRecord.plant_id == plant_id,
+            MaintenanceRecord.category.in_(["Grass Cutting", "Weeding Grass Cutting"]),
+            MaintenanceRecord.asset_id.in_(all_traces),
+        )
+        if start_date:
+            query = query.filter(MaintenanceRecord.task_date >= start_date)
+        if end_date:
+            query = query.filter(MaintenanceRecord.task_date <= end_date)
+        for record in query.order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc()).all():
+            trace_records[record.asset_id] = record
+
+    def checked(value):
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {
+            "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
+        }
+
+    completed = {}
+    for zone_name, traces in zone_trace_map.items():
+        zone_record = zone_records.get(zone_name)
+        details = parse_details(zone_record) if zone_record else {}
+        table_checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
+        all_zone_checks = bool(traces) and all(checked(table_checks.get(trace)) for trace in traces)
+        all_table_records = bool(traces) and all(
+            trace_records.get(trace) is not None
+            and trace_records[trace].status == "Completed"
+            for trace in traces
+        )
+        # A legacy zone-only Completed record (without per-table detail) still
+        # counts as complete. Once table-level checks exist, every assigned
+        # table must be checked before the zone is marked complete.
+        legacy_zone_complete = bool(
+            zone_record and zone_record.status == "Completed" and not table_checks
+        )
+        completed[zone_name] = bool(
+            legacy_zone_complete or all_zone_checks or all_table_records
+        )
+    return completed
+
+
 def send_email(to_email, subject, body):
     if not ENABLE_EMAIL or not SMTP_HOST or not SMTP_USERNAME or not SMTP_PASSWORD or not to_email:
         return False
@@ -1512,28 +1565,40 @@ def css():
         .inspection-single-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0 9px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box}.inspection-single-title{font-size:13px;font-weight:850;color:var(--text)}
         .inspection-single-item{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin:7px 0 4px;font-weight:750;color:var(--text);box-sizing:border-box}.inspection-item-name{font-size:13px}
         .inspection-tabs-line{height:1px;background:var(--border);margin:8px 0 10px}
-        /* Keep inspection process buttons separated; labels must stay within each tab. */
-        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]){
-            gap:10px!important;
+        /* Spacious inspection and approval navigation: no tab overlap. */
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]),
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="approval_tab_"]){
+            gap:16px!important;
             align-items:stretch!important;
+            margin-bottom:8px!important;
         }
-        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]) [data-testid="column"]{
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="inspection_tab_"]) [data-testid="column"],
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[key^="approval_tab_"]) [data-testid="column"]{
             min-width:0!important;
         }
-        [data-testid="stMain"] button[key^="inspection_tab_"]{
+        [data-testid="stMain"] button[key^="inspection_tab_"],
+        [data-testid="stMain"] button[key^="approval_tab_"]{
             min-width:0!important;
             width:100%!important;
+            min-height:42px!important;
             white-space:normal!important;
-            overflow-wrap:anywhere!important;
-            padding:6px 7px!important;
-            font-size:11px!important;
-            line-height:1.2!important;
+            overflow-wrap:break-word!important;
+            padding:9px 12px!important;
+            font-size:13px!important;
+            line-height:1.25!important;
         }
-        [data-testid="stMain"] button[key^="inspection_tab_"] p{
+        [data-testid="stMain"] button[key^="inspection_tab_"] p,
+        [data-testid="stMain"] button[key^="approval_tab_"] p{
             white-space:normal!important;
-            overflow-wrap:anywhere!important;
-            font-size:11px!important;
-            line-height:1.2!important;
+            overflow-wrap:break-word!important;
+            font-size:13px!important;
+            line-height:1.25!important;
+            margin:0!important;
+        }
+        @media (min-width: 900px){
+            [data-testid="stMain"] button[key="approval_tab_AC Inspection"] p{
+                white-space:nowrap!important;
+            }
         }
         /* Selected inspection tab. */
         [data-testid="stMain"] [data-testid="stButton"]>button[kind="primary"]{
@@ -2423,20 +2488,27 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
     grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
     zone_assets = asset_list(plant, "Zone")
     completed_grass = {a for a, r in grass_records.items() if r.status == "Completed"}
-    # HRN 1 zone completion is determined from its individual table trace
-    # checkboxes. Older zone records can retain a Pending status after the
-    # final traces were checked, so derive the map colour from the saved detail.
+    # HRN 1 zones are green only when every assigned table is complete.
     plant_identity_for_grass = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper().replace(" ", "")
     if "HS1" in plant_identity_for_grass or "HRN1" in plant_identity_for_grass:
         trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        zone_trace_map = {}
+        cursor = 1
         for zone_index, trace_count in enumerate(trace_counts, start=1):
-            zone_name = f"Z-{zone_index:02d}"
-            zone_record = grass_records.get(zone_name)
-            zone_details = parse_details(zone_record) if zone_record else {}
-            trace_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
-            if (zone_record and zone_record.status == "Completed") or (
-                trace_count and sum(bool(v) for v in trace_checks.values()) >= trace_count
-            ):
+            zone_trace_map[f"Z-{zone_index:02d}"] = [f"T-{n:02d}" for n in range(cursor, cursor + trace_count)]
+            cursor += trace_count
+        period_start = st.session_state.get(f"_period_start_{plant.id}")
+        period_end = st.session_state.get(f"_period_end_{plant.id}")
+        try:
+            period_start = date.fromisoformat(period_start) if period_start else None
+            period_end = date.fromisoformat(period_end) if period_end else task_date
+        except (TypeError, ValueError):
+            period_start, period_end = None, task_date
+        zone_completion = grass_zone_completion_map(
+            db, plant.id, grass_records, zone_trace_map, period_start, period_end
+        )
+        for zone_name, is_complete in zone_completion.items():
+            if is_complete:
                 completed_grass.add(zone_name)
             else:
                 completed_grass.discard(zone_name)
@@ -3498,15 +3570,15 @@ def overview_page(db, user, plant):
     plant_identity = f"{plant.code} {plant.name}".upper().replace(" ", "")
     if "HS1" in plant_identity or "HRN1" in plant_identity:
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
-        grass_done = 0
+        zone_trace_map = {}
+        cursor = 1
         for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
-            zone_rec = grass_records.get(f"Z-{zone_index:02d}")
-            zone_details = parse_details(zone_rec) if zone_rec else {}
-            checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
-            if (zone_rec and zone_rec.status == "Completed") or (
-                trace_count and sum(bool(v) for v in checks.values()) >= trace_count
-            ):
-                grass_done += 1
+            zone_trace_map[f"Z-{zone_index:02d}"] = [f"T-{n:02d}" for n in range(cursor, cursor + trace_count)]
+            cursor += trace_count
+        zone_completion = grass_zone_completion_map(
+            db, plant.id, grass_records, zone_trace_map, start_date, end_date
+        )
+        grass_done = sum(1 for complete in zone_completion.values() if complete)
     panel_pct = round(panel_done / panel_total * 100, 1) if panel_total else 0
     grass_pct = round(grass_done / grass_total * 100, 1) if grass_total else 0
     metrics["panel_pct"] = panel_pct
@@ -3952,14 +4024,49 @@ def grass_cutting_page(db, user, plant):
             cursor += count
 
         total_traces = len(table_assets)
+        period_start = st.session_state.get(f"_period_start_{plant.id}")
+        period_end = st.session_state.get(f"_period_end_{plant.id}")
+        try:
+            period_start = date.fromisoformat(period_start) if period_start else None
+            period_end = date.fromisoformat(period_end) if period_end else task_date
+        except (TypeError, ValueError):
+            period_start, period_end = None, task_date
+        historical_trace_records = {}
+        trace_query = db.query(MaintenanceRecord).filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(["Grass Cutting", "Weeding Grass Cutting"]),
+            MaintenanceRecord.asset_id.in_(table_assets),
+        )
+        if period_start:
+            trace_query = trace_query.filter(MaintenanceRecord.task_date >= period_start)
+        if period_end:
+            trace_query = trace_query.filter(MaintenanceRecord.task_date <= period_end)
+        for trace_record in trace_query.order_by(
+            MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc()
+        ).all():
+            historical_trace_records[trace_record.asset_id] = trace_record
+
+        def _trace_is_complete(value):
+            if value is True:
+                return True
+            return str(value).strip().lower() in {
+                "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
+            }
+
         completed_traces = 0
         for zone_name, traces in zone_trace_map.items():
             zone_record = grass_records.get(zone_name)
             zone_details = parse_details(zone_record) if zone_record else {}
             zone_checks = zone_details.get("table_checks", {}) if isinstance(zone_details, dict) else {}
-            if zone_record and zone_record.status == "Completed" and not zone_checks:
-                zone_checks = {trace: True for trace in traces}
-            completed_traces += sum(bool(zone_checks.get(trace, False)) for trace in traces)
+            for trace in traces:
+                table_record = historical_trace_records.get(trace)
+                is_done = (
+                    _trace_is_complete(zone_checks.get(trace))
+                    or (zone_record is not None and zone_record.status == "Completed" and not zone_checks)
+                    or (table_record is not None and table_record.status == "Completed")
+                )
+                if is_done:
+                    completed_traces += 1
         pct = round(completed_traces / total_traces * 100, 1) if total_traces else 0
         st.progress(pct / 100, text=f"Grass cutting progress: {pct:.1f}% ({completed_traces}/{total_traces} traces)")
 
@@ -3973,6 +4080,10 @@ def grass_cutting_page(db, user, plant):
             # completed until individual trace checkboxes are first edited.
             if rec and rec.status == "Completed" and not saved_checks:
                 saved_checks = {trace: True for trace in traces}
+            for trace in traces:
+                legacy_trace_record = historical_trace_records.get(trace)
+                if legacy_trace_record and legacy_trace_record.status == "Completed":
+                    saved_checks[trace] = True
             saved_worker_name = (rec.remarks or "").strip() if rec else ""
             if saved_worker_name.upper() == "R":
                 saved_worker_name = ""
@@ -4132,8 +4243,7 @@ def _inspection_groups(category, assets):
         one_inverter = [assets[0]] if assets else ["INV-01"]
         return [
             ("🔌 Inverter Checks", cfg["items"][:3], list(assets)),
-            ("📹 CCTV", cfg["items"][3:8], one_inverter),
-            ("🛡️ Safety Checks", cfg["items"][8:], one_inverter),
+            ("🛡️ Safety Checks", cfg["items"][3:], one_inverter),
         ]
 
     if category == "AC Inspection":
@@ -4691,16 +4801,21 @@ def inspection_page(db, user, plant):
     header(plant)
     st.markdown("## Maintenance Inspections")
     st.caption(
-        "Select a maintenance process tab. Inverter and safety checks are separated, and AC inspections are split into outdoor and indoor units."
+        "Select a maintenance process. CCTV is included under Safety Checks, and Main Transformer Inspection is grouped under Switch Yard Inspection."
     )
 
-    categories = list(PROCESS_CATEGORIES.keys())
+    categories = [
+        "Daily Inspection", "Inverter Inspection", "Panel Inspection",
+        "DC Cable Inspection", "MDB Inspection", "Switch Yard Inspection",
+        "AC Inspection",
+    ]
     selected = st.session_state.get("inspection_category", categories[0])
+    if selected == "Main Transformer Inspection":
+        selected = "Switch Yard Inspection"
+        st.session_state.inspection_category = selected
     if selected not in categories:
         selected = categories[0]
 
-    # Compact horizontal tab bar. Unlike equal-width columns, this keeps the
-    # complete tab names visible and allows horizontal scrolling on narrow screens.
     tab_labels = {
         "Daily Inspection": "Inverter & Safety Checks",
         "Inverter Inspection": "Inverter Inspection",
@@ -4708,12 +4823,12 @@ def inspection_page(db, user, plant):
         "DC Cable Inspection": "DC Cable Inspection",
         "MDB Inspection": "MDB Inspection",
         "Switch Yard Inspection": "Switch Yard Inspection",
-        "Main Transformer Inspection": "Main Transformer Inspection",
         "AC Inspection": "AC Inspection",
     }
-    with st.container(key="inspection_tabs"):
-        tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, 1.15, .85], gap="small")
-        for col, category in zip(tab_cols, categories):
+    for row_start in range(0, len(categories), 3):
+        row_categories = categories[row_start:row_start + 3]
+        tab_cols = st.columns(3, gap="medium")
+        for col, category in zip(tab_cols, row_categories):
             with col:
                 if st.button(
                     tab_labels[category],
@@ -4725,7 +4840,17 @@ def inspection_page(db, user, plant):
                     st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
-    _render_inspection_category(db, user, plant, selected)
+    if selected == "Switch Yard Inspection":
+        switch_tab, transformer_tab = st.tabs([
+            "Switch Yard Inspection", "Main Transformer Inspection"
+        ])
+        with switch_tab:
+            _render_inspection_category(db, user, plant, "Switch Yard Inspection")
+        with transformer_tab:
+            _render_inspection_category(db, user, plant, "Main Transformer Inspection")
+    else:
+        _render_inspection_category(db, user, plant, selected)
+
 
 def civil_works_page(db, user, plant):
     """Create free-text civil work requests and track their engineer approval."""
@@ -5811,6 +5936,96 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     doc.build(story)
     return output.getvalue()
 
+def _detailed_inspection_pdf_bytes(detailed_df, plant, start, end):
+    """Create a readable, multi-page PDF of all detailed inspection records."""
+    from xml.sax.saxutils import escape
+
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(
+        output, pagesize=landscape(A4), rightMargin=12*mm, leftMargin=12*mm,
+        topMargin=10*mm, bottomMargin=10*mm,
+        title=f"{plant.name} - Detailed Maintenance Inspection Report",
+        author="Solar Operation and Maintenance Platform",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "DetailedInspectionTitle", parent=styles["Title"], alignment=TA_CENTER,
+        fontSize=16, leading=19, textColor=colors.HexColor("#123b63"), spaceAfter=5,
+    )
+    meta_style = ParagraphStyle("DetailedInspectionMeta", parent=styles["Normal"], fontSize=8, leading=10)
+    heading_style = ParagraphStyle(
+        "DetailedInspectionHeading", parent=styles["Heading3"],
+        fontSize=10, leading=12, textColor=colors.HexColor("#123b63"), spaceBefore=5, spaceAfter=4,
+    )
+    body_style = ParagraphStyle("DetailedInspectionBody", parent=styles["Normal"], fontSize=7.5, leading=9)
+    label_style = ParagraphStyle("DetailedInspectionLabel", parent=body_style, fontName="Helvetica-Bold")
+    story = [
+        Paragraph("Detailed Maintenance Inspection Report", title_style),
+        Paragraph(
+            f"<b>{escape(str(plant.name))}</b> &nbsp; | &nbsp; "
+            f"Period: {start:%d %b %Y} - {end:%d %b %Y} &nbsp; | &nbsp; "
+            f"Generated: {datetime.now():%d %b %Y %H:%M}",
+            meta_style,
+        ),
+        Spacer(1, 5*mm),
+    ]
+    if detailed_df.empty:
+        story.append(Paragraph("No maintenance inspection records were found in the selected date range.", body_style))
+    else:
+        field_pairs = [
+            ("Plant", "Plant"), ("Inspection Date", "Inspection Date"),
+            ("Inspection Type", "Inspection Type"), ("Asset", "Asset"),
+            ("Overall Status", "Overall Status"),
+            ("Performed / Last Saved By", "Performed / Last Saved By"),
+            ("Last Saved At", "Last Saved At"), ("Approval Status", "Approval Status"),
+            ("Approved / Reviewed By", "Approved / Reviewed By"),
+            ("Approval Date & Time", "Approval Date & Time"),
+            ("Approval Signature", "Approval Signature"),
+        ]
+        for record_number, (_, record) in enumerate(detailed_df.iterrows(), start=1):
+            story.append(Paragraph(
+                f"Inspection {record_number}: {escape(str(record.get('Inspection Type', '')))} — "
+                f"{escape(str(record.get('Asset', '')))}",
+                heading_style,
+            ))
+            metadata_rows = []
+            for label, column in field_pairs:
+                value = record.get(column, "")
+                if isinstance(value, (date, datetime)):
+                    value = value.strftime("%d %b %Y %H:%M" if isinstance(value, datetime) else "%d %b %Y")
+                metadata_rows.append([
+                    Paragraph(escape(label), label_style),
+                    Paragraph(escape(str(value if value not in (None, "") else "—")), body_style),
+                ])
+            meta_table = Table(metadata_rows, colWidths=[48*mm, 205*mm], hAlign="LEFT")
+            meta_table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (0,-1), colors.HexColor("#edf4fa")),
+                ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#d7e0ea")),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("LEFTPADDING", (0,0), (-1,-1), 5),
+                ("RIGHTPADDING", (0,0), (-1,-1), 5),
+                ("TOPPADDING", (0,0), (-1,-1), 3),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ]))
+            story.append(meta_table)
+            story.append(Paragraph("Checklist Details", heading_style))
+            checklist = str(record.get("Checklist Details", "") or "No checklist details recorded.")
+            checklist_paragraphs = [
+                Paragraph(escape(part), body_style)
+                for part in checklist.splitlines() if part.strip()
+            ]
+            story.extend(checklist_paragraphs or [Paragraph("No checklist details recorded.", body_style)])
+            for extra_label in ("Approval Comment", "Remarks"):
+                extra_value = str(record.get(extra_label, "") or "").strip()
+                if extra_value:
+                    story.append(Paragraph(
+                        f"<b>{escape(extra_label)}:</b> {escape(extra_value)}", body_style
+                    ))
+            story.append(Spacer(1, 5*mm))
+    doc.build(story)
+    return output.getvalue()
+
+
 def reports_page(db,user,plant):
     header(plant)
     st.title("Management Reports")
@@ -6036,12 +6251,21 @@ def reports_page(db,user,plant):
     ])
     if not detailed_df.empty:
         st.dataframe(detailed_df, use_container_width=True, hide_index=True)
-        st.download_button(
+        export_excel, export_pdf = st.columns(2, gap="medium")
+        export_excel.download_button(
             "⬇️ Export Full Maintenance Inspection Report (Excel)",
             _excel_bytes(detailed_df, "Detailed Maintenance Inspections"),
             f"{plant.code.lower()}_detailed_maintenance_inspections.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"detailed_inspection_excel_{plant.id}",
+            use_container_width=True,
+        )
+        export_pdf.download_button(
+            "📄 Download Full Maintenance Inspection Report (PDF)",
+            _detailed_inspection_pdf_bytes(detailed_df, plant, start, end),
+            f"{plant.code.lower()}_detailed_maintenance_inspections.pdf",
+            "application/pdf",
+            key=f"detailed_inspection_pdf_{plant.id}",
             use_container_width=True,
         )
     else:
@@ -6153,14 +6377,21 @@ def approvals_page(db, user, plant):
         "AC Inspection": "AC Inspection",
         "Civil Works": "Civil Works",
     }
-    tab_cols = st.columns([1.25, 1.15, 1.0, 1.2, .95, 1.35, 1.15, .85, 1.0], gap="small")
-    for col, category in zip(tab_cols, categories):
-        count = sum(1 for rec in pending if rec.category == category)
-        with col:
-            if st.button(f"{tab_labels[category]} ({count})", key=f"approval_tab_{category}",
-                         use_container_width=True, type="primary" if category == selected else "secondary"):
-                st.session_state.approval_category = category
-                st.rerun()
+    # Keep each approval tab in its own generously spaced column.
+    for row_start in range(0, len(categories), 3):
+        row_categories = categories[row_start:row_start + 3]
+        tab_cols = st.columns(3, gap="medium")
+        for col, category in zip(tab_cols, row_categories):
+            count = sum(1 for rec in pending if rec.category == category)
+            with col:
+                if st.button(
+                    f"{tab_labels[category]} ({count})",
+                    key=f"approval_tab_{category}",
+                    use_container_width=True,
+                    type="primary" if category == selected else "secondary",
+                ):
+                    st.session_state.approval_category = category
+                    st.rerun()
 
     st.markdown('<div class="inspection-tabs-line"></div>', unsafe_allow_html=True)
     category_pending = [rec for rec in pending if rec.category == selected]
