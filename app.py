@@ -2140,7 +2140,6 @@ def top_nav(db, user):
         "🌿 Grass Cutting",
         "🌾 Chemical Weeding",
         "🔧 Maintenance Inspections",
-        "☀️ MDP SOP Assistant",
         "🏗️ Civil Works",
         "⚠️ Repair & Maintenance",
     ]
@@ -6849,8 +6848,8 @@ def generate_mdp_sop_answer(question, retrieved, chat_history):
 
 
 def solar_sop_agent_page(db, user, plant):
-    """Standalone MDP SOP chat page; does not modify maintenance records."""
-    st.title("☀️ MDP Solar SOP Assistant")
+    """Right-side MDP SOP assistant; does not modify maintenance records."""
+    st.subheader("☀️ MDP Solar SOP Assistant")
     st.caption(
         "Ask questions about the Vidul Madampe Solar Power Plant (MDP) "
         "using the supplied MDP Standard Operating Procedure."
@@ -6927,10 +6926,9 @@ def solar_sop_agent_page(db, user, plant):
     with st.form("solar_mdp_sop_question_form", clear_on_submit=True):
         question = st.text_area(
             "Ask the MDP Solar SOP Assistant",
-            height=100,
+            height=115,
             placeholder=(
-                "Type your question in English or Sinhala. "
-                "Example: Explain the plant startup procedure."
+                "Ask in English or Sinhala. Example: Explain the plant startup procedure."
             ),
         )
         submitted = st.form_submit_button(
@@ -7026,40 +7024,46 @@ def main():
         db.close()
         return
 
-    if page == "📊 Plant Summary":
-        plant_summary_page(db, user)
-    elif page == "🏠 Overview":
-        overview_page(db, user, plant)
-    elif page == "🧹 Panel Cleaning":
-        panel_cleaning_page(db, user, plant)
-    elif page == "🌱 Weeding Panel Cleaning":
-        weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
-    elif page == "🌿 Grass Cutting":
-        grass_cutting_page(db, user, plant)
-    elif page == "🌾 Chemical Weeding":
-        weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
-    elif page == "🔧 Maintenance Inspections":
-        inspection_page(db, user, plant)
-    elif page == "☀️ MDP SOP Assistant":
+    # Keep the selected maintenance page on the left and the MDP SOP assistant
+    # permanently available in a dedicated panel on the right.
+    main_column, sop_column = st.columns([0.70, 0.30], gap="large")
+
+    with main_column:
+        if page == "📊 Plant Summary":
+            plant_summary_page(db, user)
+        elif page == "🏠 Overview":
+            overview_page(db, user, plant)
+        elif page == "🧹 Panel Cleaning":
+            panel_cleaning_page(db, user, plant)
+        elif page == "🌱 Weeding Panel Cleaning":
+            weeding_task_page(db, user, plant, "Weeding Panel Cleaning", "Table", "Weeding Panel Cleaning", "🌱")
+        elif page == "🌿 Grass Cutting":
+            grass_cutting_page(db, user, plant)
+        elif page == "🌾 Chemical Weeding":
+            weeding_task_page(db, user, plant, "Weeding Grass Cutting", "Zone", "Chemical Weeding", "🌾")
+        elif page == "🔧 Maintenance Inspections":
+            inspection_page(db, user, plant)
+        elif page == "🏗️ Civil Works":
+            civil_works_page(db, user, plant)
+        elif page == "⚠️ Repair & Maintenance":
+            loss_repair_page(db, user, plant)
+        elif page == "📋 Activity Log":
+            activity_page(db, user, plant)
+        elif page == "👥 Users" and user.role in ("admin", "engineer"):
+            users_page(db, user, plant)
+        elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
+            plants_page(db)
+        elif page == "📈 Reports" and user.role in ("admin", "engineer"):
+            reports_page(db, user, plant)
+        elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
+            approvals_page(db, user, plant)
+        elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
+            reminders_page(db)
+        elif page == "⚙️ Admin" and user.role == "admin":
+            admin_page(db)
+
+    with sop_column:
         solar_sop_agent_page(db, user, plant)
-    elif page == "🏗️ Civil Works":
-        civil_works_page(db, user, plant)
-    elif page == "⚠️ Repair & Maintenance":
-        loss_repair_page(db, user, plant)
-    elif page == "📋 Activity Log":
-        activity_page(db, user, plant)
-    elif page == "👥 Users" and user.role in ("admin", "engineer"):
-        users_page(db, user, plant)
-    elif page == "🏭 Plants" and user.role in ("admin", "engineer"):
-        plants_page(db)
-    elif page == "📈 Reports" and user.role in ("admin", "engineer"):
-        reports_page(db, user, plant)
-    elif page == "✅ Approvals & Sign-off" and user.role in ("admin", "engineer"):
-        approvals_page(db, user, plant)
-    elif page == "⏰ Reminders" and user.role in ("admin", "engineer"):
-        reminders_page(db)
-    elif page == "⚙️ Admin" and user.role == "admin":
-        admin_page(db)
 
     db.close()
 
