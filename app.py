@@ -117,9 +117,9 @@ if not DATABASE_URL:
 
 # Accept both postgres:// and postgresql:// forms returned by Neon.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"): ]
 elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"): ]
 
 ADMIN_EMAIL = get_config("ADMIN_EMAIL", "samodas@vidullanka.com")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD", "ChangeThisPassword123!")
