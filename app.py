@@ -6703,6 +6703,51 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
     return selected
 
 
+def _solar_sop_reference_metadata(matches, pages):
+    """Extract the SOP number and relevant section title from the supplied PDF text."""
+    all_text = "\n".join(item.get("text", "") for item in pages)
+    matched_text = "\n".join(item.get("text", "") for item in matches)
+    combined = all_text + "\n" + matched_text
+
+    number_patterns = [
+        r"(?im)^\s*SOP\s*(?:Number|No\.?|#)\s*[:\-]\s*([A-Z0-9][A-Z0-9._/\- ]{1,60})",
+        r"\b((?:MDP[-_/ ]*)?SOP[-_/ ]?\d{1,5}(?:[-_/]\w+)?)\b",
+    ]
+    sop_number = None
+    for pattern in number_patterns:
+        found = re.search(pattern, combined)
+        if found:
+            sop_number = re.sub(r"\s+", " ", found.group(1)).strip(" .,:;")
+            break
+
+    title_patterns = [
+        r"(?im)^\s*SOP\s*Title\s*[:\-]\s*(.+?)\s*$",
+        r"(?im)^\s*Document\s*Title\s*[:\-]\s*(.+?)\s*$",
+    ]
+    sop_title = None
+    for pattern in title_patterns:
+        found = re.search(pattern, combined)
+        if found:
+            sop_title = found.group(1).strip(" .,:;")
+            break
+
+    # If no separate SOP Title field exists, use a numbered heading from
+    # the retrieved passages rather than inventing a title.
+    if not sop_title:
+        for item in matches:
+            for line in item.get("text", "").splitlines():
+                line = " ".join(line.split()).strip()
+                if 7 <= len(line) <= 160 and re.match(r"^\d+(?:\.\d+)*[.)]?\s+[A-Z]", line):
+                    sop_title = line
+                    break
+            if sop_title:
+                break
+
+    if not sop_title:
+        sop_title = "Vidul Madampe Solar Power Plant (MDP) SOP"
+    return sop_number or "Not explicitly stated in the retrieved SOP text", sop_title
+
+
 def answer_from_mdp_sop(question, pages):
     matches = retrieve_mdp_sop_context(question, pages)
     if not matches:
@@ -6711,15 +6756,22 @@ def answer_from_mdp_sop(question, pages):
             "Please try a more specific question or mention the equipment/checklist name. "
             "I will not assume a procedure that is not stated in this document."
         ), []
+
+    sop_number, sop_title = _solar_sop_reference_metadata(matches, pages)
     excerpts = []
     for item in matches:
         excerpt = " ".join(item["text"].split())
         if len(excerpt) > 950:
             excerpt = excerpt[:950].rsplit(" ", 1)[0] + "…"
         excerpts.append(f"**PDF page {item['page']}**\n\n{excerpt}")
+
     response = (
-        "I found the following relevant information in the **Vidul Madampe Solar Power Plant (MDP) SOP**. "
-        "The points below are retrieved from the document; check the cited PDF pages for the full procedure.\n\n"
+        "**Relevant SOP**\n\n"
+        f"**SOP Number:** {sop_number}\n\n"
+        f"**SOP Title:** {sop_title}\n\n"
+        "**Relevant SOP Details**\n\n"
+        "The following information was retrieved from the MDP Solar SOP. "
+        "Refer to the cited PDF pages for the complete procedure.\n\n"
         + "\n\n---\n\n".join(excerpts)
     )
     return response, matches
@@ -6738,9 +6790,10 @@ def render_solar_sop_agent():
         panel_css = """
         <style>
         .st-key-solar_sop_agent{
-            position:fixed!important;right:18px!important;bottom:18px!important;
+            position:fixed!important;right:18px!important;top:50%!important;
+            bottom:auto!important;transform:translateY(-50%)!important;
             width:360px!important;max-width:calc(100vw - 36px)!important;
-            max-height:76vh!important;overflow-y:auto!important;z-index:99999!important;
+            max-height:82vh!important;overflow-y:auto!important;z-index:2147483000!important;
             background:#f7fbff!important;border:1px solid #b9d8f4!important;
             border-radius:16px!important;padding:12px 13px 10px!important;
             box-shadow:0 12px 36px rgba(14,45,78,.24)!important;
@@ -6757,8 +6810,9 @@ def render_solar_sop_agent():
         .sop-agent-note{font-size:10px;color:#60758d;border-top:1px solid #d9e7f4;padding-top:7px;margin-top:5px}
         @media(max-width:700px){
             .st-key-solar_sop_agent{
-                right:8px!important;bottom:8px!important;
-                width:calc(100vw - 16px)!important;max-height:70vh!important
+                right:8px!important;top:auto!important;bottom:16px!important;
+                transform:none!important;width:calc(100vw - 16px)!important;
+                max-height:72vh!important
             }
         }
         </style>
@@ -6767,9 +6821,10 @@ def render_solar_sop_agent():
         panel_css = """
         <style>
         .st-key-solar_sop_agent{
-            position:fixed!important;right:18px!important;bottom:18px!important;
+            position:fixed!important;right:18px!important;top:50%!important;
+            bottom:auto!important;transform:translateY(-50%)!important;
             width:176px!important;max-width:calc(100vw - 36px)!important;
-            z-index:99999!important;background:transparent!important;
+            z-index:2147483000!important;background:transparent!important;
             border:0!important;padding:0!important;box-shadow:none!important;
         }
         .st-key-solar_sop_agent [data-testid="stButton"] button{
@@ -6784,7 +6839,10 @@ def render_solar_sop_agent():
             border-color:#79b7eb!important;background:#edf6ff!important
         }
         @media(max-width:700px){
-            .st-key-solar_sop_agent{right:10px!important;bottom:10px!important;width:158px!important}
+            .st-key-solar_sop_agent{
+                right:10px!important;top:auto!important;bottom:16px!important;
+                transform:none!important;width:158px!important
+            }
         }
         </style>
         """
