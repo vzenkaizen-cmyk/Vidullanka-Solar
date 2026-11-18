@@ -1,5 +1,6 @@
 
 import os
+import re
 import io
 import json
 import base64
@@ -6790,10 +6791,10 @@ def render_solar_sop_agent():
         panel_css = """
         <style>
         .st-key-solar_sop_agent{
-            position:fixed!important;right:18px!important;top:50%!important;
-            bottom:auto!important;transform:translateY(-50%)!important;
+            position:fixed!important;right:18px!important;top:78px!important;
+            bottom:auto!important;transform:none!important;
             width:360px!important;max-width:calc(100vw - 36px)!important;
-            max-height:82vh!important;overflow-y:auto!important;z-index:2147483000!important;
+            max-height:calc(100vh - 96px)!important;overflow-y:auto!important;z-index:2147483000!important;
             background:#f7fbff!important;border:1px solid #b9d8f4!important;
             border-radius:16px!important;padding:12px 13px 10px!important;
             box-shadow:0 12px 36px rgba(14,45,78,.24)!important;
@@ -6810,7 +6811,7 @@ def render_solar_sop_agent():
         .sop-agent-note{font-size:10px;color:#60758d;border-top:1px solid #d9e7f4;padding-top:7px;margin-top:5px}
         @media(max-width:700px){
             .st-key-solar_sop_agent{
-                right:8px!important;top:auto!important;bottom:16px!important;
+                right:8px!important;top:78px!important;bottom:auto!important;
                 transform:none!important;width:calc(100vw - 16px)!important;
                 max-height:72vh!important
             }
@@ -6821,8 +6822,8 @@ def render_solar_sop_agent():
         panel_css = """
         <style>
         .st-key-solar_sop_agent{
-            position:fixed!important;right:18px!important;top:50%!important;
-            bottom:auto!important;transform:translateY(-50%)!important;
+            position:fixed!important;right:18px!important;top:78px!important;
+            bottom:auto!important;transform:none!important;
             width:176px!important;max-width:calc(100vw - 36px)!important;
             z-index:2147483000!important;background:transparent!important;
             border:0!important;padding:0!important;box-shadow:none!important;
@@ -6840,7 +6841,7 @@ def render_solar_sop_agent():
         }
         @media(max-width:700px){
             .st-key-solar_sop_agent{
-                right:10px!important;top:auto!important;bottom:16px!important;
+                right:10px!important;top:78px!important;bottom:auto!important;
                 transform:none!important;width:158px!important
             }
         }
