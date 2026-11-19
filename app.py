@@ -1011,7 +1011,7 @@ def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_
         # counts as complete. Once table-level checks exist, every assigned
         # table must be checked before the zone is marked complete.
         legacy_zone_complete = bool(
-            (zone_name in completed_zone_records and not table_checks)
+            zone_name in completed_zone_records
             or (zone_record and zone_record.status == "Completed" and not table_checks)
         )
         completed[zone_name] = bool(
@@ -3218,11 +3218,11 @@ def render_plant_details_and_specs(db, plant):
 
 
 def maintenance_cycle_plan(start_date, end_date, category):
-    """Return only the calendar-aligned cycles that overlap the selected dates.
+    """Return calendar-aligned cycle windows for every year in the selected range.
 
-    Panel cleaning: Jan-Jun and Jul-Dec.
-    Grass cutting: Jan-Apr, May-Aug and Sep-Dec.
-    A partially selected cycle is included once, not counted as an extra cycle.
+    Panel cleaning has two cycles per calendar year (Jan-Jun, Jul-Dec).
+    Grass cutting has three cycles per calendar year (Jan-Apr, May-Aug, Sep-Dec).
+    The first and last years are both included in the expected cycle count.
     """
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
     windows = []
@@ -3234,33 +3234,30 @@ def maintenance_cycle_plan(start_date, end_date, category):
             next_month = next_month_index % 12 + 1
             next_start = date(next_year, next_month, 1)
             cycle_end = next_start - timedelta(days=1)
-
-            # Exclude cycles wholly outside the selected Overview date range.
-            if cycle_end < start_date or cycle_start > end_date:
-                continue
             windows.append((cycle_start, cycle_end))
     return windows
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count each cycle once all required assets have a Completed record in it.
+    """Count cycles where every required table/zone is complete in that cycle.
 
-    A later Pending/Failed entry does not erase evidence that the asset was
-    completed during that same cycle. Routine and related weeding records are
-    treated as one maintenance activity. HRN 1 grass cutting also supports its
-    table-checkbox records through grass_zone_completion_map().
+    Use the latest saved status for each asset within each cycle. HRN 1 grass
+    cutting supports both zone-level records and the legacy table-level checks
+    used by the Overview map, so the same completion helper is used here.
     """
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
     asset_type = "Table" if is_panel else "Zone"
     expected = asset_list(plant, asset_type)
 
-    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper().replace(" ", "")
+    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper()
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
     if is_panel and is_hsn1:
         expected = [f"T-{i:02d}" for i in range(1, 81)]
 
+    # HRN 1 grass cutting is completed by checking all tables assigned to each
+    # zone; preserve that same mapping used on the Overview page.
     zone_trace_map = {}
     if not is_panel and is_hsn1:
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
@@ -3296,34 +3293,32 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             .all()
         )
 
-        # Preserve completion evidence for the cycle. Do not let a later
-        # Pending/Failed save overwrite an earlier Completed save for an asset.
-        completed_assets = {
-            row.asset_id for row in rows if row.status == "Completed"
-        }
+        # Retain the latest status per asset for this cycle. A later Pending
+        # update must not be mistaken for a still-completed asset.
+        latest_by_asset = {}
+        for row in rows:
+            latest_by_asset[row.asset_id] = row
 
         if is_panel:
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if row.status == "Completed"
+            }
             cycle_complete = all(asset in completed_assets for asset in expected)
         elif is_hsn1:
-            # Zone-level completion and legacy table-level completion are both
-            # evaluated from records saved inside this cycle's date window.
             zone_records = {
-                zone: next(
-                    (row for row in reversed(rows)
-                     if row.asset_id == zone and row.status == "Completed"),
-                    None,
-                )
-                for zone in zone_trace_map
+                asset: row for asset, row in latest_by_asset.items()
+                if asset.startswith("Z-")
             }
-            zone_records = {zone: rec for zone, rec in zone_records.items() if rec is not None}
             zone_completion = grass_zone_completion_map(
                 db, plant.id, zone_records, zone_trace_map, left, right
             )
-            cycle_complete = all(
-                zone in completed_assets or zone_completion.get(zone, False)
-                for zone in expected
-            )
+            cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
         else:
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if row.status == "Completed"
+            }
             cycle_complete = all(asset in completed_assets for asset in expected)
 
         if cycle_complete:
@@ -3760,9 +3755,7 @@ def overview_page(db, user, plant):
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             ""
         )
-        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
-            db, plant, date(start_date.year, 1, 1), date(end_date.year, 12, 31), "Panel Cleaning"
-        )
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Panel Cleaning")
         st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
@@ -3772,9 +3765,7 @@ def overview_page(db, user, plant):
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             ""
         )
-        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
-            db, plant, date(start_date.year, 1, 1), date(end_date.year, 12, 31), "Grass Cutting"
-        )
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Grass Cutting")
         st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
@@ -7351,6 +7342,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
