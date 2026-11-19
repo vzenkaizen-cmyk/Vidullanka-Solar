@@ -6192,7 +6192,7 @@ def _inspection_report_table_df(detailed_df):
 
 def _detailed_inspection_pdf_bytes(detailed_df, plant, start, end):
     """Create compact checklist-style PDF tables with one column per asset."""
-    from xml.sax.sax.saxutils import escape
+    from xml.sax.saxutils import escape
 
     output = io.BytesIO()
     doc = SimpleDocTemplate(
