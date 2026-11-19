@@ -3239,34 +3239,91 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count fully completed cycles; a cycle needs every table/zone completed."""
+    """Count cycles where every required table/zone is complete in that cycle.
+
+    Use the latest saved status for each asset within each cycle. HRN 1 grass
+    cutting supports both zone-level records and the legacy table-level checks
+    used by the Overview map, so the same completion helper is used here.
+    """
     windows = maintenance_cycle_plan(start_date, end_date, category)
-    asset_type = "Table" if category == "Panel Cleaning" else "Zone"
-    total_assets = plant.table_count if asset_type == "Table" else plant.zone_count
-    if category == "Panel Cleaning":
-        categories = ["Panel Cleaning", "Weeding Panel Cleaning"]
-    else:
-        categories = ["Grass Cutting", "Weeding Grass Cutting"]
+    is_panel = category == "Panel Cleaning"
+    asset_type = "Table" if is_panel else "Zone"
     expected = asset_list(plant, asset_type)
-    if asset_type == "Table" and ("HS1" in f"{plant.code} {plant.name}".upper()):
+
+    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper()
+    is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
+
+    if is_panel and is_hsn1:
         expected = [f"T-{i:02d}" for i in range(1, 81)]
-        total_assets = 80
+
+    # HRN 1 grass cutting is completed by checking all tables assigned to each
+    # zone; preserve that same mapping used on the Overview page.
+    zone_trace_map = {}
+    if not is_panel and is_hsn1:
+        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        cursor = 1
+        for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
+            zone_trace_map[f"Z-{zone_index:02d}"] = [
+                f"T-{n:02d}" for n in range(cursor, cursor + trace_count)
+            ]
+            cursor += trace_count
+        expected = list(zone_trace_map.keys())
+
+    categories = (
+        ["Panel Cleaning", "Weeding Panel Cleaning"]
+        if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
+    )
     completed_cycles = 0
+
     for cycle_start, cycle_end in windows:
         left = max(start_date, cycle_start)
         right = min(end_date, cycle_end)
         if left > right or not expected:
             continue
-        rows = db.query(MaintenanceRecord).filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date >= left,
-            MaintenanceRecord.task_date <= right,
-            MaintenanceRecord.status == "Completed",
-        ).all()
-        done_assets = {r.asset_id for r in rows}
-        if all(asset in done_assets for asset in expected):
+
+        rows = (
+            db.query(MaintenanceRecord)
+            .filter(
+                MaintenanceRecord.plant_id == plant.id,
+                MaintenanceRecord.category.in_(categories),
+                MaintenanceRecord.task_date >= left,
+                MaintenanceRecord.task_date <= right,
+            )
+            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+            .all()
+        )
+
+        # Retain the latest status per asset for this cycle. A later Pending
+        # update must not be mistaken for a still-completed asset.
+        latest_by_asset = {}
+        for row in rows:
+            latest_by_asset[row.asset_id] = row
+
+        if is_panel:
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if row.status == "Completed"
+            }
+            cycle_complete = all(asset in completed_assets for asset in expected)
+        elif is_hsn1:
+            zone_records = {
+                asset: row for asset, row in latest_by_asset.items()
+                if asset.startswith("Z-")
+            }
+            zone_completion = grass_zone_completion_map(
+                db, plant.id, zone_records, zone_trace_map, left, right
+            )
+            cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
+        else:
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if row.status == "Completed"
+            }
+            cycle_complete = all(asset in completed_assets for asset in expected)
+
+        if cycle_complete:
             completed_cycles += 1
+
     return completed_cycles, len(windows)
 
 
