@@ -3239,11 +3239,12 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count cycles where every required table/zone was completed in that cycle.
+    """Count completed maintenance rounds within the selected date range.
 
-    A completed task remains evidence that the asset was serviced during that
-    cycle, even if a later Pending entry was saved. HRN 1 grass cutting supports
-    both zone-level records and legacy table-level checks.
+    The planned frequency remains two panel-cleaning cycles and three grass-
+    cutting cycles per calendar year. A round is counted when every required
+    table/zone has a completed entry. Completed entries are retained as evidence
+    even if a later Pending entry was saved for the same asset.
     """
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
@@ -3256,8 +3257,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     if is_panel and is_hsn1:
         expected = [f"T-{i:02d}" for i in range(1, 81)]
 
-    # HRN 1 grass cutting is completed by checking all tables assigned to each
-    # zone; preserve that same mapping used on the Overview page.
     zone_trace_map = {}
     if not is_panel and is_hsn1:
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
@@ -3273,29 +3272,33 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
-    completed_cycles = 0
 
+    # Fetch the selected period once. The calendar-window check below remains
+    # the primary rule; the per-asset round count repairs older records whose
+    # completed tasks were saved on different dates around a cycle boundary.
+    period_rows = (
+        db.query(MaintenanceRecord)
+        .filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(categories),
+            MaintenanceRecord.task_date >= start_date,
+            MaintenanceRecord.task_date <= end_date,
+        )
+        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+        .all()
+    )
+
+    completed_cycles = 0
     for cycle_start, cycle_end in windows:
         left = max(start_date, cycle_start)
         right = min(end_date, cycle_end)
         if left > right or not expected:
             continue
 
-        rows = (
-            db.query(MaintenanceRecord)
-            .filter(
-                MaintenanceRecord.plant_id == plant.id,
-                MaintenanceRecord.category.in_(categories),
-                MaintenanceRecord.task_date >= left,
-                MaintenanceRecord.task_date <= right,
-            )
-            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
-            .all()
-        )
-
-        # Count each asset as completed when it has at least one Completed
-        # record within this cycle. A later Pending save must not erase work
-        # that was already completed during the same cycle.
+        rows = [
+            row for row in period_rows
+            if left <= row.task_date <= right
+        ]
         completed_assets = {
             row.asset_id for row in rows if row.status == "Completed"
         }
@@ -3304,50 +3307,66 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             cycle_complete = all(asset in completed_assets for asset in expected)
         elif is_hsn1:
             zone_records = {
-                asset: row for asset, row in (
-                    (row.asset_id, row) for row in rows if row.asset_id.startswith("Z-")
-                )
+                row.asset_id: row for row in rows
+                if row.asset_id.startswith("Z-")
             }
             zone_completion = grass_zone_completion_map(
                 db, plant.id, zone_records, zone_trace_map, left, right
             )
-            cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
+            cycle_complete = all(
+                zone_completion.get(zone, False) for zone in expected
+            )
         else:
             cycle_complete = all(asset in completed_assets for asset in expected)
 
         if cycle_complete:
             completed_cycles += 1
 
-    # HRN 1 stores grass-cutting completion through table checks grouped by
-    # zone. Older HRN 1 records can have all 10 zones completed across dates
-    # that fall into different calendar windows, even though the Overview
-    # correctly shows 100% for the selected reporting period. In that case,
-    # count the completed site-wide round as one cycle instead of showing 0.
-    # Keep any fully completed calendar cycles already counted above.
-    if not is_panel and is_hsn1 and completed_cycles == 0 and expected:
-        period_rows = (
-            db.query(MaintenanceRecord)
-            .filter(
-                MaintenanceRecord.plant_id == plant.id,
-                MaintenanceRecord.category.in_(categories),
-                MaintenanceRecord.task_date >= start_date,
-                MaintenanceRecord.task_date <= end_date,
-            )
-            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
-            .all()
-        )
-        period_zone_records = {
-            row.asset_id: row
-            for row in period_rows
-            if row.asset_id in zone_trace_map
-        }
-        period_zone_completion = grass_zone_completion_map(
-            db, plant.id, period_zone_records, zone_trace_map, start_date, end_date
-        )
-        if all(period_zone_completion.get(zone, False) for zone in expected):
-            completed_cycles = 1
+    # Count distinct completed work dates for every required asset. This is a
+    # fallback for historical records where a full round was completed over
+    # several dates and therefore did not fit wholly inside one calendar
+    # window. The minimum across all assets ensures a partial round is never
+    # counted; the annual frequency still caps the result at the planned total.
+    if expected:
+        if is_hsn1 and not is_panel:
+            per_zone_rounds = []
+            for zone, traces in zone_trace_map.items():
+                zone_dates = {
+                    row.task_date for row in period_rows
+                    if row.asset_id == zone and row.status == "Completed"
+                }
 
-    return completed_cycles, len(windows)
+                # Older HRN 1 entries stored grass-cutting progress on the
+                # individual tables rather than on the zone record.
+                table_date_sets = [
+                    {
+                        row.task_date for row in period_rows
+                        if row.asset_id == trace and row.status == "Completed"
+                    }
+                    for trace in traces
+                ]
+                legacy_rounds = (
+                    min(len(dates) for dates in table_date_sets)
+                    if table_date_sets and all(table_date_sets) else 0
+                )
+                per_zone_rounds.append(max(len(zone_dates), legacy_rounds))
+            inferred_rounds = min(per_zone_rounds) if per_zone_rounds else 0
+        else:
+            per_asset_dates = [
+                {
+                    row.task_date for row in period_rows
+                    if row.asset_id == asset and row.status == "Completed"
+                }
+                for asset in expected
+            ]
+            inferred_rounds = (
+                min(len(dates) for dates in per_asset_dates)
+                if per_asset_dates else 0
+            )
+
+        completed_cycles = max(completed_cycles, inferred_rounds)
+
+    return min(completed_cycles, len(windows)), len(windows)
 
 
 def _overview_target_label(done, total, target_days, unit):
