@@ -6129,29 +6129,85 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     doc.build(story)
     return output.getvalue()
 
+def _inspection_report_table_df(detailed_df):
+    """Pivot saved inspection checklist items into compact asset-column tables."""
+    if detailed_df is None or detailed_df.empty:
+        return pd.DataFrame()
+
+    records = []
+    assets = sorted(
+        {str(value) for value in detailed_df.get("Asset", pd.Series(dtype=str)).dropna()},
+        key=lambda value: (not value.upper().startswith("INV-"), value),
+    )
+    for _, record in detailed_df.iterrows():
+        raw_date = record.get("Inspection Date", "")
+        if isinstance(raw_date, (date, datetime)):
+            date_label = raw_date.strftime("%d %b %Y")
+        else:
+            date_label = str(raw_date)
+        details = str(record.get("Checklist Details", "") or "")
+        for raw_line in details.splitlines():
+            if raw_line.startswith("  "):
+                continue
+            line = raw_line.strip()
+            if not line or line.startswith("Reason:"):
+                continue
+            if ":" not in line:
+                continue
+            item, raw_status = line.split(":", 1)
+            item = item.strip()
+            raw_status = raw_status.strip()
+            reason = ""
+            if " | Reason:" in raw_status:
+                raw_status, reason = raw_status.split(" | Reason:", 1)
+                reason = reason.strip()
+            normalized = raw_status.strip().upper()
+            if normalized in {"GREEN", "OK / GREEN", "COMPLETED", "DONE", "OK", "TRUE", "YES"}:
+                result = "OK"
+            elif normalized in {"RED", "NOT DONE", "FAILED", "NOT OK", "FALSE", "NO"}:
+                result = "NOT OK"
+            else:
+                result = "—"
+            if result == "NOT OK" and reason:
+                result = f"NOT OK — {reason}"
+            records.append({
+                "Inspection Date": date_label,
+                "Inspection Type": str(record.get("Inspection Type", "")),
+                "Checklist Item": item,
+                "Asset": str(record.get("Asset", "")),
+                "Result": result,
+            })
+
+    if not records:
+        return pd.DataFrame()
+    long_df = pd.DataFrame(records)
+    table_df = long_df.pivot_table(
+        index=["Inspection Date", "Inspection Type", "Checklist Item"],
+        columns="Asset", values="Result", aggfunc="last", fill_value="—",
+    ).reset_index()
+    table_df.columns.name = None
+    ordered_assets = [asset for asset in assets if asset in table_df.columns]
+    return table_df[["Inspection Date", "Inspection Type", "Checklist Item"] + ordered_assets]
+
+
 def _detailed_inspection_pdf_bytes(detailed_df, plant, start, end):
-    """Create a readable, multi-page PDF of all detailed inspection records."""
-    from xml.sax.saxutils import escape
+    """Create compact checklist-style PDF tables with one column per asset."""
+    from xml.sax.sax.saxutils import escape
 
     output = io.BytesIO()
     doc = SimpleDocTemplate(
-        output, pagesize=landscape(A4), rightMargin=12*mm, leftMargin=12*mm,
-        topMargin=10*mm, bottomMargin=10*mm,
+        output, pagesize=landscape(A4), rightMargin=8*mm, leftMargin=8*mm,
+        topMargin=9*mm, bottomMargin=9*mm,
         title=f"{plant.name} - Detailed Maintenance Inspection Report",
         author="Solar Operation and Maintenance Platform",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "DetailedInspectionTitle", parent=styles["Title"], alignment=TA_CENTER,
-        fontSize=16, leading=19, textColor=colors.HexColor("#123b63"), spaceAfter=5,
+        "DetailedInspectionTitleCompact", parent=styles["Title"], alignment=TA_CENTER,
+        fontSize=15, leading=18, textColor=colors.HexColor("#123b63"), spaceAfter=5,
     )
-    meta_style = ParagraphStyle("DetailedInspectionMeta", parent=styles["Normal"], fontSize=8, leading=10)
-    heading_style = ParagraphStyle(
-        "DetailedInspectionHeading", parent=styles["Heading3"],
-        fontSize=10, leading=12, textColor=colors.HexColor("#123b63"), spaceBefore=5, spaceAfter=4,
-    )
-    body_style = ParagraphStyle("DetailedInspectionBody", parent=styles["Normal"], fontSize=7.5, leading=9)
-    label_style = ParagraphStyle("DetailedInspectionLabel", parent=body_style, fontName="Helvetica-Bold")
+    body_style = ParagraphStyle("DetailedInspectionBodyCompact", parent=styles["Normal"], fontSize=6.5, leading=8)
+    header_style = ParagraphStyle("DetailedInspectionHeaderCompact", parent=body_style, fontName="Helvetica-Bold", alignment=TA_CENTER)
     story = [
         Paragraph(
             f"{str(detailed_df['Inspection Type'].iloc[0]) if not detailed_df.empty and detailed_df['Inspection Type'].nunique() == 1 else 'Detailed Maintenance Inspection'} Report",
@@ -6161,63 +6217,40 @@ def _detailed_inspection_pdf_bytes(detailed_df, plant, start, end):
             f"<b>{escape(str(plant.name))}</b> &nbsp; | &nbsp; "
             f"Period: {start:%d %b %Y} - {end:%d %b %Y} &nbsp; | &nbsp; "
             f"Generated: {datetime.now():%d %b %Y %H:%M}",
-            meta_style,
+            body_style,
         ),
-        Spacer(1, 5*mm),
+        Spacer(1, 4*mm),
     ]
-    if detailed_df.empty:
+    report_df = _inspection_report_table_df(detailed_df)
+    if report_df.empty:
         story.append(Paragraph("No maintenance inspection records were found in the selected date range.", body_style))
     else:
-        field_pairs = [
-            ("Plant", "Plant"), ("Inspection Date", "Inspection Date"),
-            ("Inspection Type", "Inspection Type"), ("Asset", "Asset"),
-            ("Overall Status", "Overall Status"),
-            ("Performed / Last Saved By", "Performed / Last Saved By"),
-            ("Last Saved At", "Last Saved At"), ("Approval Status", "Approval Status"),
-            ("Approved / Reviewed By", "Approved / Reviewed By"),
-            ("Approval Date & Time", "Approval Date & Time"),
-            ("Approval Signature", "Approval Signature"),
-        ]
-        for record_number, (_, record) in enumerate(detailed_df.iterrows(), start=1):
-            story.append(Paragraph(
-                f"Inspection {record_number}: {escape(str(record.get('Inspection Type', '')))} — "
-                f"{escape(str(record.get('Asset', '')))}",
-                heading_style,
-            ))
-            metadata_rows = []
-            for label, column in field_pairs:
-                value = record.get(column, "")
-                if isinstance(value, (date, datetime)):
-                    value = value.strftime("%d %b %Y %H:%M" if isinstance(value, datetime) else "%d %b %Y")
-                metadata_rows.append([
-                    Paragraph(escape(label), label_style),
-                    Paragraph(escape(str(value if value not in (None, "") else "—")), body_style),
-                ])
-            meta_table = Table(metadata_rows, colWidths=[48*mm, 205*mm], hAlign="LEFT")
-            meta_table.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (0,-1), colors.HexColor("#edf4fa")),
-                ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#d7e0ea")),
-                ("VALIGN", (0,0), (-1,-1), "TOP"),
-                ("LEFTPADDING", (0,0), (-1,-1), 5),
-                ("RIGHTPADDING", (0,0), (-1,-1), 5),
-                ("TOPPADDING", (0,0), (-1,-1), 3),
-                ("BOTTOMPADDING", (0,0), (-1,-1), 3),
-            ]))
-            story.append(meta_table)
-            story.append(Paragraph("Checklist Details", heading_style))
-            checklist = str(record.get("Checklist Details", "") or "No checklist details recorded.")
-            checklist_paragraphs = [
-                Paragraph(escape(part), body_style)
-                for part in checklist.splitlines() if part.strip()
-            ]
-            story.extend(checklist_paragraphs or [Paragraph("No checklist details recorded.", body_style)])
-            for extra_label in ("Approval Comment", "Remarks"):
-                extra_value = str(record.get(extra_label, "") or "").strip()
-                if extra_value:
-                    story.append(Paragraph(
-                        f"<b>{escape(extra_label)}:</b> {escape(extra_value)}", body_style
-                    ))
-            story.append(Spacer(1, 5*mm))
+        available_width = landscape(A4)[0] - 16*mm
+        fixed_widths = [20*mm, 27*mm, 68*mm]
+        asset_count = max(1, len(report_df.columns) - 3)
+        asset_width = max(8*mm, (available_width - sum(fixed_widths)) / asset_count)
+        col_widths = fixed_widths + [asset_width] * (len(report_df.columns) - 3)
+        data = [[Paragraph(escape(str(col)), header_style) for col in report_df.columns]]
+        for _, row in report_df.iterrows():
+            data.append([
+                Paragraph(escape(str(value if pd.notna(value) else "—")), body_style)
+                for value in row.tolist()
+            ])
+        table = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#dceaf5")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#123b63")),
+            ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#aebdca")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("ALIGN", (3,1), (-1,-1), "CENTER"),
+            ("LEFTPADDING", (0,0), (-1,-1), 3),
+            ("RIGHTPADDING", (0,0), (-1,-1), 3),
+            ("TOPPADDING", (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 3*mm))
+        story.append(Paragraph("OK = satisfactory &nbsp;&nbsp; NOT OK = issue recorded &nbsp;&nbsp; — = not recorded", body_style))
     doc.build(story)
     return output.getvalue()
 
@@ -6452,7 +6485,7 @@ def reports_page(db,user,plant):
         export_excel, export_pdf = st.columns(2, gap="medium")
         export_excel.download_button(
             "⬇️ Export Full Maintenance Inspection Report (Excel)",
-            _excel_bytes(detailed_df, "Detailed Maintenance Inspections"),
+            _excel_bytes(_inspection_report_table_df(detailed_df), "Detailed Maintenance Inspections"),
             f"{plant.code.lower()}_detailed_maintenance_inspections.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"detailed_inspection_excel_{plant.id}",
@@ -6498,7 +6531,7 @@ def reports_page(db,user,plant):
                     dx, dp = st.columns(2)
                     dx.download_button(
                         f"⬇️ {daily_date:%d %b %Y} Daily Excel",
-                        _excel_bytes(day_df, "Daily Inspection"),
+                        _excel_bytes(_inspection_report_table_df(day_df), "Daily Inspection"),
                         f"{plant.code.lower()}_daily_inspection_{daily_date:%Y%m%d}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"daily_excel_{plant.id}_{daily_date:%Y%m%d}",
@@ -6536,7 +6569,7 @@ def reports_page(db,user,plant):
                     ax, ap = st.columns(2)
                     ax.download_button(
                         f"⬇️ {period_key} AC Excel",
-                        _excel_bytes(period_df, "AC Inspection"),
+                        _excel_bytes(_inspection_report_table_df(period_df), "AC Inspection"),
                         f"{plant.code.lower()}_ac_inspection_{period_key.lower()}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"ac_period_excel_{plant.id}_{period_key}",
@@ -6586,7 +6619,7 @@ def reports_page(db,user,plant):
                 mx, mp = st.columns(2)
                 mx.download_button(
                     f"⬇️ {month_key} {report_category} Excel",
-                    _excel_bytes(month_df, report_category[:31]),
+                    _excel_bytes(_inspection_report_table_df(month_df), report_category[:31]),
                     f"{plant.code.lower()}_{safe_name}_{month_key}.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"inspection_month_excel_{plant.id}_{safe_name}_{month_key}",
@@ -7205,22 +7238,36 @@ def render_solar_sop_agent(selected_plant=None):
                 st.rerun()
             return
 
+        site_code = (getattr(selected_plant, "code", "") or "").upper()
+        site_name = (getattr(selected_plant, "name", "") or site_code or "Selected Site")
+        site_label = site_name.replace(" Solar Power Plant", "").strip()
+        is_mdp_site = site_code == "MDP" or "MDP" in site_name.upper()
         title_col, close_col = st.columns([5, 1])
         with title_col:
-            st.markdown('<div class="sop-agent-heading">☀️ Solar SOP Assistant</div>', unsafe_allow_html=True)
-            st.markdown('<div class="sop-agent-sub">Ask questions from the MDP Solar SOP document</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="sop-agent-heading">☀️ Solar SOP Assistant — {site_label}</div>', unsafe_allow_html=True)
+            subtitle = (
+                f"Ask questions from the {site_label} Solar SOP document"
+                if is_mdp_site else
+                f"The {site_label} Solar SOP has not been added to the assistant yet"
+            )
+            st.markdown(f'<div class="sop-agent-sub">{subtitle}</div>', unsafe_allow_html=True)
         with close_col:
             if st.button("✕", key="close_solar_sop_agent", help="Minimise SOP Assistant"):
                 st.session_state.solar_sop_agent_open = False
                 st.rerun()
 
         try:
-            pages, source_name = load_mdp_sop_pages()
+            pages, source_name = load_mdp_sop_pages() if is_mdp_site else ([], None)
         except Exception as exc:
             pages, source_name = [], None
             st.error(f"Unable to read the MDP SOP PDF: {exc}")
 
-        if not source_name:
+        if not is_mdp_site:
+            st.warning(
+                f"The approved {site_label} site SOP has not been uploaded to this assistant. "
+                "Chat is disabled for this site. Please refer to the approved site SOP and authorised personnel."
+            )
+        elif not source_name:
             st.warning("MDP SOP PDF not found. Add MDP_SOP_2026_Draft(1).pdf to the same project folder as this Python file.")
         elif not pages:
             st.warning("The MDP SOP PDF was found, but no searchable text could be extracted.")
@@ -7232,20 +7279,39 @@ def render_solar_sop_agent(selected_plant=None):
 
         with st.container(height=270, border=False):
             if not st.session_state.solar_sop_chat_history:
-                st.markdown("**Hello!** I can answer questions using the MDP Solar SOP only. SOPs for HRN 1, HRN 2, MTR, ORK and DPV have not been added yet.")
-                st.caption("Example: What checks are required before restarting the plant?")
-            for entry in st.session_state.solar_sop_chat_history[-8:]:
-                with st.chat_message(entry["role"]):
-                    st.markdown(entry["content"])
+                if is_mdp_site:
+                    st.markdown("**Hello!** I can answer questions using the approved MDP Solar SOP.")
+                    st.caption("Example: What checks are required before restarting the plant?")
+                else:
+                    st.markdown(
+                        f"**{site_label} Solar SOP is not available yet.** "
+                        "The assistant can only answer questions for MDP at present."
+                    )
+            if is_mdp_site:
+                for entry in st.session_state.solar_sop_chat_history[-8:]:
+                    with st.chat_message(entry["role"]):
+                        st.markdown(entry["content"])
 
-        with st.form("solar_sop_question_form", clear_on_submit=True):
-            question = st.text_input(
-                "Ask about the MDP SOP",
-                placeholder="Type your SOP question…",
+        question = ""
+        submitted = False
+        if is_mdp_site:
+            with st.form("solar_sop_question_form", clear_on_submit=True):
+                question = st.text_input(
+                    "Ask about the MDP SOP",
+                    placeholder="Type your SOP question…",
+                    label_visibility="collapsed",
+                    key="solar_sop_question_input",
+                    disabled=not bool(pages),
+                )
+                submitted = st.form_submit_button("Send", use_container_width=True, disabled=not bool(pages))
+        else:
+            st.text_input(
+                f"Ask about the {site_label} SOP",
+                placeholder=f"{site_label} SOP is not available yet",
                 label_visibility="collapsed",
-                key="solar_sop_question_input",
+                disabled=True,
+                key=f"solar_sop_disabled_input_{site_code}",
             )
-            submitted = st.form_submit_button("Send", use_container_width=True, disabled=not bool(pages))
         if submitted and question.strip():
             st.session_state.solar_sop_chat_history.append({"role": "user", "content": question.strip()})
             requested_site = _solar_sop_requested_site(question.strip(), selected_plant)
@@ -7260,11 +7326,16 @@ def render_solar_sop_agent(selected_plant=None):
             st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
             st.rerun()
 
-        if st.session_state.solar_sop_chat_history:
+        if is_mdp_site and st.session_state.solar_sop_chat_history:
             if st.button("Clear conversation", key="clear_solar_sop_chat", use_container_width=True):
                 st.session_state.solar_sop_chat_history = []
                 st.rerun()
-        st.markdown('<div class="sop-agent-note">Only the MDP SOP is indexed. Other site SOPs are not yet available in this assistant. For safety-critical work, follow the approved site procedure and authorised personnel.</div>', unsafe_allow_html=True)
+        note_text = (
+            "Only the MDP SOP is currently indexed. For safety-critical work, follow the approved procedure and authorised personnel."
+            if is_mdp_site else
+            f"The {site_label} SOP is not yet indexed. For safety-critical work, follow the approved site procedure and authorised personnel."
+        )
+        st.markdown(f'<div class="sop-agent-note">{note_text}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
