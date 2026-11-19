@@ -3217,6 +3217,59 @@ def render_plant_details_and_specs(db, plant):
         st.info("Technical specifications have not yet been provided for this site. Add them to the site specification configuration when available.")
 
 
+def maintenance_cycle_plan(start_date, end_date, category):
+    """Return the requested cycle windows: panel = 2/year, grass = 3/year.
+
+    The year span follows the dashboard convention (2023 to 2026 = 3 years).
+    """
+    years = max(1, end_date.year - start_date.year)
+    per_year = 2 if category == "Panel Cleaning" else 3
+    count = years * per_year
+    months_per_cycle = 6 if category == "Panel Cleaning" else 4
+    windows = []
+    cursor = date(start_date.year, start_date.month, 1)
+    for _ in range(count):
+        month_index = cursor.month - 1 + months_per_cycle
+        next_year = cursor.year + month_index // 12
+        next_month = month_index % 12 + 1
+        next_start = date(next_year, next_month, 1)
+        windows.append((cursor, next_start - timedelta(days=1)))
+        cursor = next_start
+    return windows
+
+
+def maintenance_cycle_summary(db, plant, start_date, end_date, category):
+    """Count fully completed cycles; a cycle needs every table/zone completed."""
+    windows = maintenance_cycle_plan(start_date, end_date, category)
+    asset_type = "Table" if category == "Panel Cleaning" else "Zone"
+    total_assets = plant.table_count if asset_type == "Table" else plant.zone_count
+    if category == "Panel Cleaning":
+        categories = ["Panel Cleaning", "Weeding Panel Cleaning"]
+    else:
+        categories = ["Grass Cutting", "Weeding Grass Cutting"]
+    expected = asset_list(plant, asset_type)
+    if asset_type == "Table" and ("HS1" in f"{plant.code} {plant.name}".upper()):
+        expected = [f"T-{i:02d}" for i in range(1, 81)]
+        total_assets = 80
+    completed_cycles = 0
+    for cycle_start, cycle_end in windows:
+        left = max(start_date, cycle_start)
+        right = min(end_date, cycle_end)
+        if left > right or not expected:
+            continue
+        rows = db.query(MaintenanceRecord).filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(categories),
+            MaintenanceRecord.task_date >= left,
+            MaintenanceRecord.task_date <= right,
+            MaintenanceRecord.status == "Completed",
+        ).all()
+        done_assets = {r.asset_id for r in rows}
+        if all(asset in done_assets for asset in expected):
+            completed_cycles += 1
+    return completed_cycles, len(windows)
+
+
 def _overview_target_label(done, total, target_days, unit):
     remaining = max(0, total - done)
     if remaining == 0:
@@ -3643,16 +3696,20 @@ def overview_page(db, user, plant):
     with panel_col:
         _render_overview_card(
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
-            _overview_target_label(metrics["panel_done"], metrics["panel_total"], maintenance_target_days(plant, "Panel Cleaning"), "cycle")
+            "2 cycles per year · Jan–Jun and Jul–Dec"
         )
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Panel Cleaning")
+        st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}  ·  2 cycles per year (Jan–Jun, Jul–Dec)")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
     with grass_col:
         _render_overview_card(
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
-            _overview_target_label(metrics["grass_done"], metrics["grass_total"], maintenance_target_days(plant, "Grass Cutting"), "cycle")
+            "3 cycles per year · every 4 months"
         )
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Grass Cutting")
+        st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}  ·  3 cycles per year (every 4 months)")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
@@ -3712,7 +3769,7 @@ def overview_page(db, user, plant):
 
     # Historical cycle completion for the full calendar year (January to December).
     # Months with no completed records remain visible with a zero value.
-    st.markdown("### Maintenance History — Completed Cycles")
+    st.markdown("### Maintenance History")
     history_year = today.year
     history_start = date(history_year, 1, 1)
     history_end = date(history_year, 12, 31)
@@ -5699,6 +5756,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
             else:
                 pct, done_count, item_total = grass_cutting_percent(progress_db, plant.id, end)
                 unit = "zones"
+            cycles_done, cycles_total = maintenance_cycle_summary(progress_db, plant, start, end, report_type)
         finally:
             progress_db.close()
         completed_count = int((df["Status"] == "Completed").sum()) if len(df) else 0
@@ -5711,7 +5769,7 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
             Paragraph(f"<b>{len(df)}</b><br/><font size='8'>Recorded Activities</font>", small),
             Paragraph(f"<b>{completed_count}</b><br/><font size='8'>Completed</font>", small),
             Paragraph(f"<b>{not_completed_count}</b><br/><font size='8'>Not Completed / Pending</font>", small),
-            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font><br/><font size='8'>{'4/4 cycles completed' if report_type == 'Panel Cleaning' and item_total > 0 and done_count >= item_total else '6/6 cycles completed' if report_type == 'Grass Cutting' and item_total > 0 and done_count >= item_total else '0/4 cycles completed' if report_type == 'Panel Cleaning' else '0/6 cycles completed'}</font>", small),
+            Paragraph(f"<b>{pct:.1f}%</b><br/><font size='8'>Overall {report_type} Progress</font><br/><font size='8'>{cycles_done}/{cycles_total} cycles completed</font>", small),
         ]]
         kpi = Table(kpi_data, colWidths=[48*mm]*4, rowHeights=[15*mm])
         kpi.setStyle(TableStyle([
@@ -5834,14 +5892,20 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
     ]
 
     # KPI cards represented as a compact table in the PDF.
+    cycle_db = SessionLocal()
+    try:
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(cycle_db, plant, start, end, "Panel Cleaning")
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(cycle_db, plant, start, end, "Grass Cutting")
+    finally:
+        cycle_db.close()
     kpi_data = [[
         Paragraph(f"<font size='9'><b>{total}</b></font><br/><font size='6'>Activities</font>", small),
         Paragraph(f"<font size='9'><b>{green}</b></font><br/><font size='6'>Green - Completed</font>", small),
         Paragraph(f"<font size='9'><b>{red}</b></font><br/><font size='6'>Red - Not Completed</font>", small),
         Paragraph(f"<font size='10'><b>{pending}</b></font><br/><font size='6'>Pending Inspection<br/>Approvals</font>", small),
         Paragraph(f"<font size='10'><b>{approved}</b></font><br/><font size='6'>Approved Inspection<br/>Approvals</font>", small),
-        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</font>", small),
-        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</font>", small),
+        Paragraph(f"<b>{panel_pct:.0f}%</b><br/><font size='8'>Panel Cleaning</font><br/><font size='7'>{panel_cycles_done}/{panel_cycles_total} cycles</font>", small),
+        Paragraph(f"<b>{grass_pct:.0f}%</b><br/><font size='8'>Grass Cutting</font><br/><font size='7'>{grass_cycles_done}/{grass_cycles_total} cycles</font>", small),
         Paragraph(
             f"<b>{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.0f}%</b>"
             f"<br/><font size='8'>Civil Works Progress</font>"
@@ -5881,12 +5945,14 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
         if label == "Civil Works Progress":
             state = f"{civil_pending} pending • {civil_declined} declined"
         else:
-            cycles_per_year = 4 if label == "Panel Cleaning" else 6
-            state = (
-                f"{cycles_per_year}/{cycles_per_year} cycles completed"
-                if total_value > 0 and done_value >= total_value
-                else f"0/{cycles_per_year} cycles completed"
-            )
+            cycle_db = SessionLocal()
+            try:
+                cycles_done, cycles_total = maintenance_cycle_summary(
+                    cycle_db, plant, start, end, label
+                )
+            finally:
+                cycle_db.close()
+            state = f"{cycles_done}/{cycles_total} cycles completed"
         status_rows.append([
             Paragraph(label, small), bar, Paragraph(f"{pct_value:.1f}%", small),
             Paragraph(f"{done_value}/{total_value} {unit} • {state}", small)
@@ -5920,8 +5986,8 @@ def _pdf_report_bytes(df, plant, start, end, panel_pct, grass_pct, report_type="
 
     story += [Paragraph("Work Progress", h2)]
     progress_data = [
-        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — {'4/4 cycles completed' if panel_total > 0 and panel_done >= panel_total else '0/4 cycles completed'}", small)],
-        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — {'6/6 cycles completed' if grass_total > 0 and grass_done >= grass_total else '0/6 cycles completed'}", small)],
+        [Paragraph("Panel cleaning", small), Paragraph(f"{panel_pct:.1f}% — cycle completion shown above", small)],
+        [Paragraph("Grass cutting", small), Paragraph(f"{grass_pct:.1f}% — cycle completion shown above", small)],
         [Paragraph("Civil Works progress", small), Paragraph(
             f"{(civil_approved / civil_submitted * 100) if civil_submitted else 0:.1f}% — "
             f"{civil_approved}/{civil_submitted} approved; {civil_pending} pending; {civil_declined} declined",
@@ -6030,7 +6096,10 @@ def _detailed_inspection_pdf_bytes(detailed_df, plant, start, end):
     body_style = ParagraphStyle("DetailedInspectionBody", parent=styles["Normal"], fontSize=7.5, leading=9)
     label_style = ParagraphStyle("DetailedInspectionLabel", parent=body_style, fontName="Helvetica-Bold")
     story = [
-        Paragraph("Detailed Maintenance Inspection Report", title_style),
+        Paragraph(
+            f"{str(detailed_df['Inspection Type'].iloc[0]) if not detailed_df.empty and detailed_df['Inspection Type'].nunique() == 1 else 'Detailed Maintenance Inspection'} Report",
+            title_style,
+        ),
         Paragraph(
             f"<b>{escape(str(plant.name))}</b> &nbsp; | &nbsp; "
             f"Period: {start:%d %b %Y} - {end:%d %b %Y} &nbsp; | &nbsp; "
@@ -6226,7 +6295,8 @@ def reports_page(db,user,plant):
         )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed · {'4/4 cycles completed' if panel_total and panel_done >= panel_total else '0/4 cycles completed'}</div>", unsafe_allow_html=True)
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start, end, "Panel Cleaning")
+    st.markdown(f"<div style='font-size:15px;font-weight:600'>{panel_done} of {panel_total} tables completed · {panel_cycles_done}/{panel_cycles_total} cycles completed</div>", unsafe_allow_html=True)
     with gcol:
         st.markdown("**Grass cutting status**")
         pie=px.pie(
@@ -6249,7 +6319,8 @@ def reports_page(db,user,plant):
         )
         pie.update_layout(height=310,margin=dict(l=5,r=5,t=15,b=5),legend_title_text="")
         st.plotly_chart(pie,use_container_width=True,config={"displayModeBar":False})
-        st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed · {'6/6 cycles completed' if grass_total and grass_done >= grass_total else '0/6 cycles completed'}</div>", unsafe_allow_html=True)
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start, end, "Grass Cutting")
+    st.markdown(f"<div style='font-size:15px;font-weight:600;text-align:right'>{grass_done} of {grass_total} zones completed · {grass_cycles_done}/{grass_cycles_total} cycles completed</div>", unsafe_allow_html=True)
 
     st.markdown("### Overall Activity Report")
     if total:
@@ -6338,6 +6409,63 @@ def reports_page(db,user,plant):
             key=f"detailed_inspection_pdf_{plant.id}",
             use_container_width=True,
         )
+
+        st.markdown("### Separate Inspection Reports")
+        st.caption("Each inspection type has its own report for the selected date range. Daily Inspection records are reportable by day; Inverter Inspection records are grouped into monthly reports.")
+        for report_category in PROCESS_CATEGORIES:
+            category_df = detailed_df[detailed_df["Inspection Type"] == report_category].copy()
+            if category_df.empty:
+                continue
+            safe_name = report_category.lower().replace(" ", "_")
+            st.markdown(f"**{report_category}** — {len(category_df)} recorded asset inspections")
+            rx, rp = st.columns(2)
+            rx.download_button(
+                f"⬇️ {report_category} Excel",
+                _excel_bytes(category_df, report_category[:31]),
+                f"{plant.code.lower()}_{safe_name}_{start:%Y%m%d}_{end:%Y%m%d}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"inspection_excel_{plant.id}_{safe_name}", use_container_width=True,
+            )
+            rp.download_button(
+                f"📄 {report_category} PDF",
+                _detailed_inspection_pdf_bytes(category_df, plant, start, end),
+                f"{plant.code.lower()}_{safe_name}_{start:%Y%m%d}_{end:%Y%m%d}.pdf",
+                "application/pdf", key=f"inspection_pdf_{plant.id}_{safe_name}", use_container_width=True,
+            )
+            if report_category == "Inverter Inspection":
+                month_keys = sorted({pd.to_datetime(v).strftime("%Y-%m") for v in category_df["Inspection Date"] if pd.notna(v)})
+                for month_key in month_keys:
+                    month_df = category_df[pd.to_datetime(category_df["Inspection Date"]).dt.strftime("%Y-%m") == month_key].copy()
+                    st.caption(f"Monthly report — {datetime.strptime(month_key, '%Y-%m').strftime('%B %Y')} ({len(month_df)} records)")
+                    mx, mp = st.columns(2)
+                    mx.download_button(
+                        f"⬇️ {month_key} Inverter Excel", _excel_bytes(month_df, "Inverter Inspection"),
+                        f"{plant.code.lower()}_inverter_inspection_{month_key}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"inverter_month_excel_{plant.id}_{month_key}", use_container_width=True,
+                    )
+                    mp.download_button(
+                        f"📄 {month_key} Inverter PDF", _detailed_inspection_pdf_bytes(month_df, plant, datetime.strptime(month_key, "%Y-%m").date().replace(day=1), (datetime.strptime(month_key, "%Y-%m").date().replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)),
+                        f"{plant.code.lower()}_inverter_inspection_{month_key}.pdf", "application/pdf",
+                        key=f"inverter_month_pdf_{plant.id}_{month_key}", use_container_width=True,
+                    )
+            elif report_category == "Daily Inspection":
+                day_keys = sorted({pd.to_datetime(v).strftime("%Y-%m-%d") for v in category_df["Inspection Date"] if pd.notna(v)})
+                for day_key in day_keys:
+                    day_df = category_df[pd.to_datetime(category_df["Inspection Date"]).dt.strftime("%Y-%m-%d") == day_key].copy()
+                    st.caption(f"Daily report — {datetime.strptime(day_key, '%Y-%m-%d').strftime('%d %B %Y')} ({len(day_df)} records)")
+                    dx, dp = st.columns(2)
+                    dx.download_button(
+                        f"⬇️ {day_key} Daily Excel", _excel_bytes(day_df, "Daily Inspection"),
+                        f"{plant.code.lower()}_daily_inspection_{day_key}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"daily_excel_{plant.id}_{day_key}", use_container_width=True,
+                    )
+                    dp.download_button(
+                        f"📄 {day_key} Daily PDF", _detailed_inspection_pdf_bytes(day_df, plant, datetime.strptime(day_key, "%Y-%m-%d").date(), datetime.strptime(day_key, "%Y-%m-%d").date()),
+                        f"{plant.code.lower()}_daily_inspection_{day_key}.pdf", "application/pdf",
+                        key=f"daily_pdf_{plant.id}_{day_key}", use_container_width=True,
+                    )
     else:
         st.info("No maintenance inspection records were found in the selected date range.")
 
@@ -6778,8 +6906,25 @@ def answer_from_mdp_sop(question, pages):
     return response, matches
 
 
-def render_solar_sop_agent():
-    """Show a small fixed launcher; open the SOP chat only when requested."""
+def _solar_sop_requested_site(question, selected_plant):
+    """Resolve an explicitly mentioned site; otherwise use the selected site."""
+    text_value = (question or "").upper()
+    site_aliases = {
+        "MDP": ("MDP", "MADAMPE", "MADAMPA"),
+        "HS1": ("HRN 1", "HRN1", "HORANA 1", "HORANA I", "HS1"),
+        "HS2": ("HRN 2", "HRN2", "HORANA 2", "HORANA II", "HS2"),
+        "MTR": ("MTR", "MATARA"),
+        "ORK": ("ORK",),
+        "DPV": ("DPV", "RANNA"),
+    }
+    for code, aliases in site_aliases.items():
+        if any(alias in text_value for alias in aliases):
+            return code
+    return (getattr(selected_plant, "code", "") or "").upper()
+
+
+def render_solar_sop_agent(selected_plant=None):
+    """Show a small fixed launcher; the only currently indexed site SOP is MDP."""
     if "solar_sop_agent_open" not in st.session_state:
         st.session_state.solar_sop_agent_open = False
 
@@ -6884,7 +7029,7 @@ def render_solar_sop_agent():
 
         with st.container(height=270, border=False):
             if not st.session_state.solar_sop_chat_history:
-                st.markdown("**Hello!** I can help with the MDP SOP, including LOTO, plant start-up, daily inspection, panel inspection, inverter inspection, DC cables, MDB, switchyard and A/C maintenance.")
+                st.markdown("**Hello!** I can answer questions using the MDP Solar SOP only. SOPs for HRN 1, HRN 2, MTR, ORK and DPV have not been added yet.")
                 st.caption("Example: What checks are required before restarting the plant?")
             for entry in st.session_state.solar_sop_chat_history[-8:]:
                 with st.chat_message(entry["role"]):
@@ -6900,7 +7045,15 @@ def render_solar_sop_agent():
             submitted = st.form_submit_button("Send", use_container_width=True, disabled=not bool(pages))
         if submitted and question.strip():
             st.session_state.solar_sop_chat_history.append({"role": "user", "content": question.strip()})
-            response, _sources = answer_from_mdp_sop(question.strip(), pages)
+            requested_site = _solar_sop_requested_site(question.strip(), selected_plant)
+            if requested_site != "MDP":
+                site_labels = {"HS1": "HRN 1", "HS2": "HRN 2", "MTR": "MTR", "ORK": "ORK", "DPV": "DPV"}
+                site_label = site_labels.get(requested_site, requested_site or "selected site")
+                response = f"The {site_label} Solar SOP has not been added to the assistant yet. Only the MDP Solar SOP is currently available. Please refer to the approved {site_label} site SOP and authorised personnel."
+            elif not pages:
+                response = "The MDP Solar SOP document is not currently available to the assistant. Please contact the administrator."
+            else:
+                response, _sources = answer_from_mdp_sop(question.strip(), pages)
             st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
             st.rerun()
 
@@ -6908,7 +7061,7 @@ def render_solar_sop_agent():
             if st.button("Clear conversation", key="clear_solar_sop_chat", use_container_width=True):
                 st.session_state.solar_sop_chat_history = []
                 st.rerun()
-        st.markdown('<div class="sop-agent-note">Answers are limited to the MDP SOP currently provided. For safety-critical work, follow the approved site procedure and authorised personnel.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sop-agent-note">Only the MDP SOP is indexed. Other site SOPs are not yet available in this assistant. For safety-critical work, follow the approved site procedure and authorised personnel.</div>', unsafe_allow_html=True)
 
 
 # ============================================================
@@ -6979,7 +7132,7 @@ def main():
 
     # The MDP SOP assistant stays on the right side of the website and is
     # intentionally not added to the navigation menu.
-    render_solar_sop_agent()
+    render_solar_sop_agent(plant)
 
     db.close()
 
