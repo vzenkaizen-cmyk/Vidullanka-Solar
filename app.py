@@ -3218,23 +3218,23 @@ def render_plant_details_and_specs(db, plant):
 
 
 def maintenance_cycle_plan(start_date, end_date, category):
-    """Return the requested cycle windows: panel = 2/year, grass = 3/year.
+    """Return calendar-aligned cycle windows for every year in the selected range.
 
-    The year span follows the dashboard convention (2023 to 2026 = 3 years).
+    Panel cleaning has two cycles per calendar year (Jan-Jun, Jul-Dec).
+    Grass cutting has three cycles per calendar year (Jan-Apr, May-Aug, Sep-Dec).
+    The first and last years are both included in the expected cycle count.
     """
-    years = max(1, end_date.year - start_date.year)
-    per_year = 2 if category == "Panel Cleaning" else 3
-    count = years * per_year
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
     windows = []
-    cursor = date(start_date.year, start_date.month, 1)
-    for _ in range(count):
-        month_index = cursor.month - 1 + months_per_cycle
-        next_year = cursor.year + month_index // 12
-        next_month = month_index % 12 + 1
-        next_start = date(next_year, next_month, 1)
-        windows.append((cursor, next_start - timedelta(days=1)))
-        cursor = next_start
+    for year in range(start_date.year, end_date.year + 1):
+        for first_month in range(1, 13, months_per_cycle):
+            cycle_start = date(year, first_month, 1)
+            next_month_index = first_month - 1 + months_per_cycle
+            next_year = year + next_month_index // 12
+            next_month = next_month_index % 12 + 1
+            next_start = date(next_year, next_month, 1)
+            cycle_end = next_start - timedelta(days=1)
+            windows.append((cycle_start, cycle_end))
     return windows
 
 
@@ -3699,7 +3699,7 @@ def overview_page(db, user, plant):
             "2 cycles per year · Jan–Jun and Jul–Dec"
         )
         panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Panel Cleaning")
-        st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}  ·  2 cycles per year (Jan–Jun, Jul–Dec)")
+        st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}  ·  {start_date.year}–{end_date.year} inclusive · 2 cycles/year (Jan–Jun, Jul–Dec)")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
@@ -3709,7 +3709,7 @@ def overview_page(db, user, plant):
             "3 cycles per year · every 4 months"
         )
         grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Grass Cutting")
-        st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}  ·  3 cycles per year (every 4 months)")
+        st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}  ·  {start_date.year}–{end_date.year} inclusive · 3 cycles/year (every 4 months)")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
@@ -6411,110 +6411,245 @@ def reports_page(db,user,plant):
         )
 
         st.markdown("### Separate Inspection Reports")
-        st.caption("Each inspection type has its own report for the selected date range. Daily Inspection records are reportable by day; Inverter Inspection records are grouped into monthly reports.")
+        st.caption(
+            "Daily Inspection: select a date from the calendar. "
+            "Inverter and other routine inspections: monthly reports. "
+            "AC Inspection: one report for each four-month period."
+        )
         for report_category in PROCESS_CATEGORIES:
             category_df = detailed_df[detailed_df["Inspection Type"] == report_category].copy()
             if category_df.empty:
                 continue
             safe_name = report_category.lower().replace(" ", "_")
             st.markdown(f"**{report_category}** — {len(category_df)} recorded asset inspections")
-            rx, rp = st.columns(2)
-            rx.download_button(
-                f"⬇️ {report_category} Excel",
-                _excel_bytes(category_df, report_category[:31]),
-                f"{plant.code.lower()}_{safe_name}_{start:%Y%m%d}_{end:%Y%m%d}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"inspection_excel_{plant.id}_{safe_name}", use_container_width=True,
-            )
-            rp.download_button(
-                f"📄 {report_category} PDF",
-                _detailed_inspection_pdf_bytes(category_df, plant, start, end),
-                f"{plant.code.lower()}_{safe_name}_{start:%Y%m%d}_{end:%Y%m%d}.pdf",
-                "application/pdf", key=f"inspection_pdf_{plant.id}_{safe_name}", use_container_width=True,
-            )
-            if report_category == "Inverter Inspection":
-                month_keys = sorted({pd.to_datetime(v).strftime("%Y-%m") for v in category_df["Inspection Date"] if pd.notna(v)})
-                for month_key in month_keys:
-                    month_df = category_df[pd.to_datetime(category_df["Inspection Date"]).dt.strftime("%Y-%m") == month_key].copy()
-                    st.caption(f"Monthly report — {datetime.strptime(month_key, '%Y-%m').strftime('%B %Y')} ({len(month_df)} records)")
-                    mx, mp = st.columns(2)
-                    mx.download_button(
-                        f"⬇️ {month_key} Inverter Excel", _excel_bytes(month_df, "Inverter Inspection"),
-                        f"{plant.code.lower()}_inverter_inspection_{month_key}.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"inverter_month_excel_{plant.id}_{month_key}", use_container_width=True,
-                    )
-                    mp.download_button(
-                        f"📄 {month_key} Inverter PDF", _detailed_inspection_pdf_bytes(month_df, plant, datetime.strptime(month_key, "%Y-%m").date().replace(day=1), (datetime.strptime(month_key, "%Y-%m").date().replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)),
-                        f"{plant.code.lower()}_inverter_inspection_{month_key}.pdf", "application/pdf",
-                        key=f"inverter_month_pdf_{plant.id}_{month_key}", use_container_width=True,
-                    )
-            elif report_category == "Daily Inspection":
-                day_keys = sorted({pd.to_datetime(v).strftime("%Y-%m-%d") for v in category_df["Inspection Date"] if pd.notna(v)})
-                for day_key in day_keys:
-                    day_df = category_df[pd.to_datetime(category_df["Inspection Date"]).dt.strftime("%Y-%m-%d") == day_key].copy()
-                    st.caption(f"Daily report — {datetime.strptime(day_key, '%Y-%m-%d').strftime('%d %B %Y')} ({len(day_df)} records)")
+
+            if report_category == "Daily Inspection":
+                daily_date = st.date_input(
+                    "Choose daily inspection date",
+                    value=end,
+                    min_value=start,
+                    max_value=end,
+                    key=f"daily_report_calendar_{plant.id}",
+                    help="Select a date to generate that day's inverter inspection report.",
+                )
+                day_df = category_df[
+                    pd.to_datetime(category_df["Inspection Date"]).dt.date == daily_date
+                ].copy()
+                if day_df.empty:
+                    st.info(f"No Daily Inspection records were found for {daily_date:%d %B %Y}.")
+                else:
+                    st.caption(f"Daily report — {daily_date:%d %B %Y} ({len(day_df)} records)")
                     dx, dp = st.columns(2)
                     dx.download_button(
-                        f"⬇️ {day_key} Daily Excel", _excel_bytes(day_df, "Daily Inspection"),
-                        f"{plant.code.lower()}_daily_inspection_{day_key}.xlsx",
+                        f"⬇️ {daily_date:%d %b %Y} Daily Excel",
+                        _excel_bytes(day_df, "Daily Inspection"),
+                        f"{plant.code.lower()}_daily_inspection_{daily_date:%Y%m%d}.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"daily_excel_{plant.id}_{day_key}", use_container_width=True,
+                        key=f"daily_excel_{plant.id}_{daily_date:%Y%m%d}",
+                        use_container_width=True,
                     )
                     dp.download_button(
-                        f"📄 {day_key} Daily PDF", _detailed_inspection_pdf_bytes(day_df, plant, datetime.strptime(day_key, "%Y-%m-%d").date(), datetime.strptime(day_key, "%Y-%m-%d").date()),
-                        f"{plant.code.lower()}_daily_inspection_{day_key}.pdf", "application/pdf",
-                        key=f"daily_pdf_{plant.id}_{day_key}", use_container_width=True,
+                        f"📄 {daily_date:%d %b %Y} Daily PDF",
+                        _detailed_inspection_pdf_bytes(day_df, plant, daily_date, daily_date),
+                        f"{plant.code.lower()}_daily_inspection_{daily_date:%Y%m%d}.pdf",
+                        "application/pdf",
+                        key=f"daily_pdf_{plant.id}_{daily_date:%Y%m%d}",
+                        use_container_width=True,
                     )
+                continue
+
+            inspection_dates = pd.to_datetime(category_df["Inspection Date"])
+            if report_category == "AC Inspection":
+                # AC reports follow Jan-Apr, May-Aug and Sep-Dec reporting periods.
+                category_df["_period"] = inspection_dates.dt.year.astype(str) + "-P" + (
+                    ((inspection_dates.dt.month - 1) // 4) + 1
+                ).astype(str)
+                period_keys = sorted(category_df["_period"].unique())
+                for period_key in period_keys:
+                    period_df = category_df[category_df["_period"] == period_key].drop(columns=["_period"]).copy()
+                    year_value, period_value = period_key.split("-P")
+                    first_month = (int(period_value) - 1) * 4 + 1
+                    period_start = date(int(year_value), first_month, 1)
+                    next_month_index = first_month - 1 + 4
+                    next_year = int(year_value) + next_month_index // 12
+                    next_month = next_month_index % 12 + 1
+                    period_end = min(end, date(next_year, next_month, 1) - timedelta(days=1))
+                    period_start = max(start, period_start)
+                    period_label = f"{period_start:%b %Y} – {period_end:%b %Y}"
+                    st.caption(f"Four-month report — {period_label} ({len(period_df)} records)")
+                    ax, ap = st.columns(2)
+                    ax.download_button(
+                        f"⬇️ {period_key} AC Excel",
+                        _excel_bytes(period_df, "AC Inspection"),
+                        f"{plant.code.lower()}_ac_inspection_{period_key.lower()}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"ac_period_excel_{plant.id}_{period_key}",
+                        use_container_width=True,
+                    )
+                    ap.download_button(
+                        f"📄 {period_key} AC PDF",
+                        _detailed_inspection_pdf_bytes(period_df, plant, period_start, period_end),
+                        f"{plant.code.lower()}_ac_inspection_{period_key.lower()}.pdf",
+                        "application/pdf",
+                        key=f"ac_period_pdf_{plant.id}_{period_key}",
+                        use_container_width=True,
+                    )
+                continue
+
+            # All remaining inspection categories are reported month by month.
+            category_df["_month"] = inspection_dates.dt.strftime("%Y-%m")
+            for month_key in sorted(category_df["_month"].unique()):
+                month_df = category_df[category_df["_month"] == month_key].drop(columns=["_month"]).copy()
+                month_date = datetime.strptime(month_key, "%Y-%m").date()
+                month_start = max(start, month_date.replace(day=1))
+                month_end = min(
+                    end,
+                    (month_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+                )
+                st.caption(
+                    f"Monthly report — {month_date:%B %Y} ({len(month_df)} records)"
+                )
+                mx, mp = st.columns(2)
+                mx.download_button(
+                    f"⬇️ {month_key} {report_category} Excel",
+                    _excel_bytes(month_df, report_category[:31]),
+                    f"{plant.code.lower()}_{safe_name}_{month_key}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"inspection_month_excel_{plant.id}_{safe_name}_{month_key}",
+                    use_container_width=True,
+                )
+                mp.download_button(
+                    f"📄 {month_key} {report_category} PDF",
+                    _detailed_inspection_pdf_bytes(month_df, plant, month_start, month_end),
+                    f"{plant.code.lower()}_{safe_name}_{month_key}.pdf",
+                    "application/pdf",
+                    key=f"inspection_month_pdf_{plant.id}_{safe_name}_{month_key}",
+                    use_container_width=True,
+                )
     else:
         st.info("No maintenance inspection records were found in the selected date range.")
 
-    st.markdown("### Separate Panel Cleaning and Grass Cutting Reports")
-    for category, label, pct in [
-        ("Panel Cleaning","Panel Cleaning",pc),
-        ("Grass Cutting","Grass Cutting",gc),
+    # The remaining operational reports are generated separately for each month.
+    if total:
+        report_months = sorted(pd.to_datetime(df["Date"]).dt.strftime("%Y-%m").unique())
+    else:
+        report_months = []
+
+    st.markdown("### Monthly Panel Cleaning and Grass Cutting Reports")
+    for category, label in [
+        ("Panel Cleaning", "Panel Cleaning"),
+        ("Grass Cutting", "Grass Cutting"),
     ]:
-        # Dedicated work reports intentionally exclude all inspection/approval records.
-        cat_df=df[df["Category"]==category].copy() if total else pd.DataFrame(columns=df.columns)
+        category_df = df[df["Category"] == category].copy() if total else pd.DataFrame(columns=df.columns)
         with st.container(border=True):
-            st.markdown(f"**{label} report** — {len(cat_df)} recorded activities in the selected period")
-            x1,x2=st.columns(2)
-            x1.download_button(
-                f"⬇️ {label} Excel", _excel_bytes(cat_df, label),
-                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"excel_{category}", use_container_width=True)
-            x2.download_button(
-                f"📄 {label} PDF",
-                _pdf_report_bytes(cat_df,plant,start,end,pc,gc,report_type=category),
-                f"{plant.code.lower()}_{category.lower().replace(' ','_')}_report.pdf",
-                "application/pdf", key=f"pdf_{category}", use_container_width=True)
+            st.markdown(f"**{label} monthly reports**")
+            if category_df.empty:
+                st.caption(f"No {label.lower()} activities were recorded in the selected date range.")
+                continue
+            category_df["_month"] = pd.to_datetime(category_df["Date"]).dt.strftime("%Y-%m")
+            for month_key in sorted(category_df["_month"].unique()):
+                month_df = category_df[category_df["_month"] == month_key].drop(columns=["_month"]).copy()
+                month_date = datetime.strptime(month_key, "%Y-%m").date()
+                month_start = max(start, month_date.replace(day=1))
+                month_end = min(
+                    end,
+                    (month_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+                )
+                st.caption(f"{month_date:%B %Y} — {len(month_df)} recorded activities")
+                x1, x2 = st.columns(2)
+                x1.download_button(
+                    f"⬇️ {month_key} {label} Excel",
+                    _excel_bytes(month_df, label),
+                    f"{plant.code.lower()}_{category.lower().replace(' ', '_')}_{month_key}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"monthly_excel_{plant.id}_{category}_{month_key}",
+                    use_container_width=True,
+                )
+                x2.download_button(
+                    f"📄 {month_key} {label} PDF",
+                    _pdf_report_bytes(
+                        month_df, plant, month_start, month_end, pc, gc,
+                        report_type=category,
+                    ),
+                    f"{plant.code.lower()}_{category.lower().replace(' ', '_')}_{month_key}.pdf",
+                    "application/pdf",
+                    key=f"monthly_pdf_{plant.id}_{category}_{month_key}",
+                    use_container_width=True,
+                )
 
+    st.markdown("### Monthly Civil Works Reports")
     civil_df = df[df["Category"] == "Civil Works"].copy() if total else pd.DataFrame(columns=df.columns)
-    st.markdown("### Civil Works Report")
-    with st.container(border=True):
-        st.markdown(f"**Civil Works report** — {len(civil_df)} submitted activities in the selected period")
-        x1, x2 = st.columns(2)
-        x1.download_button(
-            "⬇️ Civil Works Excel", _excel_bytes(civil_df, "Civil Works"),
-            f"{plant.code.lower()}_civil_works_report.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="excel_civil_works", use_container_width=True,
-        )
-        x2.download_button(
-            "📄 Civil Works PDF", _pdf_report_bytes(civil_df, plant, start, end, pc, gc, report_type="Civil Works"),
-            f"{plant.code.lower()}_civil_works_report.pdf", "application/pdf",
-            key="pdf_civil_works", use_container_width=True,
-        )
+    if civil_df.empty:
+        st.info("No Civil Works activities were found in the selected date range.")
+    else:
+        civil_df["_month"] = pd.to_datetime(civil_df["Date"]).dt.strftime("%Y-%m")
+        for month_key in sorted(civil_df["_month"].unique()):
+            month_df = civil_df[civil_df["_month"] == month_key].drop(columns=["_month"]).copy()
+            month_date = datetime.strptime(month_key, "%Y-%m").date()
+            month_start = max(start, month_date.replace(day=1))
+            month_end = min(
+                end,
+                (month_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+            )
+            st.caption(f"{month_date:%B %Y} — {len(month_df)} submitted activities")
+            x1, x2 = st.columns(2)
+            x1.download_button(
+                f"⬇️ {month_key} Civil Works Excel",
+                _excel_bytes(month_df, "Civil Works"),
+                f"{plant.code.lower()}_civil_works_{month_key}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"civil_month_excel_{plant.id}_{month_key}",
+                use_container_width=True,
+            )
+            x2.download_button(
+                f"📄 {month_key} Civil Works PDF",
+                _pdf_report_bytes(month_df, plant, month_start, month_end, pc, gc, report_type="Civil Works"),
+                f"{plant.code.lower()}_civil_works_{month_key}.pdf",
+                "application/pdf",
+                key=f"civil_month_pdf_{plant.id}_{month_key}",
+                use_container_width=True,
+            )
 
-    st.markdown("### Overall Summary Downloads")
-    x1,x2=st.columns(2)
-    x1.download_button("⬇️ Export overall report to Excel",_excel_bytes(df,"Overall Summary"),
-        f"{plant.code.lower()}_overall_maintenance_summary.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
-    x2.download_button("📄 Export overall summary to PDF",
-        _pdf_report_bytes(df,plant,start,end,pc,gc),
-        f"{plant.code.lower()}_overall_maintenance_summary.pdf","application/pdf",use_container_width=True)
+    st.markdown("### Monthly Overall Summary Reports")
+    if not report_months:
+        st.info("No overall maintenance activities were found in the selected date range.")
+    else:
+        for month_key in report_months:
+            month_df = df[
+                pd.to_datetime(df["Date"]).dt.strftime("%Y-%m") == month_key
+            ].copy()
+            month_date = datetime.strptime(month_key, "%Y-%m").date()
+            month_start = max(start, month_date.replace(day=1))
+            month_end = min(
+                end,
+                (month_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+            )
+            month_panel = month_df[month_df["Category"].isin(["Panel Cleaning", "Weeding Panel Cleaning"])]
+            month_grass = month_df[month_df["Category"].isin(["Grass Cutting", "Weeding Grass Cutting"])]
+            month_pc = round(
+                (month_panel["Status"] == "Completed").sum() / panel_total * 100, 1
+            ) if panel_total else 0
+            month_gc = round(
+                (month_grass["Status"] == "Completed").sum() / grass_total * 100, 1
+            ) if grass_total else 0
+            st.caption(f"{month_date:%B %Y} — {len(month_df)} total recorded activities")
+            x1, x2 = st.columns(2)
+            x1.download_button(
+                f"⬇️ {month_key} Overall Summary Excel",
+                _excel_bytes(month_df, "Overall Summary"),
+                f"{plant.code.lower()}_overall_maintenance_summary_{month_key}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"overall_month_excel_{plant.id}_{month_key}",
+                use_container_width=True,
+            )
+            x2.download_button(
+                f"📄 {month_key} Overall Summary PDF",
+                _pdf_report_bytes(month_df, plant, month_start, month_end, month_pc, month_gc),
+                f"{plant.code.lower()}_overall_maintenance_summary_{month_key}.pdf",
+                "application/pdf",
+                key=f"overall_month_pdf_{plant.id}_{month_key}",
+                use_container_width=True,
+            )
 
 def approvals_page(db, user, plant):
     # Administrators may view the complete approval page, but only engineers
