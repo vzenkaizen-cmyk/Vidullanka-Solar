@@ -3239,20 +3239,19 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count each maintenance cycle once all required assets have a saved
-    Completed record within that cycle.
+    """Count a cycle when every required asset is completed in that cycle.
 
-    Completion is based on the completion history for the cycle, rather than
-    the last status saved for an asset. This keeps the cycle counter aligned
-    with the Overview progress, where a later Pending entry must not erase
-    evidence that the work was completed during the selected cycle.
+    Use the same saved records and completion rules as the Overview maps:
+    include routine work and its related weeding records, respect the latest
+    saved status for each asset, and read HRN 1 table_checks when zones are
+    recorded through their individual table checkboxes.
     """
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
     asset_type = "Table" if is_panel else "Zone"
     expected = asset_list(plant, asset_type)
 
-    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper()
+    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper().replace(" ", "")
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
     if is_panel and is_hsn1:
@@ -3288,24 +3287,44 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                 MaintenanceRecord.category.in_(categories),
                 MaintenanceRecord.task_date >= left,
                 MaintenanceRecord.task_date <= right,
-                MaintenanceRecord.status == "Completed",
             )
+            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
             .all()
         )
-        completed_assets = {row.asset_id for row in rows}
+
+        # Match Overview's merged-record behavior: the latest saved record
+        # wins when the same asset appears in routine work and weeding logs.
+        latest_by_asset = {}
+        for row in rows:
+            latest_by_asset[row.asset_id] = row
 
         if is_panel:
-            cycle_complete = all(asset in completed_assets for asset in expected)
-        elif is_hsn1:
-            # HRN 1 zones can be completed either by saving the zone itself
-            # or by completing every table assigned to that zone.
             cycle_complete = all(
-                zone in completed_assets
-                or all(trace in completed_assets for trace in traces)
-                for zone, traces in zone_trace_map.items()
+                asset in latest_by_asset
+                and latest_by_asset[asset].status == "Completed"
+                for asset in expected
             )
+        elif is_hsn1:
+            # HRN 1 grass cutting is saved per zone with table_checks. Reuse
+            # the same completion helper as the Overview/satellite map so a
+            # zone with every table checked is counted even if its parent
+            # record status is still Pending. Legacy zone-only and table-level
+            # records continue to be supported by that helper as well.
+            zone_records = {
+                zone: latest_by_asset[zone]
+                for zone in zone_trace_map
+                if zone in latest_by_asset
+            }
+            zone_completion = grass_zone_completion_map(
+                db, plant.id, zone_records, zone_trace_map, left, right
+            )
+            cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
         else:
-            cycle_complete = all(asset in completed_assets for asset in expected)
+            cycle_complete = all(
+                asset in latest_by_asset
+                and latest_by_asset[asset].status == "Completed"
+                for asset in expected
+            )
 
         if cycle_complete:
             completed_cycles += 1
