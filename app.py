@@ -1011,7 +1011,7 @@ def grass_zone_completion_map(db, plant_id, zone_records, zone_trace_map, start_
         # counts as complete. Once table-level checks exist, every assigned
         # table must be checked before the zone is marked complete.
         legacy_zone_complete = bool(
-            zone_name in completed_zone_records
+            (zone_name in completed_zone_records and not table_checks)
             or (zone_record and zone_record.status == "Completed" and not table_checks)
         )
         completed[zone_name] = bool(
@@ -3218,11 +3218,11 @@ def render_plant_details_and_specs(db, plant):
 
 
 def maintenance_cycle_plan(start_date, end_date, category):
-    """Return calendar-aligned cycle windows for every year in the selected range.
+    """Return only the calendar-aligned cycles that overlap the selected dates.
 
-    Panel cleaning has two cycles per calendar year (Jan-Jun, Jul-Dec).
-    Grass cutting has three cycles per calendar year (Jan-Apr, May-Aug, Sep-Dec).
-    The first and last years are both included in the expected cycle count.
+    Panel cleaning: Jan-Jun and Jul-Dec.
+    Grass cutting: Jan-Apr, May-Aug and Sep-Dec.
+    A partially selected cycle is included once, not counted as an extra cycle.
     """
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
     windows = []
@@ -3234,17 +3234,21 @@ def maintenance_cycle_plan(start_date, end_date, category):
             next_month = next_month_index % 12 + 1
             next_start = date(next_year, next_month, 1)
             cycle_end = next_start - timedelta(days=1)
+
+            # Exclude cycles wholly outside the selected Overview date range.
+            if cycle_end < start_date or cycle_start > end_date:
+                continue
             windows.append((cycle_start, cycle_end))
     return windows
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count a cycle when every required asset is completed in that cycle.
+    """Count each cycle once all required assets have a Completed record in it.
 
-    Use the same saved records and completion rules as the Overview maps:
-    include routine work and its related weeding records, respect the latest
-    saved status for each asset, and read HRN 1 table_checks when zones are
-    recorded through their individual table checkboxes.
+    A later Pending/Failed entry does not erase evidence that the asset was
+    completed during that same cycle. Routine and related weeding records are
+    treated as one maintenance activity. HRN 1 grass cutting also supports its
+    table-checkbox records through grass_zone_completion_map().
     """
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
@@ -3292,39 +3296,35 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             .all()
         )
 
-        # Match Overview's merged-record behavior: the latest saved record
-        # wins when the same asset appears in routine work and weeding logs.
-        latest_by_asset = {}
-        for row in rows:
-            latest_by_asset[row.asset_id] = row
+        # Preserve completion evidence for the cycle. Do not let a later
+        # Pending/Failed save overwrite an earlier Completed save for an asset.
+        completed_assets = {
+            row.asset_id for row in rows if row.status == "Completed"
+        }
 
         if is_panel:
-            cycle_complete = all(
-                asset in latest_by_asset
-                and latest_by_asset[asset].status == "Completed"
-                for asset in expected
-            )
+            cycle_complete = all(asset in completed_assets for asset in expected)
         elif is_hsn1:
-            # HRN 1 grass cutting is saved per zone with table_checks. Reuse
-            # the same completion helper as the Overview/satellite map so a
-            # zone with every table checked is counted even if its parent
-            # record status is still Pending. Legacy zone-only and table-level
-            # records continue to be supported by that helper as well.
+            # Zone-level completion and legacy table-level completion are both
+            # evaluated from records saved inside this cycle's date window.
             zone_records = {
-                zone: latest_by_asset[zone]
+                zone: next(
+                    (row for row in reversed(rows)
+                     if row.asset_id == zone and row.status == "Completed"),
+                    None,
+                )
                 for zone in zone_trace_map
-                if zone in latest_by_asset
             }
+            zone_records = {zone: rec for zone, rec in zone_records.items() if rec is not None}
             zone_completion = grass_zone_completion_map(
                 db, plant.id, zone_records, zone_trace_map, left, right
             )
-            cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
-        else:
             cycle_complete = all(
-                asset in latest_by_asset
-                and latest_by_asset[asset].status == "Completed"
-                for asset in expected
+                zone in completed_assets or zone_completion.get(zone, False)
+                for zone in expected
             )
+        else:
+            cycle_complete = all(asset in completed_assets for asset in expected)
 
         if cycle_complete:
             completed_cycles += 1
