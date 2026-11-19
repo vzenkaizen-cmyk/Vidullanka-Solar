@@ -3760,7 +3760,9 @@ def overview_page(db, user, plant):
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
             ""
         )
-        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Panel Cleaning")
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
+            db, plant, date(start_date.year, 1, 1), date(end_date.year, 12, 31), "Panel Cleaning"
+        )
         st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
@@ -3770,7 +3772,9 @@ def overview_page(db, user, plant):
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
             ""
         )
-        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Grass Cutting")
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
+            db, plant, date(start_date.year, 1, 1), date(end_date.year, 12, 31), "Grass Cutting"
+        )
         st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
