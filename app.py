@@ -3239,11 +3239,11 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count cycles where every required table/zone is complete in that cycle.
+    """Count cycles where every required table/zone was completed in that cycle.
 
-    Use the latest saved status for each asset within each cycle. HRN 1 grass
-    cutting supports both zone-level records and the legacy table-level checks
-    used by the Overview map, so the same completion helper is used here.
+    A completed task remains evidence that the asset was serviced during that
+    cycle, even if a later Pending entry was saved. HRN 1 grass cutting supports
+    both zone-level records and legacy table-level checks.
     """
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
@@ -3293,32 +3293,26 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             .all()
         )
 
-        # Retain the latest status per asset for this cycle. A later Pending
-        # update must not be mistaken for a still-completed asset.
-        latest_by_asset = {}
-        for row in rows:
-            latest_by_asset[row.asset_id] = row
+        # Count each asset as completed when it has at least one Completed
+        # record within this cycle. A later Pending save must not erase work
+        # that was already completed during the same cycle.
+        completed_assets = {
+            row.asset_id for row in rows if row.status == "Completed"
+        }
 
         if is_panel:
-            completed_assets = {
-                asset for asset, row in latest_by_asset.items()
-                if row.status == "Completed"
-            }
             cycle_complete = all(asset in completed_assets for asset in expected)
         elif is_hsn1:
             zone_records = {
-                asset: row for asset, row in latest_by_asset.items()
-                if asset.startswith("Z-")
+                asset: row for asset, row in (
+                    (row.asset_id, row) for row in rows if row.asset_id.startswith("Z-")
+                )
             }
             zone_completion = grass_zone_completion_map(
                 db, plant.id, zone_records, zone_trace_map, left, right
             )
             cycle_complete = all(zone_completion.get(zone, False) for zone in expected)
         else:
-            completed_assets = {
-                asset for asset, row in latest_by_asset.items()
-                if row.status == "Completed"
-            }
             cycle_complete = all(asset in completed_assets for asset in expected)
 
         if cycle_complete:
@@ -6430,8 +6424,8 @@ def reports_page(db,user,plant):
         .filter(
             MaintenanceRecord.plant_id == plant.id,
             MaintenanceRecord.category.in_(list(PROCESS_CATEGORIES.keys())),
-            MaintenanceRecord.task_date >= start,
-            MaintenanceRecord.task_date <= end,
+            MaintenanceRecord.task_date >= date(2017, 1, 1),
+            MaintenanceRecord.task_date <= date(2026, 12, 31),
         )
         .order_by(MaintenanceRecord.task_date.desc(), MaintenanceRecord.category, MaintenanceRecord.asset_id)
         .all()
@@ -6515,9 +6509,9 @@ def reports_page(db,user,plant):
             if report_category == "Daily Inspection":
                 daily_date = st.date_input(
                     "Choose daily inspection date",
-                    value=end,
-                    min_value=start,
-                    max_value=end,
+                    value=min(max(end, date(2017, 1, 1)), date.today()),
+                    min_value=date(2017, 1, 1),
+                    max_value=date.today(),
                     key=f"daily_report_calendar_{plant.id}",
                     help="Select a date to generate that day's inverter inspection report.",
                 )
@@ -6586,7 +6580,9 @@ def reports_page(db,user,plant):
                 continue
 
             # Select the reporting month and year for all other monthly inspections.
-            available_years = sorted(inspection_dates.dt.year.unique().tolist(), reverse=True)
+            # Keep a consistent historical year range even when no records
+            # exist in the currently selected top-level From/To period.
+            available_years = list(range(2026, 2016, -1))
             year_col, month_col = st.columns(2)
             with year_col:
                 selected_year = st.selectbox(
@@ -6672,12 +6668,18 @@ def reports_page(db,user,plant):
             )
 
     st.markdown("### Civil Works Monthly Reports")
-    civil_df = df[df["Category"] == "Civil Works"].copy() if total else pd.DataFrame(columns=df.columns)
+    civil_history_df = _records_dataframe(
+        db, plant.id, date(2017, 1, 1), date(2026, 12, 31)
+    )
+    civil_df = (
+        civil_history_df[civil_history_df["Category"] == "Civil Works"].copy()
+        if not civil_history_df.empty else pd.DataFrame(columns=df.columns)
+    )
     if civil_df.empty:
         st.info("No Civil Works activities were found in the selected date range.")
     else:
         civil_dates = pd.to_datetime(civil_df["Date"])
-        civil_years = sorted(civil_dates.dt.year.unique().tolist(), reverse=True)
+        civil_years = list(range(2026, 2016, -1))
         civil_filter_col1, civil_filter_col2 = st.columns(2)
         with civil_filter_col1:
             civil_year = st.selectbox(
