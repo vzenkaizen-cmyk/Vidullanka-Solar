@@ -3318,6 +3318,35 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if cycle_complete:
             completed_cycles += 1
 
+    # HRN 1 stores grass-cutting completion through table checks grouped by
+    # zone. Older HRN 1 records can have all 10 zones completed across dates
+    # that fall into different calendar windows, even though the Overview
+    # correctly shows 100% for the selected reporting period. In that case,
+    # count the completed site-wide round as one cycle instead of showing 0.
+    # Keep any fully completed calendar cycles already counted above.
+    if not is_panel and is_hsn1 and completed_cycles == 0 and expected:
+        period_rows = (
+            db.query(MaintenanceRecord)
+            .filter(
+                MaintenanceRecord.plant_id == plant.id,
+                MaintenanceRecord.category.in_(categories),
+                MaintenanceRecord.task_date >= start_date,
+                MaintenanceRecord.task_date <= end_date,
+            )
+            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+            .all()
+        )
+        period_zone_records = {
+            row.asset_id: row
+            for row in period_rows
+            if row.asset_id in zone_trace_map
+        }
+        period_zone_completion = grass_zone_completion_map(
+            db, plant.id, period_zone_records, zone_trace_map, start_date, end_date
+        )
+        if all(period_zone_completion.get(zone, False) for zone in expected):
+            completed_cycles = 1
+
     return completed_cycles, len(windows)
 
 
