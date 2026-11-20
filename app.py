@@ -3335,7 +3335,14 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         )
 
     def _asset_key(value):
-        return str(value or "").strip().upper()
+        """Normalize legacy asset IDs so T1/T-1/T-01 and Z1/Z-01 match."""
+        normalized = str(value or "").strip().upper()
+        normalized = re.sub(r"^(?:TABLE)[\s_-]*", "T-", normalized)
+        normalized = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", normalized)
+        match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", normalized)
+        if match:
+            return f"{match.group(1)}-{int(match.group(2)):02d}"
+        return re.sub(r"\s+", "", normalized)
 
     completed_cycles = 0
 
@@ -3391,8 +3398,12 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                                 if _is_completed(value):
                                     completed_traces.add(_asset_key(trace_id))
 
-                        # Retain compatibility with old zone-only records.
-                        if _is_completed(row.status) and not checks:
+                        # Retain compatibility with old zone-only records that
+                        # pre-date per-table checks. A zone-level Completed row
+                        # counts as a full zone only when it has no table checks.
+                        if _is_completed(row.status) and not (
+                            isinstance(checks, dict) and checks
+                        ):
                             legacy_zone_completed = True
 
                     # Older versions also saved grass progress directly
