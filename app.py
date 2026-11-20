@@ -3218,14 +3218,16 @@ def render_plant_details_and_specs(db, plant):
 
 
 def maintenance_cycle_plan(start_date, end_date, category):
-    """Return calendar-aligned cycle windows for every year in the selected range.
+    """Return calendar-aligned cycle windows overlapping the selected date range.
 
-    Panel cleaning has two cycles per calendar year (Jan-Jun, Jul-Dec).
-    Grass cutting has three cycles per calendar year (Jan-Apr, May-Aug, Sep-Dec).
-    The first and last years are both included in the expected cycle count.
+    Panel cleaning: Jan-Jun and Jul-Dec (2 cycles per year).
+    Grass cutting: Jan-Apr, May-Aug and Sep-Dec (3 cycles per year).
+    Each calendar window is returned once, even when several records/dates
+    exist inside that window.
     """
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
     windows = []
+
     for year in range(start_date.year, end_date.year + 1):
         for first_month in range(1, 13, months_per_cycle):
             cycle_start = date(year, first_month, 1)
@@ -3234,24 +3236,36 @@ def maintenance_cycle_plan(start_date, end_date, category):
             next_month = next_month_index % 12 + 1
             next_start = date(next_year, next_month, 1)
             cycle_end = next_start - timedelta(days=1)
-            windows.append((cycle_start, cycle_end))
+
+            # Include only cycle periods that overlap the selected range.
+            if cycle_end >= start_date and cycle_start <= end_date:
+                windows.append((cycle_start, cycle_end))
+
     return windows
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count completed maintenance cycles from all saved records in each cycle.
+    """Count fully completed calendar maintenance cycles for one plant.
 
     Panel Cleaning:
-        Every table must have a Completed record during the same Jan-Jun or
-        Jul-Dec cycle.
+        All 80 tables (T-01 through T-80) must each have a Completed record
+        inside the same six-month period. Records saved on different dates
+        within that period are combined.
 
     Grass Cutting:
-        Every zone must be complete during the same Jan-Apr, May-Aug or
-        Sep-Dec cycle. For HRN 1, table checks saved on different dates in
-        that cycle are combined before each zone is evaluated.
+        All 10 zones must be complete inside the same four-month period.
+        For HRN 1, every table assigned to each zone must be completed;
+        table checks from different dates in that period are combined.
+        Other plants use their saved zone-level completion records.
+
+    A cycle is counted once, regardless of how many records or dates exist
+    inside it. Records from another plant or another cycle are never mixed in.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
 
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
@@ -3261,14 +3275,15 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     ).upper().replace(" ", "")
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
-    expected_assets = asset_list(plant, "Table" if is_panel else "Zone")
-
-    zone_trace_map = {}
-    if is_panel and is_hsn1:
+    # The requested Panel Cleaning cycle target is always 80/80 tables.
+    # Do not use a different plant.table_count value to lower this threshold.
+    if is_panel:
         expected_assets = [f"T-{i:02d}" for i in range(1, 81)]
-
-    if not is_panel and is_hsn1:
+        zone_trace_map = {}
+    elif is_hsn1:
+        # HRN 1 has a defined 80-table / 10-zone allocation.
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        zone_trace_map = {}
         cursor = 1
         for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
             zone_trace_map[f"Z-{zone_index:02d}"] = [
@@ -3276,14 +3291,18 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             ]
             cursor += trace_count
         expected_assets = list(zone_trace_map.keys())
+    else:
+        expected_assets = [f"Z-{i:02d}" for i in range(1, 11)]
+        zone_trace_map = {}
 
     categories = (
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
 
-    # Fetch every saved row in the selected range. Do not use the latest-row
-    # status map here: separate records/dates within one cycle must be combined.
+    # Fetch every saved row for this plant and selected range. Do not use a
+    # latest-status map: a completed asset must remain counted if its work was
+    # completed on an earlier date in the same cycle.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
@@ -3315,7 +3334,8 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     completed_cycles = 0
 
     for cycle_start, cycle_end in windows:
-        # Only count work dated inside both the selected range and this cycle.
+        # Restrict every calculation to the part of this cycle included in
+        # the selected reporting range.
         cycle_left = max(start_date, cycle_start)
         cycle_right = min(end_date, cycle_end)
         if cycle_left > cycle_right or not expected_assets:
@@ -3327,12 +3347,12 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         ]
 
         if is_panel:
-            # A table stays completed for this cycle if a Completed record
-            # exists for it on any date in that same six-month period.
+            # Combine all completed table records across dates in this
+            # six-month period. Each of the 80 unique tables is required.
             completed_tables = {
                 _asset_key(row.asset_id)
                 for row in cycle_rows
-                if str(row.status or "").strip().lower() == "completed"
+                if _is_completed(row.status)
             }
             cycle_complete = all(
                 _asset_key(table) in completed_tables
@@ -3340,9 +3360,8 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             )
 
         elif is_hsn1:
-            # HRN 1 grass cutting is recorded by zone, with individual table
-            # checks in details_json. Merge the checks from every saved date
-            # within this four-month cycle.
+            # Combine table_checks and legacy table-level records across all
+            # dates in the same four-month period, then validate each zone.
             cycle_complete = True
 
             for zone, traces in zone_trace_map.items():
@@ -3366,20 +3385,15 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                                 if _is_completed(value):
                                     completed_traces.add(_asset_key(trace_id))
 
-                        # A zone-only historical record is accepted as a
-                        # complete zone only when no explicit table checklist
-                        # exists for that zone in this cycle.
-                        if (
-                            str(row.status or "").strip().lower() == "completed"
-                            and not checks
-                        ):
+                        # Retain compatibility with old zone-only records.
+                        if _is_completed(row.status) and not checks:
                             legacy_zone_completed = True
 
-                    # Also support older records saved directly against table
-                    # IDs instead of inside the zone's table_checks dictionary.
+                    # Older versions also saved grass progress directly
+                    # against table IDs. Merge those records into this cycle.
                     if (
                         row_asset in {_asset_key(trace) for trace in traces}
-                        and str(row.status or "").strip().lower() == "completed"
+                        and _is_completed(row.status)
                     ):
                         completed_traces.add(row_asset)
 
@@ -3400,18 +3414,19 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                     break
 
         else:
-            # Other plants record grass cutting against each zone. Combine all
-            # Completed zone records in the same four-month cycle.
+            # Other plants store completion against the 10 zone IDs.
+            # Multiple records/dates in this four-month period are combined.
             completed_zones = {
                 _asset_key(row.asset_id)
                 for row in cycle_rows
-                if str(row.status or "").strip().lower() == "completed"
+                if _is_completed(row.status)
             }
             cycle_complete = all(
                 _asset_key(zone) in completed_zones
                 for zone in expected_assets
             )
 
+        # One increment per calendar window, never per saved record/date.
         if cycle_complete:
             completed_cycles += 1
 
