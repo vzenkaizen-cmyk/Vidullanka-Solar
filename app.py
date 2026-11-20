@@ -3239,19 +3239,30 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count completed maintenance rounds within the selected date range.
+    """Count completed maintenance cycles using the fixed calendar periods.
 
-    The planned frequency remains two panel-cleaning cycles and three grass-
-    cutting cycles per calendar year. A round is counted when every required
-    table/zone has a completed entry. Completed entries are retained as evidence
-    even if a later Pending entry was saved for the same asset.
+    Panel Cleaning: all required tables must have a Completed record in the
+    same Jan-Jun or Jul-Dec period (2 cycles per year).
+
+    Grass Cutting: all required zones must be complete in the same
+    Jan-Apr, May-Aug or Sep-Dec period (3 cycles per year). For HRN 1,
+    a zone is complete only when its zone record or all assigned table
+    records/checks show completion.
+
+    Each calendar period can contribute at most one cycle. Records on
+    different dates within the same period are combined, so workers do not
+    need to save every table/zone on one common date.
     """
+    if category not in ("Panel Cleaning", "Grass Cutting"):
+        return 0, 0
+
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
-    asset_type = "Table" if is_panel else "Zone"
-    expected = asset_list(plant, asset_type)
+    expected = asset_list(plant, "Table" if is_panel else "Zone")
 
-    plant_identity = f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}".upper()
+    plant_identity = (
+        f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
+    ).upper().replace(" ", "")
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
     if is_panel and is_hsn1:
@@ -3273,9 +3284,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
 
-    # Fetch the selected period once. The calendar-window check below remains
-    # the primary rule; the per-asset round count repairs older records whose
-    # completed tasks were saved on different dates around a cycle boundary.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
@@ -3295,21 +3303,28 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if left > right or not expected:
             continue
 
+        # Combine all saved activity in this calendar cycle. A completed
+        # entry remains evidence of completion even if a later Pending
+        # record was saved for the same asset.
         rows = [
             row for row in period_rows
             if left <= row.task_date <= right
         ]
-        completed_assets = {
-            row.asset_id for row in rows if row.status == "Completed"
-        }
 
         if is_panel:
-            cycle_complete = all(asset in completed_assets for asset in expected)
-        elif is_hsn1:
-            zone_records = {
-                row.asset_id: row for row in rows
-                if row.asset_id.startswith("Z-")
+            completed_assets = {
+                row.asset_id for row in rows
+                if row.status == "Completed"
             }
+            cycle_complete = all(
+                asset in completed_assets for asset in expected
+            )
+        elif is_hsn1:
+            zone_records = {}
+            for row in rows:
+                if row.asset_id.startswith("Z-"):
+                    zone_records[row.asset_id] = row
+
             zone_completion = grass_zone_completion_map(
                 db, plant.id, zone_records, zone_trace_map, left, right
             )
@@ -3317,56 +3332,18 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                 zone_completion.get(zone, False) for zone in expected
             )
         else:
-            cycle_complete = all(asset in completed_assets for asset in expected)
+            completed_zones = {
+                row.asset_id for row in rows
+                if row.status == "Completed"
+            }
+            cycle_complete = all(
+                zone in completed_zones for zone in expected
+            )
 
         if cycle_complete:
             completed_cycles += 1
 
-    # Count distinct completed work dates for every required asset. This is a
-    # fallback for historical records where a full round was completed over
-    # several dates and therefore did not fit wholly inside one calendar
-    # window. The minimum across all assets ensures a partial round is never
-    # counted; the annual frequency still caps the result at the planned total.
-    if expected:
-        if is_hsn1 and not is_panel:
-            per_zone_rounds = []
-            for zone, traces in zone_trace_map.items():
-                zone_dates = {
-                    row.task_date for row in period_rows
-                    if row.asset_id == zone and row.status == "Completed"
-                }
-
-                # Older HRN 1 entries stored grass-cutting progress on the
-                # individual tables rather than on the zone record.
-                table_date_sets = [
-                    {
-                        row.task_date for row in period_rows
-                        if row.asset_id == trace and row.status == "Completed"
-                    }
-                    for trace in traces
-                ]
-                legacy_rounds = (
-                    min(len(dates) for dates in table_date_sets)
-                    if table_date_sets and all(table_date_sets) else 0
-                )
-                per_zone_rounds.append(max(len(zone_dates), legacy_rounds))
-            inferred_rounds = min(per_zone_rounds) if per_zone_rounds else 0
-        else:
-            per_asset_dates = [
-                {
-                    row.task_date for row in period_rows
-                    if row.asset_id == asset and row.status == "Completed"
-                }
-                for asset in expected
-            ]
-            inferred_rounds = (
-                min(len(dates) for dates in per_asset_dates)
-                if per_asset_dates else 0
-            )
-
-        completed_cycles = max(completed_cycles, inferred_rounds)
-
-    return min(completed_cycles, len(windows)), len(windows)
+    return completed_cycles, len(windows)
 
 
 def _overview_target_label(done, total, target_days, unit):
