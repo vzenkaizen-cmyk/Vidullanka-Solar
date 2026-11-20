@@ -1209,22 +1209,18 @@ def progress_for(db, plant_id, category, task_date):
 
 def panel_cleaning_percent(db, plant_id, task_date):
     plant = db.query(Plant).filter(Plant.id == plant_id).first()
-    if not plant:
-        return 0, 0, 80
-    progress = maintenance_cycle_progress(
-        db, plant, task_date, task_date, "Panel Cleaning"
-    )
-    return progress["percent"], progress["done"], progress["total"]
+    total = plant.table_count
+    records = status_map(db, plant_id, "Panel Cleaning", task_date)
+    done = sum(1 for r in records.values() if r.status == "Completed")
+    return (round(done / total * 100, 1) if total else 0), done, total
 
 
 def grass_cutting_percent(db, plant_id, task_date):
     plant = db.query(Plant).filter(Plant.id == plant_id).first()
-    if not plant:
-        return 0, 0, 10
-    progress = maintenance_cycle_progress(
-        db, plant, task_date, task_date, "Grass Cutting"
-    )
-    return progress["percent"], progress["done"], progress["total"]
+    total = plant.zone_count
+    records = status_map(db, plant_id, "Grass Cutting", task_date)
+    done = sum(1 for r in records.values() if r.status == "Completed")
+    return (round(done / total * 100, 1) if total else 0), done, total
 
 
 # ============================================================
@@ -3461,142 +3457,6 @@ def maintenance_cycle_window_to_date(task_date, category):
     return date(task_date.year, first_month, 1)
 
 
-def maintenance_cycle_progress(db, plant, start_date, end_date, category):
-    """Use the same cycle-window records for completion percentage and cycle count.
-
-    The percentage describes the cycle containing end_date. Cycle totals and
-    completed-cycle counts cover the full selected reporting range.
-    """
-    if category not in ("Panel Cleaning", "Grass Cutting"):
-        return {
-            "percent": 0, "done": 0,
-            "total": 80 if category == "Panel Cleaning" else 10,
-            "cycles_done": 0, "cycles_total": 0,
-            "cycle_start": end_date, "cycle_end": end_date,
-        }
-
-    if start_date > end_date:
-        start_date, end_date = end_date, start_date
-
-    is_panel = category == "Panel Cleaning"
-    total = 80 if is_panel else 10
-    cycle_start = maintenance_cycle_window_to_date(end_date, category)
-    months_per_cycle = 6 if is_panel else 4
-    next_month_index = cycle_start.month - 1 + months_per_cycle
-    next_year = cycle_start.year + next_month_index // 12
-    next_month = next_month_index % 12 + 1
-    cycle_end = date(next_year, next_month, 1) - timedelta(days=1)
-
-    plant_identity = (
-        f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
-    ).upper().replace(" ", "")
-    is_hrn1 = "HS1" in plant_identity or "HRN1" in plant_identity
-
-    categories = (
-        ["Panel Cleaning", "Weeding Panel Cleaning"]
-        if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
-    )
-    rows = (
-        db.query(MaintenanceRecord)
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date >= cycle_start,
-            MaintenanceRecord.task_date <= min(cycle_end, end_date),
-        )
-        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
-        .all()
-    )
-
-    def asset_key(value):
-        normalized = str(value or "").strip().upper()
-        normalized = re.sub(r"^(?:TABLE)[\s_-]*", "T-", normalized)
-        normalized = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", normalized)
-        match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", normalized)
-        if match:
-            return f"{match.group(1)}-{int(match.group(2)):02d}"
-        return re.sub(r"\s+", "", normalized)
-
-    def is_completed(value):
-        normalized = str(value or "").strip().lower()
-        if any(flag in normalized for flag in (
-            "not completed", "pending", "failed", "red"
-        )):
-            return False
-        return normalized in {
-            "true", "1", "yes", "y", "completed", "complete",
-            "done", "green", "ok",
-        } or "green - completed" in normalized
-
-    if is_panel:
-        completed_assets = {
-            asset_key(row.asset_id) for row in rows if is_completed(row.status)
-        }
-        done = sum(
-            1 for number in range(1, 81)
-            if f"T-{number:02d}" in completed_assets
-        )
-    elif is_hrn1:
-        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
-        zone_trace_map = {}
-        cursor = 1
-        for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
-            zone_trace_map[f"Z-{zone_index:02d}"] = [
-                f"T-{number:02d}" for number in range(cursor, cursor + trace_count)
-            ]
-            cursor += trace_count
-
-        completed_zones = 0
-        for zone, traces in zone_trace_map.items():
-            completed_traces = set()
-            explicit_checks = False
-            legacy_zone_complete = False
-            for row in rows:
-                row_asset = asset_key(row.asset_id)
-                if row_asset == asset_key(zone):
-                    details = parse_details(row)
-                    checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
-                    if isinstance(checks, dict) and checks:
-                        explicit_checks = True
-                        completed_traces.update(
-                            asset_key(trace_id)
-                            for trace_id, value in checks.items()
-                            if is_completed(value)
-                        )
-                    if is_completed(row.status) and not checks:
-                        legacy_zone_complete = True
-                if row_asset in {asset_key(trace) for trace in traces} and is_completed(row.status):
-                    completed_traces.add(row_asset)
-
-            zone_done = (
-                legacy_zone_complete and not explicit_checks and not completed_traces
-            ) or all(asset_key(trace) in completed_traces for trace in traces)
-            if zone_done:
-                completed_zones += 1
-        done = completed_zones
-    else:
-        completed_zones = {
-            asset_key(row.asset_id) for row in rows if is_completed(row.status)
-        }
-        done = sum(
-            1 for number in range(1, 11)
-            if f"Z-{number:02d}" in completed_zones
-        )
-
-    cycles_done, cycles_total = maintenance_cycle_summary(
-        db, plant, start_date, end_date, category
-    )
-    return {
-        "percent": round(done / total * 100, 1) if total else 0,
-        "done": done,
-        "total": total,
-        "cycles_done": cycles_done,
-        "cycles_total": cycles_total,
-        "cycle_start": cycle_start,
-        "cycle_end": cycle_end,
-    }
-
-
 def _overview_target_label(done, total, target_days, unit):
     remaining = max(0, total - done)
     if remaining == 0:
@@ -3961,38 +3821,54 @@ def overview_page(db, user, plant):
     if start_date > end_date:
         st.warning("The start date must be on or before the end date.")
         start_date, end_date = end_date, start_date
+    # Share the selected overview range with the satellite maps so the overlay
+    # and progress cards always reflect exactly the dates chosen above.
+    st.session_state[f"_period_start_{plant.id}"] = start_date.isoformat()
+    st.session_state[f"_period_end_{plant.id}"] = end_date.isoformat()
+
     records = filtered_records(db, plant.id, start_date, end_date, None, "All")
     metrics = dashboard_metrics(db, plant, records, start_date, end_date)
 
-    # One shared cycle calculation drives both the progress percentage and
-    # completed-cycle count. Progress is for the cycle containing end_date;
-    # cycle totals are for the complete selected reporting range.
-    panel_progress = maintenance_cycle_progress(
-        db, plant, start_date, end_date, "Panel Cleaning"
-    )
-    grass_progress = maintenance_cycle_progress(
-        db, plant, start_date, end_date, "Grass Cutting"
-    )
-    panel_total = panel_progress["total"]
-    grass_total = grass_progress["total"]
-    panel_done = panel_progress["done"]
-    grass_done = grass_progress["done"]
-    panel_pct = panel_progress["percent"]
-    grass_pct = grass_progress["percent"]
-
+    # Use each asset's latest saved record within the selected month, not only
+    # a record saved on the month's final day.
+    panel_records = status_map_for_period(db, plant.id, "Panel Cleaning", start_date, end_date)
+    panel_weeding_records = status_map_for_period(db, plant.id, "Weeding Panel Cleaning", start_date, end_date)
+    grass_records = status_map_for_period(db, plant.id, "Grass Cutting", start_date, end_date)
+    grass_weeding_records = status_map_for_period(db, plant.id, "Weeding Grass Cutting", start_date, end_date)
+    panel_records = dict(panel_records)
+    for asset, rec in panel_weeding_records.items():
+        current = panel_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
+            panel_records[asset] = rec
+    grass_records = dict(grass_records)
+    for asset, rec in grass_weeding_records.items():
+        current = grass_records.get(asset)
+        if current is None or (rec.task_date, rec.id) > (current.task_date, current.id):
+            grass_records[asset] = rec
+    panel_total = plant.table_count
+    grass_total = plant.zone_count
+    panel_done = sum(1 for r in panel_records.values() if r.status == "Completed")
+    grass_done = sum(1 for r in grass_records.values() if r.status == "Completed")
+    plant_identity = f"{plant.code} {plant.name}".upper().replace(" ", "")
+    if "HS1" in plant_identity or "HRN1" in plant_identity:
+        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        zone_trace_map = {}
+        cursor = 1
+        for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
+            zone_trace_map[f"Z-{zone_index:02d}"] = [f"T-{n:02d}" for n in range(cursor, cursor + trace_count)]
+            cursor += trace_count
+        zone_completion = grass_zone_completion_map(
+            db, plant.id, grass_records, zone_trace_map, start_date, end_date
+        )
+        grass_done = sum(1 for complete in zone_completion.values() if complete)
+    panel_pct = round(panel_done / panel_total * 100, 1) if panel_total else 0
+    grass_pct = round(grass_done / grass_total * 100, 1) if grass_total else 0
     metrics["panel_pct"] = panel_pct
     metrics["panel_done"] = panel_done
     metrics["panel_total"] = panel_total
     metrics["grass_pct"] = grass_pct
     metrics["grass_done"] = grass_done
     metrics["grass_total"] = grass_total
-
-    # The satellite overlays use the exact same latest-cycle window as the
-    # percentages, so map colors, completed counts and cycle logic agree.
-    st.session_state[f"_period_start_{plant.id}"] = panel_progress["cycle_start"].isoformat()
-    st.session_state[f"_period_end_{plant.id}"] = min(
-        panel_progress["cycle_end"], end_date
-    ).isoformat()
 
     repair_rows = db.query(RepairItem.asset_id, func.count(RepairItem.id)).filter(
         RepairItem.plant_id == plant.id, RepairItem.status != "Completed"
@@ -4005,28 +3881,26 @@ def overview_page(db, user, plant):
     panel_col, grass_col, repair_col = st.columns(3, gap="medium")
 
     with panel_col:
-        st.session_state[f"_period_start_{plant.id}"] = panel_progress["cycle_start"].isoformat()
-        st.session_state[f"_period_end_{plant.id}"] = min(
-            panel_progress["cycle_end"], end_date
-        ).isoformat()
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
+            db, plant, start_date, end_date, "Panel Cleaning"
+        )
         _render_overview_card(
-            "Panel Cleaning", "", panel_progress["percent"], panel_progress["done"], panel_progress["total"],
-            f"Cycles completed: {panel_progress['cycles_done']} / {panel_progress['cycles_total']}"
+            "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
+            f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}"
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
-        st.progress(panel_progress["percent"] / 100, text=f"Panel cleaning • {panel_progress['percent']:.0f}%")
+        st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
     with grass_col:
-        st.session_state[f"_period_start_{plant.id}"] = grass_progress["cycle_start"].isoformat()
-        st.session_state[f"_period_end_{plant.id}"] = min(
-            grass_progress["cycle_end"], end_date
-        ).isoformat()
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
+            db, plant, start_date, end_date, "Grass Cutting"
+        )
         _render_overview_card(
-            "Grass Cutting", "", grass_progress["percent"], grass_progress["done"], grass_progress["total"],
-            f"Cycles completed: {grass_progress['cycles_done']} / {grass_progress['cycles_total']}"
+            "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
+            f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}"
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
-        st.progress(grass_progress["percent"] / 100, text=f"Grass cutting • {grass_progress['percent']:.0f}%")
+        st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
     with repair_col:
         all_repair_items = db.query(RepairItem).filter(
@@ -4200,15 +4074,9 @@ def panel_cleaning_page(db, user, plant):
 
     task_date = _period_picker(plant, "Panel Cleaning")
     panel_cycle_start = maintenance_cycle_window_to_date(task_date, "Panel Cleaning")
-    panel_progress = maintenance_cycle_progress(
+    panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
         db, plant, panel_cycle_start, task_date, "Panel Cleaning"
     )
-    panel_cycles_done = panel_progress["cycles_done"]
-    panel_cycles_total = panel_progress["cycles_total"]
-    st.session_state[f"_period_start_{plant.id}"] = panel_progress["cycle_start"].isoformat()
-    st.session_state[f"_period_end_{plant.id}"] = min(
-        panel_progress["cycle_end"], task_date
-    ).isoformat()
     st.markdown(
         f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
         f'<div class="overview-work-target">Cycles completed: {panel_cycles_done} / {panel_cycles_total}</div></div>',
@@ -4223,8 +4091,8 @@ def panel_cleaning_page(db, user, plant):
         assets = [a for a in assets if search.lower() in a.lower()]
 
     panel_records = _map_status_map(db, plant.id, "Panel Cleaning", task_date, use_period=True)
-    completed = panel_progress["done"]
-    pct = panel_progress["percent"]
+    completed = sum(1 for r in panel_records.values() if r.status == "Completed")
+    pct = round(completed / plant.table_count * 100, 1) if plant.table_count else 0
 
     st.progress(pct / 100, text=f"Cleaning progress: {pct:.1f}%")
 
@@ -4434,15 +4302,9 @@ def grass_cutting_page(db, user, plant):
 
     task_date = _period_picker(plant, "Grass Cutting")
     grass_cycle_start = maintenance_cycle_window_to_date(task_date, "Grass Cutting")
-    grass_progress = maintenance_cycle_progress(
+    grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
         db, plant, grass_cycle_start, task_date, "Grass Cutting"
     )
-    grass_cycles_done = grass_progress["cycles_done"]
-    grass_cycles_total = grass_progress["cycles_total"]
-    st.session_state[f"_period_start_{plant.id}"] = grass_progress["cycle_start"].isoformat()
-    st.session_state[f"_period_end_{plant.id}"] = min(
-        grass_progress["cycle_end"], task_date
-    ).isoformat()
     st.markdown(
         f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
         f'<div class="overview-work-target">Cycles completed: {grass_cycles_done} / {grass_cycles_total}</div></div>',
@@ -7709,6 +7571,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
