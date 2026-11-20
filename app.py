@@ -3239,19 +3239,12 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count completed maintenance cycles using the fixed calendar periods.
+    """Count fully completed maintenance cycles within calendar-aligned periods.
 
-    Panel Cleaning: all required tables must have a Completed record in the
-    same Jan-Jun or Jul-Dec period (2 cycles per year).
-
-    Grass Cutting: all required zones must be complete in the same
-    Jan-Apr, May-Aug or Sep-Dec period (3 cycles per year). For HRN 1,
-    a zone is complete only when its zone record or all assigned table
-    records/checks show completion.
-
-    Each calendar period can contribute at most one cycle. Records on
-    different dates within the same period are combined, so workers do not
-    need to save every table/zone on one common date.
+    Panel Cleaning: all required tables completed within Jan-Jun or Jul-Dec.
+    Grass Cutting: all required zones completed within Jan-Apr, May-Aug or
+    Sep-Dec. For HRN 1, table checks saved on different dates in the same
+    cycle are combined before deciding whether each zone is complete.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
@@ -3296,6 +3289,15 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         .all()
     )
 
+    def _checked(value):
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {
+            "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
+        }
+
     completed_cycles = 0
     for cycle_start, cycle_end in windows:
         left = max(start_date, cycle_start)
@@ -3303,9 +3305,9 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if left > right or not expected:
             continue
 
-        # Combine all saved activity in this calendar cycle. A completed
-        # entry remains evidence of completion even if a later Pending
-        # record was saved for the same asset.
+        # Combine every saved entry in this cycle, including entries recorded
+        # on different dates. A later Pending entry does not erase a completed
+        # task that was recorded earlier in the same cycle.
         rows = [
             row for row in period_rows
             if left <= row.task_date <= right
@@ -3320,16 +3322,41 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                 asset in completed_assets for asset in expected
             )
         elif is_hsn1:
-            zone_records = {}
-            for row in rows:
-                if row.asset_id.startswith("Z-"):
-                    zone_records[row.asset_id] = row
+            cycle_zone_completion = {}
+            for zone, traces in zone_trace_map.items():
+                zone_rows = [row for row in rows if row.asset_id == zone]
+                completed_checks = set()
+                legacy_zone_completed = False
 
-            zone_completion = grass_zone_completion_map(
-                db, plant.id, zone_records, zone_trace_map, left, right
-            )
+                for row in zone_rows:
+                    details = parse_details(row)
+                    checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
+                    if isinstance(checks, dict):
+                        completed_checks.update(
+                            trace for trace, value in checks.items()
+                            if _checked(value)
+                        )
+                    # Older records stored a completed zone without individual
+                    # table checks. Preserve that historical completion format.
+                    if row.status == "Completed" and not checks:
+                        legacy_zone_completed = True
+
+                # Older HRN 1 records may store grass-cutting completion
+                # directly against table IDs rather than within zone JSON.
+                completed_checks.update(
+                    row.asset_id for row in rows
+                    if row.asset_id in traces and row.status == "Completed"
+                )
+
+                cycle_zone_completion[zone] = bool(
+                    traces and (
+                        legacy_zone_completed
+                        or all(trace in completed_checks for trace in traces)
+                    )
+                )
+
             cycle_complete = all(
-                zone_completion.get(zone, False) for zone in expected
+                cycle_zone_completion.get(zone, False) for zone in expected
             )
         else:
             completed_zones = {
