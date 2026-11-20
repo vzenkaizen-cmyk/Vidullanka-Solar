@@ -3323,10 +3323,16 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             return True
         if value is False or value is None:
             return False
-        return str(value).strip().lower() in {
-            "true", "1", "yes", "y", "completed", "complete",
-            "done", "green", "ok",
-        }
+        normalized = str(value).strip().lower()
+        # Accept the status labels used by activity exports as well as the
+        # internal database values. Explicit negative states must never count.
+        if any(flag in normalized for flag in ("not completed", "pending", "failed", "red")):
+            return False
+        return (
+            normalized in {"true", "1", "yes", "y", "completed", "complete",
+                           "done", "green", "ok"}
+            or "green - completed" in normalized
+        )
 
     def _asset_key(value):
         return str(value or "").strip().upper()
@@ -3431,6 +3437,13 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             completed_cycles += 1
 
     return completed_cycles, len(windows)
+
+
+def maintenance_cycle_window_to_date(task_date, category):
+    """Return the start of the calendar cycle containing task_date."""
+    months_per_cycle = 6 if category == "Panel Cleaning" else 4
+    first_month = ((task_date.month - 1) // months_per_cycle) * months_per_cycle + 1
+    return date(task_date.year, first_month, 1)
 
 
 def _overview_target_label(done, total, target_days, unit):
@@ -3857,22 +3870,24 @@ def overview_page(db, user, plant):
     panel_col, grass_col, repair_col = st.columns(3, gap="medium")
 
     with panel_col:
+        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
+            db, plant, start_date, end_date, "Panel Cleaning"
+        )
         _render_overview_card(
             "Panel Cleaning", "", metrics["panel_pct"], metrics["panel_done"], metrics["panel_total"],
-            ""
+            f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}"
         )
-        panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Panel Cleaning")
-        st.caption(f"Cycles completed: {panel_cycles_done} / {panel_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
         st.progress(metrics["panel_pct"] / 100, text=f"Panel cleaning • {metrics['panel_pct']:.0f}%")
 
     with grass_col:
+        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
+            db, plant, start_date, end_date, "Grass Cutting"
+        )
         _render_overview_card(
             "Grass Cutting", "", metrics["grass_pct"], metrics["grass_done"], metrics["grass_total"],
-            ""
+            f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}"
         )
-        grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(db, plant, start_date, end_date, "Grass Cutting")
-        st.caption(f"Cycles completed: {grass_cycles_done} / {grass_cycles_total}")
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
         st.progress(metrics["grass_pct"] / 100, text=f"Grass cutting • {metrics['grass_pct']:.0f}%")
 
@@ -4047,6 +4062,15 @@ def panel_cleaning_page(db, user, plant):
     st.markdown("## Panel Cleaning")
 
     task_date = _period_picker(plant, "Panel Cleaning")
+    panel_cycle_start = maintenance_cycle_window_to_date(task_date, "Panel Cleaning")
+    panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
+        db, plant, panel_cycle_start, task_date, "Panel Cleaning"
+    )
+    st.markdown(
+        f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
+        f'<div class="overview-work-target">Cycles completed: {panel_cycles_done} / {panel_cycles_total}</div></div>',
+        unsafe_allow_html=True,
+    )
     # Compact map — same size as the Grass Cutting map.
     satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="panel", period_status=True)
     search = st.text_input("Search table", placeholder="T-01")
@@ -4266,6 +4290,15 @@ def grass_cutting_page(db, user, plant):
     st.markdown("## 🌿 Grass Cutting")
 
     task_date = _period_picker(plant, "Grass Cutting")
+    grass_cycle_start = maintenance_cycle_window_to_date(task_date, "Grass Cutting")
+    grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
+        db, plant, grass_cycle_start, task_date, "Grass Cutting"
+    )
+    st.markdown(
+        f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
+        f'<div class="overview-work-target">Cycles completed: {grass_cycles_done} / {grass_cycles_total}</div></div>',
+        unsafe_allow_html=True,
+    )
     # Compact map — same size as the Panel Cleaning map.
     satellite_table_map_page(db, user, plant, embedded=True, task_date=task_date, show_metrics=False, map_mode="grass", period_status=True)
     grass_records = _map_status_map(db, plant.id, "Grass Cutting", task_date, use_period=True)
