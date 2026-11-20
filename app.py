@@ -3239,29 +3239,34 @@ def maintenance_cycle_plan(start_date, end_date, category):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count fully completed maintenance cycles within calendar-aligned periods.
+    """Count completed maintenance cycles from all saved records in each cycle.
 
-    Panel Cleaning: all required tables completed within Jan-Jun or Jul-Dec.
-    Grass Cutting: all required zones completed within Jan-Apr, May-Aug or
-    Sep-Dec. For HRN 1, table checks saved on different dates in the same
-    cycle are combined before deciding whether each zone is complete.
+    Panel Cleaning:
+        Every table must have a Completed record during the same Jan-Jun or
+        Jul-Dec cycle.
+
+    Grass Cutting:
+        Every zone must be complete during the same Jan-Apr, May-Aug or
+        Sep-Dec cycle. For HRN 1, table checks saved on different dates in
+        that cycle are combined before each zone is evaluated.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
 
     windows = maintenance_cycle_plan(start_date, end_date, category)
     is_panel = category == "Panel Cleaning"
-    expected = asset_list(plant, "Table" if is_panel else "Zone")
 
     plant_identity = (
         f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
     ).upper().replace(" ", "")
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
-    if is_panel and is_hsn1:
-        expected = [f"T-{i:02d}" for i in range(1, 81)]
+    expected_assets = asset_list(plant, "Table" if is_panel else "Zone")
 
     zone_trace_map = {}
+    if is_panel and is_hsn1:
+        expected_assets = [f"T-{i:02d}" for i in range(1, 81)]
+
     if not is_panel and is_hsn1:
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
         cursor = 1
@@ -3270,13 +3275,15 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                 f"T-{n:02d}" for n in range(cursor, cursor + trace_count)
             ]
             cursor += trace_count
-        expected = list(zone_trace_map.keys())
+        expected_assets = list(zone_trace_map.keys())
 
     categories = (
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
 
+    # Fetch every saved row in the selected range. Do not use the latest-row
+    # status map here: separate records/dates within one cycle must be combined.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
@@ -3285,86 +3292,124 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             MaintenanceRecord.task_date >= start_date,
             MaintenanceRecord.task_date <= end_date,
         )
-        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+        .order_by(
+            MaintenanceRecord.task_date.asc(),
+            MaintenanceRecord.id.asc(),
+        )
         .all()
     )
 
-    def _checked(value):
+    def _is_completed(value):
         if value is True:
             return True
         if value is False or value is None:
             return False
         return str(value).strip().lower() in {
-            "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
+            "true", "1", "yes", "y", "completed", "complete",
+            "done", "green", "ok",
         }
 
+    def _asset_key(value):
+        return str(value or "").strip().upper()
+
     completed_cycles = 0
+
     for cycle_start, cycle_end in windows:
-        left = max(start_date, cycle_start)
-        right = min(end_date, cycle_end)
-        if left > right or not expected:
+        # Only count work dated inside both the selected range and this cycle.
+        cycle_left = max(start_date, cycle_start)
+        cycle_right = min(end_date, cycle_end)
+        if cycle_left > cycle_right or not expected_assets:
             continue
 
-        # Combine every saved entry in this cycle, including entries recorded
-        # on different dates. A later Pending entry does not erase a completed
-        # task that was recorded earlier in the same cycle.
-        rows = [
+        cycle_rows = [
             row for row in period_rows
-            if left <= row.task_date <= right
+            if cycle_left <= row.task_date <= cycle_right
         ]
 
         if is_panel:
-            completed_assets = {
-                row.asset_id for row in rows
-                if row.status == "Completed"
+            # A table stays completed for this cycle if a Completed record
+            # exists for it on any date in that same six-month period.
+            completed_tables = {
+                _asset_key(row.asset_id)
+                for row in cycle_rows
+                if str(row.status or "").strip().lower() == "completed"
             }
             cycle_complete = all(
-                asset in completed_assets for asset in expected
+                _asset_key(table) in completed_tables
+                for table in expected_assets
             )
+
         elif is_hsn1:
-            cycle_zone_completion = {}
+            # HRN 1 grass cutting is recorded by zone, with individual table
+            # checks in details_json. Merge the checks from every saved date
+            # within this four-month cycle.
+            cycle_complete = True
+
             for zone, traces in zone_trace_map.items():
-                zone_rows = [row for row in rows if row.asset_id == zone]
-                completed_checks = set()
+                completed_traces = set()
+                has_explicit_table_checks = False
                 legacy_zone_completed = False
 
-                for row in zone_rows:
-                    details = parse_details(row)
-                    checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
-                    if isinstance(checks, dict):
-                        completed_checks.update(
-                            trace for trace, value in checks.items()
-                            if _checked(value)
+                for row in cycle_rows:
+                    row_asset = _asset_key(row.asset_id)
+
+                    if row_asset == _asset_key(zone):
+                        details = parse_details(row)
+                        checks = (
+                            details.get("table_checks", {})
+                            if isinstance(details, dict) else {}
                         )
-                    # Older records stored a completed zone without individual
-                    # table checks. Preserve that historical completion format.
-                    if row.status == "Completed" and not checks:
-                        legacy_zone_completed = True
 
-                # Older HRN 1 records may store grass-cutting completion
-                # directly against table IDs rather than within zone JSON.
-                completed_checks.update(
-                    row.asset_id for row in rows
-                    if row.asset_id in traces and row.status == "Completed"
-                )
+                        if isinstance(checks, dict) and checks:
+                            has_explicit_table_checks = True
+                            for trace_id, value in checks.items():
+                                if _is_completed(value):
+                                    completed_traces.add(_asset_key(trace_id))
 
-                cycle_zone_completion[zone] = bool(
-                    traces and (
+                        # A zone-only historical record is accepted as a
+                        # complete zone only when no explicit table checklist
+                        # exists for that zone in this cycle.
+                        if (
+                            str(row.status or "").strip().lower() == "completed"
+                            and not checks
+                        ):
+                            legacy_zone_completed = True
+
+                    # Also support older records saved directly against table
+                    # IDs instead of inside the zone's table_checks dictionary.
+                    if (
+                        row_asset in {_asset_key(trace) for trace in traces}
+                        and str(row.status or "").strip().lower() == "completed"
+                    ):
+                        completed_traces.add(row_asset)
+
+                zone_complete = bool(traces) and (
+                    (
                         legacy_zone_completed
-                        or all(trace in completed_checks for trace in traces)
+                        and not has_explicit_table_checks
+                        and not completed_traces
+                    )
+                    or all(
+                        _asset_key(trace) in completed_traces
+                        for trace in traces
                     )
                 )
 
-            cycle_complete = all(
-                cycle_zone_completion.get(zone, False) for zone in expected
-            )
+                if not zone_complete:
+                    cycle_complete = False
+                    break
+
         else:
+            # Other plants record grass cutting against each zone. Combine all
+            # Completed zone records in the same four-month cycle.
             completed_zones = {
-                row.asset_id for row in rows
-                if row.status == "Completed"
+                _asset_key(row.asset_id)
+                for row in cycle_rows
+                if str(row.status or "").strip().lower() == "completed"
             }
             cycle_complete = all(
-                zone in completed_zones for zone in expected
+                _asset_key(zone) in completed_zones
+                for zone in expected_assets
             )
 
         if cycle_complete:
