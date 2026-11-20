@@ -4011,7 +4011,6 @@ def overview_page(db, user, plant):
         ).isoformat()
         _render_overview_card(
             "Panel Cleaning", "", panel_progress["percent"], panel_progress["done"], panel_progress["total"],
-            f"Progress period: {panel_progress['cycle_start']:%d %b %Y} – {min(panel_progress['cycle_end'], end_date):%d %b %Y}<br>"
             f"Cycles completed: {panel_progress['cycles_done']} / {panel_progress['cycles_total']}"
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="panel", period_status=True, include_weeding=True)
@@ -4024,7 +4023,6 @@ def overview_page(db, user, plant):
         ).isoformat()
         _render_overview_card(
             "Grass Cutting", "", grass_progress["percent"], grass_progress["done"], grass_progress["total"],
-            f"Progress period: {grass_progress['cycle_start']:%d %b %Y} – {min(grass_progress['cycle_end'], end_date):%d %b %Y}<br>"
             f"Cycles completed: {grass_progress['cycles_done']} / {grass_progress['cycles_total']}"
         )
         satellite_table_map_page(db, user, plant, embedded=True, task_date=end_date, show_metrics=False, map_mode="grass", period_status=True, include_weeding=True)
