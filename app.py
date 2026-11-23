@@ -3309,13 +3309,17 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         expected_assets = asset_list(plant, "Zone")
         zone_trace_map = {}
 
-    # Read all relevant history once; each cycle below uses only its own dates.
+    # Read all relevant history in the selected reporting range.
+    # A cycle is counted by cumulative completion coverage: every required
+    # table/zone must have one completed occurrence. The work dates do not
+    # need to fall inside the same fixed 4/6-month window because these
+    # activities are performed irregularly.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
             MaintenanceRecord.plant_id == plant.id,
             MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date >= cycle_baseline,
+            MaintenanceRecord.task_date >= max(start_date, cycle_baseline),
             MaintenanceRecord.task_date <= end_date,
         )
         .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
@@ -3342,96 +3346,90 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     def _asset_key(value):
         """Normalize legacy asset IDs such as T1, T-1, T-01, and Z-01."""
         normalized = str(value or "").strip().upper()
-        normalized = re.sub(r"^(?:TABLE)[\s_-]*", "T-", normalized)
-        normalized = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", normalized)
-        match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", normalized)
+        normalized = re.sub(r"^(?:TABLE)[\\s_-]*", "T-", normalized)
+        normalized = re.sub(r"^(?:ZONE)[\\s_-]*", "Z-", normalized)
+        match = re.match(r"^([TZ])[\\s_-]*0*(\\d+)$", normalized)
         if match:
             return f"{match.group(1)}-{int(match.group(2)):02d}"
-        return re.sub(r"\s+", "", normalized)
+        return re.sub(r"\\s+", "", normalized)
 
-    completed_cycles = 0
+    # Track distinct completed work dates per required asset. Repeated saves
+    # for the same asset on the same date count only once.
+    completed_dates_by_asset = { _asset_key(asset): set() for asset in expected_assets }
 
-    for cycle_start, cycle_end in windows:
-        cycle_right = min(end_date, cycle_end)
-        if cycle_start > cycle_right or not expected_assets:
-            continue
+    if is_panel:
+        for row in period_rows:
+            asset_key = _asset_key(row.asset_id)
+            if asset_key in completed_dates_by_asset and _is_completed(row.status):
+                completed_dates_by_asset[asset_key].add(row.task_date)
 
-        cycle_rows = [
-            row for row in period_rows
-            if cycle_start <= row.task_date <= cycle_right
-        ]
+    elif is_hsn1:
+        # HRN 1 stores some grass-cutting work against individual tables.
+        # A zone is completed on a date when its legacy zone record is complete,
+        # all its assigned table records are complete, or all explicit table
+        # checks in the zone record are checked.
+        rows_by_date_asset = {}
+        for row in period_rows:
+            rows_by_date_asset.setdefault((row.task_date, _asset_key(row.asset_id)), []).append(row)
 
-        if is_panel:
-            completed_assets = {
-                _asset_key(row.asset_id)
-                for row in cycle_rows
-                if _is_completed(row.status)
-            }
-            cycle_complete = all(
-                _asset_key(asset) in completed_assets
-                for asset in expected_assets
-            )
-
-        elif is_hsn1:
-            cycle_complete = True
-            for zone, traces in zone_trace_map.items():
-                completed_traces = set()
-                has_explicit_table_checks = False
+        for zone, traces in zone_trace_map.items():
+            zone_key = _asset_key(zone)
+            trace_keys = {_asset_key(trace) for trace in traces}
+            for work_date in sorted({row.task_date for row in period_rows}):
+                date_rows = rows_by_date_asset
+                zone_rows = date_rows.get((work_date, zone_key), [])
                 legacy_zone_completed = False
+                explicit_checks_complete = False
 
-                for row in cycle_rows:
-                    row_asset = _asset_key(row.asset_id)
-                    if row_asset == _asset_key(zone):
-                        details = parse_details(row)
-                        checks = (
-                            details.get("table_checks", {})
-                            if isinstance(details, dict) else {}
+                for row in zone_rows:
+                    details = parse_details(row)
+                    checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
+                    if isinstance(checks, dict) and checks:
+                        normalized_checks = {
+                            _asset_key(trace_id): value
+                            for trace_id, value in checks.items()
+                        }
+                        explicit_checks_complete = (
+                            trace_keys.issubset(normalized_checks)
+                            and all(
+                                _is_completed(normalized_checks[trace_key])
+                                for trace_key in trace_keys
+                            )
                         )
-                        if isinstance(checks, dict) and checks:
-                            has_explicit_table_checks = True
-                            for trace_id, value in checks.items():
-                                if _is_completed(value):
-                                    completed_traces.add(_asset_key(trace_id))
-                        if _is_completed(row.status) and not (
-                            isinstance(checks, dict) and checks
-                        ):
-                            legacy_zone_completed = True
+                    elif _is_completed(row.status):
+                        legacy_zone_completed = True
 
-                    if (
-                        row_asset in {_asset_key(trace) for trace in traces}
-                        and _is_completed(row.status)
-                    ):
-                        completed_traces.add(row_asset)
-
-                zone_complete = bool(traces) and (
-                    (
-                        legacy_zone_completed
-                        and not has_explicit_table_checks
-                        and not completed_traces
+                completed_trace_keys = {
+                    trace_key
+                    for trace_key in trace_keys
+                    if any(
+                        _is_completed(row.status)
+                        for row in date_rows.get((work_date, trace_key), [])
                     )
-                    or all(
-                        _asset_key(trace) in completed_traces
-                        for trace in traces
-                    )
+                }
+                all_trace_records_complete = bool(trace_keys) and trace_keys.issubset(
+                    completed_trace_keys
                 )
-                if not zone_complete:
-                    cycle_complete = False
-                    break
 
-        else:
-            completed_zones = {
-                _asset_key(row.asset_id)
-                for row in cycle_rows
-                if _is_completed(row.status)
-            }
-            cycle_complete = all(
-                _asset_key(zone) in completed_zones
-                for zone in expected_assets
-            )
+                if legacy_zone_completed or explicit_checks_complete or all_trace_records_complete:
+                    completed_dates_by_asset[zone_key].add(work_date)
 
-        if cycle_complete:
-            completed_cycles += 1
+    else:
+        for row in period_rows:
+            asset_key = _asset_key(row.asset_id)
+            if asset_key in completed_dates_by_asset and _is_completed(row.status):
+                completed_dates_by_asset[asset_key].add(row.task_date)
 
+    # One completed cycle means every required asset has been completed at
+    # least once. Further cycles are counted by the number of complete rounds
+    # available across all assets, even when their work dates differ.
+    if completed_dates_by_asset and all(completed_dates_by_asset.values()):
+        completed_cycles = min(len(dates) for dates in completed_dates_by_asset.values())
+    else:
+        completed_cycles = 0
+
+    # Keep the planned-cycle denominator based on 6-month / 4-month frequency.
+    completed_cycles = min(completed_cycles, len(windows))
     return completed_cycles, len(windows)
 
 def maintenance_cycle_window_to_date(db, plant, task_date, category):
@@ -4064,9 +4062,8 @@ def panel_cleaning_page(db, user, plant):
     st.markdown("## Panel Cleaning")
 
     task_date = _period_picker(plant, "Panel Cleaning")
-    panel_cycle_start = maintenance_cycle_window_to_date(db, plant, task_date, "Panel Cleaning")
     panel_cycles_done, panel_cycles_total = maintenance_cycle_summary(
-        db, plant, panel_cycle_start, task_date, "Panel Cleaning"
+        db, plant, date(2023, 1, 1), task_date, "Panel Cleaning"
     )
     st.markdown(
         f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
@@ -4292,9 +4289,8 @@ def grass_cutting_page(db, user, plant):
     st.markdown("## 🌿 Grass Cutting")
 
     task_date = _period_picker(plant, "Grass Cutting")
-    grass_cycle_start = maintenance_cycle_window_to_date(db, plant, task_date, "Grass Cutting")
     grass_cycles_done, grass_cycles_total = maintenance_cycle_summary(
-        db, plant, grass_cycle_start, task_date, "Grass Cutting"
+        db, plant, date(2023, 1, 1), task_date, "Grass Cutting"
     )
     st.markdown(
         f'<div class="overview-work-card" style="min-height:0;padding:10px 14px;margin:0 0 10px 0;">'
