@@ -7279,52 +7279,72 @@ def _solar_sop_responsible_person(matches, pages=None):
 def _solar_sop_translate(text_value, language):
     """Translate SOP text into exactly one requested language.
 
-    English is returned untouched when it is already English. Long responses
-    are translated paragraph-by-paragraph and in bounded chunks to reduce
-    Google Translate request failures.
+    Keep text already in the requested language unchanged. Translate mixed or
+    opposite-language text in smaller chunks, explicitly identifying Sinhala
+    source text when converting it to English. This avoids sending long,
+    mixed-script SOP passages to Google Translate as one request.
     """
     text_value = str(text_value or "")
     target = "si" if str(language).lower().startswith("si") else "en"
     sinhala_pattern = r"[\u0D80-\u0DFF]"
     has_sinhala = bool(re.search(sinhala_pattern, text_value))
+    has_english = bool(re.search(r"[A-Za-z]{3,}", text_value))
 
-    # Do not send ordinary English text through a translation service.
     if target == "en" and not has_sinhala:
         return text_value
-    # Already-Sinhala text with no meaningful English words needs no translation.
-    if target == "si" and has_sinhala and not re.search(r"[A-Za-z]{4,}", text_value):
+    if target == "si" and has_sinhala and not has_english:
         return text_value
 
     try:
         from deep_translator import GoogleTranslator
-        translator = GoogleTranslator(source="auto", target=target)
+
+        # Automatic detection can misidentify short Sinhala SOP passages.
+        source_language = "si" if target == "en" and has_sinhala else "auto"
+        translator = GoogleTranslator(source=source_language, target=target)
 
         def translate_chunk(chunk):
             chunk = chunk.strip()
             if not chunk:
                 return chunk
-            translated_chunk = translator.translate(chunk)
-            if not translated_chunk:
+
+            # Retry with automatic source detection if explicit Sinhala
+            # detection is rejected by the translation endpoint.
+            try:
+                result = translator.translate(chunk)
+            except Exception:
+                if source_language != "si":
+                    raise
+                result = GoogleTranslator(source="auto", target=target).translate(chunk)
+
+            if not result:
                 raise ValueError("Empty translation chunk")
-            return translated_chunk
+            return result
 
         translated_paragraphs = []
         for paragraph in text_value.split("\n"):
-            if len(paragraph) <= 1200:
-                translated_paragraphs.append(translate_chunk(paragraph))
+            if not paragraph.strip():
+                translated_paragraphs.append("")
                 continue
 
+            # Preserve English-only Markdown labels when producing English.
+            if target == "en" and not re.search(sinhala_pattern, paragraph):
+                translated_paragraphs.append(paragraph)
+                continue
+
+            # Split long extracted PDF passages at word boundaries to reduce
+            # failures from oversized translation requests.
             words = paragraph.split()
             chunks, current = [], ""
             for word in words:
                 candidate = f"{current} {word}".strip()
-                if len(candidate) > 1100 and current:
+                if len(candidate) > 700 and current:
                     chunks.append(current)
                     current = word
                 else:
                     current = candidate
             if current:
                 chunks.append(current)
+
             translated_paragraphs.append(" ".join(translate_chunk(chunk) for chunk in chunks))
 
         translated = "\n".join(translated_paragraphs).strip()
