@@ -3228,25 +3228,19 @@ def _add_months_to_date(value, months):
 
 
 def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
-    """Return record-anchored maintenance cycle windows overlapping the range.
+    """Return fixed maintenance-cycle windows from 1 January 2023.
 
-    Panel Cleaning uses consecutive six-month periods (2 cycles per year).
-    Grass Cutting uses consecutive four-month periods (3 cycles per year).
-    The first actual activity date is the anchor; daily records are not required.
+    Panel Cleaning uses January-June and July-December (2 cycles per year).
+    Grass Cutting uses January-April, May-August and September-December
+    (3 cycles per year). Activities can be recorded on different dates;
+    a cycle is complete only when every required table/zone is completed
+    within that cycle window.
     """
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
-    anchor_date = anchor_date or start_date
+    # The historical reporting baseline is fixed, not the first activity date.
+    # This keeps cycle counts comparable even when work starts late or is irregular.
+    cycle_start = date(2023, 1, 1)
     windows = []
-    cycle_start = anchor_date
-
-    # Move backwards only when the requested reporting range starts before the
-    # anchor. In normal operation, cycles begin with the first recorded activity.
-    while cycle_start > start_date:
-        previous_start = _add_months_to_date(cycle_start, -months_per_cycle)
-        if previous_start >= end_date:
-            cycle_start = previous_start
-        else:
-            break
 
     while cycle_start <= end_date:
         next_start = _add_months_to_date(cycle_start, months_per_cycle)
@@ -3257,19 +3251,18 @@ def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
 
     return windows
 
-
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count fully completed, record-anchored maintenance cycles.
+    """Count fully completed maintenance cycles in the reporting range.
 
     Panel Cleaning: every configured table must have a Completed record
-    within the same six-calendar-month cycle (two cycles per year).
+    within the same six-month calendar cycle (two cycles per year).
 
     Grass Cutting: every configured zone must have a Completed record
-    within the same four-calendar-month cycle (three cycles per year).
-    Grass Cutting and legacy Weeding Grass Cutting records are combined.
+    within the same four-month calendar cycle (three cycles per year).
+    Grass Cutting and Weeding Grass Cutting records are combined.
 
-    The first recorded activity for each plant/category is the cycle anchor.
-    Records on different dates are combined; daily records are not required.
+    The cycle calendar starts on 1 January 2023. Records on different dates
+    are combined within the same cycle; daily records are not required.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
@@ -3282,26 +3275,14 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
-    months_per_cycle = 6 if is_panel else 4
 
-    # Start counting from the first activity date, including legacy weeding
-    # records for Grass Cutting, rather than from January or the report start.
-    anchor_date = (
-        db.query(func.min(MaintenanceRecord.task_date))
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-        )
-        .scalar()
-    )
-    if not anchor_date:
+    cycle_baseline = date(2023, 1, 1)
+    if end_date < cycle_baseline:
         return 0, 0
 
-    # Build every cycle that has started by the selected report end date.
-    # The final in-progress cycle is included in the denominator, but it
-    # cannot be marked complete until all required assets are completed.
     windows = maintenance_cycle_plan(
-        start_date, end_date, category, anchor_date=anchor_date
+        max(start_date, cycle_baseline), end_date, category,
+        anchor_date=cycle_baseline
     )
     if not windows:
         return 0, 0
@@ -3312,7 +3293,7 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     is_hsn1 = "HS1" in plant_identity or "HRN1" in plant_identity
 
     if is_panel:
-        expected_assets = [f"T-{i:02d}" for i in range(1, 81)]
+        expected_assets = asset_list(plant, "Table")
         zone_trace_map = {}
     elif is_hsn1:
         zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
@@ -3325,17 +3306,16 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             cursor += trace_count
         expected_assets = list(zone_trace_map.keys())
     else:
-        expected_assets = [f"Z-{i:02d}" for i in range(1, 11)]
+        expected_assets = asset_list(plant, "Zone")
         zone_trace_map = {}
 
-    # Read all records from the anchor through the reporting end. A table or
-    # zone can be completed on any date within its cycle.
+    # Read all relevant history once; each cycle below uses only its own dates.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
             MaintenanceRecord.plant_id == plant.id,
             MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date >= anchor_date,
+            MaintenanceRecord.task_date >= cycle_baseline,
             MaintenanceRecord.task_date <= end_date,
         )
         .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
@@ -3372,7 +3352,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     completed_cycles = 0
 
     for cycle_start, cycle_end in windows:
-        # Do not use records outside this exact anchored cycle.
         cycle_right = min(end_date, cycle_end)
         if cycle_start > cycle_right or not expected_assets:
             continue
@@ -3455,27 +3434,13 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
 
     return completed_cycles, len(windows)
 
-
 def maintenance_cycle_window_to_date(db, plant, task_date, category):
-    """Return the record-anchored cycle start containing task_date."""
-    categories = (
-        ["Panel Cleaning", "Weeding Panel Cleaning"]
-        if category == "Panel Cleaning"
-        else ["Grass Cutting", "Weeding Grass Cutting"]
-    )
-    anchor_date = (
-        db.query(func.min(MaintenanceRecord.task_date))
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-        )
-        .scalar()
-    )
-    if not anchor_date:
+    """Return the fixed calendar cycle start containing task_date."""
+    if task_date < date(2023, 1, 1):
         return task_date
 
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
-    cycle_start = anchor_date
+    cycle_start = date(2023, 1, 1)
     while True:
         next_start = _add_months_to_date(cycle_start, months_per_cycle)
         if next_start > task_date:
