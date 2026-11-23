@@ -7277,17 +7277,21 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Translate the complete SOP response into exactly one requested language.
+    """Translate SOP text into exactly one requested language.
 
-    Long PDF passages are translated in small chunks to avoid translation-service
-    length limits. If translation is unavailable, return a clear single-language
-    notice rather than displaying mixed Sinhala/English source text.
+    English is returned untouched when it is already English. Long responses
+    are translated paragraph-by-paragraph and in bounded chunks to reduce
+    Google Translate request failures.
     """
     text_value = str(text_value or "")
     target = "si" if str(language).lower().startswith("si") else "en"
-    has_sinhala = bool(re.search(r"[\\u0D80-\\u0DFF]", text_value))
+    sinhala_pattern = r"[\u0D80-\u0DFF]"
+    has_sinhala = bool(re.search(sinhala_pattern, text_value))
+
+    # Do not send ordinary English text through a translation service.
     if target == "en" and not has_sinhala:
         return text_value
+    # Already-Sinhala text with no meaningful English words needs no translation.
     if target == "si" and has_sinhala and not re.search(r"[A-Za-z]{4,}", text_value):
         return text_value
 
@@ -7297,32 +7301,38 @@ def _solar_sop_translate(text_value, language):
 
         def translate_chunk(chunk):
             chunk = chunk.strip()
-            return translator.translate(chunk) if chunk else chunk
+            if not chunk:
+                return chunk
+            translated_chunk = translator.translate(chunk)
+            if not translated_chunk:
+                raise ValueError("Empty translation chunk")
+            return translated_chunk
 
         translated_paragraphs = []
-        for paragraph in text_value.split("\\n"):
-            if len(paragraph) <= 3000:
+        for paragraph in text_value.split("\n"):
+            if len(paragraph) <= 1200:
                 translated_paragraphs.append(translate_chunk(paragraph))
                 continue
+
             words = paragraph.split()
             chunks, current = [], ""
             for word in words:
                 candidate = f"{current} {word}".strip()
-                if len(candidate) > 2800 and current:
+                if len(candidate) > 1100 and current:
                     chunks.append(current)
                     current = word
                 else:
                     current = candidate
             if current:
                 chunks.append(current)
-            translated_paragraphs.append(" ".join(translate_chunk(c) for c in chunks))
+            translated_paragraphs.append(" ".join(translate_chunk(chunk) for chunk in chunks))
 
-        translated = "\\n".join(translated_paragraphs).strip()
+        translated = "\n".join(translated_paragraphs).strip()
         if not translated:
             raise ValueError("Empty translation")
-        if target == "si" and not re.search(r"[\\u0D80-\\u0DFF]", translated):
+        if target == "si" and not re.search(sinhala_pattern, translated):
             raise ValueError("Sinhala translation was not returned")
-        if target == "en" and re.search(r"[\\u0D80-\\u0DFF]", translated):
+        if target == "en" and re.search(sinhala_pattern, translated):
             raise ValueError("English translation still contains Sinhala script")
         return translated
     except Exception:
@@ -7333,13 +7343,28 @@ def _solar_sop_translate(text_value, language):
                 "Please check the internet connection and try again.")
 
 
+def _solar_sop_translation_failed(value):
+    """Identify the explicit fallback returned when the translation service fails."""
+    value = str(value or "")
+    return (
+        value.startswith("The SOP content could not be translated")
+        or value.startswith("මෙම SOP තොරතුරු සිංහලට පරිවර්තනය")
+    )
+
 def answer_from_mdp_sop(question, pages, language="English"):
     """Create a concise answer using only relevant MDP SOP passages and references."""
     # The local retriever indexes English words. Translate Sinhala questions to
     # English for retrieval, while retaining the original question in chat history.
     retrieval_question = question
-    if re.search(r"[\\u0D80-\\u0DFF]", question or ""):
+    if re.search(r"[඀-෿]", question or ""):
         retrieval_question = _solar_sop_translate(question, "English")
+        if _solar_sop_translation_failed(retrieval_question):
+            return (
+                "ඔබගේ සිංහල ප්‍රශ්නය තේරුම් ගැනීමට අවශ්‍ය පරිවර්තනය මේ මොහොතේ ලබාගත නොහැක. "
+                "කරුණාකර ප්‍රශ්නය ඉංග්‍රීසියෙන් ඇතුළත් කර නැවත උත්සාහ කරන්න."
+                if language == "Sinhala" else
+                "I couldn't translate the Sinhala question for SOP searching. Please try again or enter the question in English."
+            ), []
     matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=6)
     if not matches:
         no_result = (
@@ -7394,7 +7419,7 @@ def _solar_sop_detect_language(text_value):
         return "Sinhala"
     if any(term in value for term in english_requests):
         return "English"
-    return "Sinhala" if re.search(r"[\\u0D80-\\u0DFF]", value) else "English"
+    return "Sinhala" if re.search(r"[\u0D80-\u0DFF]", value) else "English"
 
 
 def _solar_sop_clarification_options(question, matches):
@@ -7611,8 +7636,12 @@ def render_solar_sop_agent(selected_plant=None):
                     "ක්‍රියාවලිය", "කෙසේද", "විස්තර"
                 )
                 retrieval_question = clean_question
-                if re.search(r"[\\u0D80-\\u0DFF]", clean_question):
+                if re.search(r"[඀-෿]", clean_question):
                     retrieval_question = _solar_sop_translate(clean_question, "English")
+                if _solar_sop_translation_failed(retrieval_question):
+                    st.session_state.solar_sop_stage = "language"
+                    st.session_state.solar_sop_pending_question = clean_question
+                    st.rerun()
                 preliminary_matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=6)
                 if any(term in retrieval_question.lower() for term in broad_terms):
                     st.session_state.solar_sop_options = _solar_sop_clarification_options(
@@ -7630,7 +7659,7 @@ def render_solar_sop_agent(selected_plant=None):
                     "Control measures and safety", "Responsible person and duties"
                 ]
                 if st.session_state.get("solar_sop_language") == "Sinhala":
-                    translated_choices = _solar_sop_translate("\\n".join(choices), "Sinhala")
+                    translated_choices = _solar_sop_translate("\n".join(choices), "Sinhala")
                     if translated_choices and "මෙම SOP තොරතුරු" not in translated_choices:
                         translated_lines = [line.strip() for line in translated_choices.splitlines() if line.strip()]
                         if len(translated_lines) == len(choices):
