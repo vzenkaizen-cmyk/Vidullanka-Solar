@@ -3259,19 +3259,17 @@ def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
 
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count completed record-anchored maintenance cycles for one plant.
+    """Count fully completed, record-anchored maintenance cycles.
 
-    Panel Cleaning:
-        All 80 tables must have a Completed record within the same six-month
-        cycle. Records saved on different dates are combined.
+    Panel Cleaning: every configured table must have a Completed record
+    within the same six-calendar-month cycle (two cycles per year).
 
-    Grass Cutting:
-        All 10 zones (or the existing HRN 1 table allocation) must be complete
-        within the same four-month cycle. Records saved on different dates
-        are combined.
+    Grass Cutting: every configured zone must have a Completed record
+    within the same four-calendar-month cycle (three cycles per year).
+    Grass Cutting and legacy Weeding Grass Cutting records are combined.
 
-    Each cycle starts from the first recorded activity for that plant and
-    category. Missing daily records or inactive months do not reset the cycle.
+    The first recorded activity for each plant/category is the cycle anchor.
+    Records on different dates are combined; daily records are not required.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
@@ -3284,9 +3282,11 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
+    months_per_cycle = 6 if is_panel else 4
 
-    # Find the first actual activity date independently for each plant/category.
-    first_record = (
+    # Start counting from the first activity date, including legacy weeding
+    # records for Grass Cutting, rather than from January or the report start.
+    anchor_date = (
         db.query(func.min(MaintenanceRecord.task_date))
         .filter(
             MaintenanceRecord.plant_id == plant.id,
@@ -3294,10 +3294,12 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         )
         .scalar()
     )
-    if not first_record:
+    if not anchor_date:
         return 0, 0
 
-    anchor_date = first_record
+    # Build every cycle that has started by the selected report end date.
+    # The final in-progress cycle is included in the denominator, but it
+    # cannot be marked complete until all required assets are completed.
     windows = maintenance_cycle_plan(
         start_date, end_date, category, anchor_date=anchor_date
     )
@@ -3326,9 +3328,8 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         expected_assets = [f"Z-{i:02d}" for i in range(1, 11)]
         zone_trace_map = {}
 
-    # Fetch from the first recorded activity, not the report's start date.
-    # This lets a cycle remain correctly evaluated when the report begins
-    # part-way through that cycle.
+    # Read all records from the anchor through the reporting end. A table or
+    # zone can be completed on any date within its cycle.
     period_rows = (
         db.query(MaintenanceRecord)
         .filter(
@@ -3337,66 +3338,63 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             MaintenanceRecord.task_date >= anchor_date,
             MaintenanceRecord.task_date <= end_date,
         )
-        .order_by(
-            MaintenanceRecord.task_date.asc(),
-            MaintenanceRecord.id.asc(),
-        )
+        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
         .all()
     )
 
     def _is_completed(value):
-        if value is True:
-            return True
-        if value is False or value is None:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
             return False
-        normalized = str(value).strip().lower()
-        if any(flag in normalized for flag in ("not completed", "pending", "failed", "red")):
+        if any(flag in normalized for flag in (
+            "not completed", "not-completed", "pending", "failed",
+            "not ok", "red",
+        )):
             return False
         return (
-            normalized in {"true", "1", "yes", "y", "completed", "complete",
-                           "done", "green", "ok"}
+            normalized in {
+                "true", "1", "yes", "y", "completed", "complete",
+                "done", "green", "ok",
+            }
             or "green - completed" in normalized
         )
 
     def _asset_key(value):
-        """Normalize legacy asset IDs so T1/T-1/T-01 and Z1/Z-01 match."""
+        """Normalize legacy asset IDs such as T1, T-1, T-01, and Z-01."""
         normalized = str(value or "").strip().upper()
-        normalized = re.sub(r"^(?:TABLE)[\\s_-]*", "T-", normalized)
-        normalized = re.sub(r"^(?:ZONE)[\\s_-]*", "Z-", normalized)
-        match = re.match(r"^([TZ])[\\s_-]*0*(\\d+)$", normalized)
+        normalized = re.sub(r"^(?:TABLE)[\s_-]*", "T-", normalized)
+        normalized = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", normalized)
+        match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", normalized)
         if match:
             return f"{match.group(1)}-{int(match.group(2)):02d}"
-        return re.sub(r"\\s+", "", normalized)
+        return re.sub(r"\s+", "", normalized)
 
     completed_cycles = 0
 
     for cycle_start, cycle_end in windows:
-        # Evaluate the whole anchored cycle, even if the selected report range
-        # begins after its start. The current cycle is naturally capped at end_date.
-        cycle_left = cycle_start
+        # Do not use records outside this exact anchored cycle.
         cycle_right = min(end_date, cycle_end)
-        if cycle_left > cycle_right or not expected_assets:
+        if cycle_start > cycle_right or not expected_assets:
             continue
 
         cycle_rows = [
             row for row in period_rows
-            if cycle_left <= row.task_date <= cycle_right
+            if cycle_start <= row.task_date <= cycle_right
         ]
 
         if is_panel:
-            completed_tables = {
+            completed_assets = {
                 _asset_key(row.asset_id)
                 for row in cycle_rows
                 if _is_completed(row.status)
             }
             cycle_complete = all(
-                _asset_key(table) in completed_tables
-                for table in expected_assets
+                _asset_key(asset) in completed_assets
+                for asset in expected_assets
             )
 
         elif is_hsn1:
             cycle_complete = True
-
             for zone, traces in zone_trace_map.items():
                 completed_traces = set()
                 has_explicit_table_checks = False
@@ -3404,20 +3402,17 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
 
                 for row in cycle_rows:
                     row_asset = _asset_key(row.asset_id)
-
                     if row_asset == _asset_key(zone):
                         details = parse_details(row)
                         checks = (
                             details.get("table_checks", {})
                             if isinstance(details, dict) else {}
                         )
-
                         if isinstance(checks, dict) and checks:
                             has_explicit_table_checks = True
                             for trace_id, value in checks.items():
                                 if _is_completed(value):
                                     completed_traces.add(_asset_key(trace_id))
-
                         if _is_completed(row.status) and not (
                             isinstance(checks, dict) and checks
                         ):
@@ -3440,7 +3435,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
                         for trace in traces
                     )
                 )
-
                 if not zone_complete:
                     cycle_complete = False
                     break
