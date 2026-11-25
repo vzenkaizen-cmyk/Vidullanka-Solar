@@ -7316,9 +7316,9 @@ def answer_from_mdp_sop(question, pages, language="English"):
     page_numbers = sorted({item["page"] for item in matches if item.get("page")})
 
     # Use only concise statements present in the retrieved SOP passages.
-    # Limit the answer to seven useful points so it is readable without losing
-    # the practical detail needed to understand the procedure.
-    points = []
+    # Join related statements into a readable explanation instead of numbering
+    # every sentence, which made the answer difficult to follow.
+    sentences = []
     for item in matches:
         raw = item.get("text", "") or ""
         for line in raw.splitlines():
@@ -7328,14 +7328,13 @@ def answer_from_mdp_sop(question, pages, language="English"):
             fragments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(])|(?<=।)\s+", line)
             for fragment in fragments:
                 fragment = fragment.strip(" •-\t")
-                if len(fragment) >= 24 and fragment not in points:
-                    points.append(fragment)
+                if len(fragment) >= 24 and fragment not in sentences:
+                    sentences.append(fragment)
 
-    if not points:
-        points = [" ".join(item.get("text", "").split()) for item in matches if item.get("text")]
+    if not sentences:
+        sentences = [" ".join(item.get("text", "").split()) for item in matches if item.get("text")]
 
-    points = points[:7]
-    answer_points = "\n".join(f"{index}. {point}" for index, point in enumerate(points, 1))
+    answer_text = " ".join(sentences[:7])
     response = (
         "**SOP Reference**\n\n"
         f"- **SOP No.:** {sop_number}\n"
@@ -7343,7 +7342,7 @@ def answer_from_mdp_sop(question, pages, language="English"):
         f"- **Relevant Page(s):** {', '.join(map(str, page_numbers)) if page_numbers else 'Not identified'}\n"
         f"- **Responsible Person:** {responsible}\n\n"
         "**Answer**\n\n"
-        f"{answer_points}\n\n"
+        f"{answer_text}\n\n"
         "*Follow the approved SOP and instructions from authorised site personnel.*"
     )
     return _solar_sop_translate(response, language), matches
@@ -7462,6 +7461,7 @@ def render_solar_sop_agent(selected_plant=None):
         "solar_sop_language": "English",
         "solar_sop_options": [],
         "solar_sop_last_question": "",
+        "solar_sop_topic_context": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -7521,15 +7521,19 @@ def render_solar_sop_agent(selected_plant=None):
                 st.rerun()
 
         # The selected language controls both the input guidance and response language.
-        language = st.session_state.solar_sop_language
+        language_options = ["English", "සිංහල"]
+        if st.session_state.get("solar_sop_language_selector") not in language_options:
+            st.session_state["solar_sop_language_selector"] = (
+                "English" if st.session_state.solar_sop_language == "English" else "සිංහල"
+            )
         language_choice = st.selectbox(
             "Preferred language / භාෂාව",
-            ["English", "සිංහල (Sinhala)"],
-            index=0 if language == "English" else 1,
+            options=language_options,
             key="solar_sop_language_selector",
+            help="Select English or සිංහල. The assistant will answer only in the selected language.",
         )
         selected_language = "English" if language_choice == "English" else "Sinhala"
-        if selected_language != language:
+        if selected_language != st.session_state.solar_sop_language:
             st.session_state.solar_sop_language = selected_language
             st.rerun()
         language = st.session_state.solar_sop_language
@@ -7593,6 +7597,7 @@ def render_solar_sop_agent(selected_plant=None):
                         response, matches = answer_from_mdp_sop(topic, pages, language)
                         st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
                         st.session_state.solar_sop_last_question = topic
+                        st.session_state.solar_sop_topic_context = topic
                         st.session_state.solar_sop_options = _solar_sop_localize_options(
                             _solar_sop_clarification_options(_solar_sop_retrieval_query(topic), matches), language)
                         st.rerun()
@@ -7612,7 +7617,11 @@ def render_solar_sop_agent(selected_plant=None):
                     with option_cols[index % 2]:
                         if st.button(option, key=f"solar_sop_followup_{index}_{len(st.session_state.solar_sop_chat_history)}",
                                      use_container_width=True):
-                            followup_question = f"{st.session_state.solar_sop_last_question} — {option}"
+                            topic_context = st.session_state.get("solar_sop_topic_context") or st.session_state.get("solar_sop_last_question", "")
+                            # Search the selected Explore-next subject directly, retaining
+                            # only the broad topic as context instead of chaining every
+                            # previous follow-up into the query.
+                            followup_question = f"{topic_context} {option}".strip()
                             st.session_state.solar_sop_chat_history.append({"role": "user", "content": option})
                             response, matches = answer_from_mdp_sop(followup_question, pages, language)
                             st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
@@ -7642,11 +7651,12 @@ def render_solar_sop_agent(selected_plant=None):
                     previous_question = st.session_state.get("solar_sop_last_question", "")
                     followup_markers = ("what about", "and ", "more details", "explain that", "this", "it",
                                         "ඒ ගැන", "එතකොට", "තව විස්තර", "එය")
-                    if previous_question and (len(clean_question.split()) <= 4 or
-                                              any(marker in clean_question.lower() for marker in followup_markers)):
-                        contextual_question = previous_question + " — " + clean_question
+                    if previous_question and any(marker in clean_question.lower() for marker in followup_markers):
+                        topic_context = st.session_state.get("solar_sop_topic_context") or previous_question
+                        contextual_question = f"{topic_context} {clean_question}".strip()
                     else:
                         contextual_question = clean_question
+                        st.session_state.solar_sop_topic_context = clean_question
 
                     response, matches = answer_from_mdp_sop(contextual_question, pages, language)
                     st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
@@ -7662,6 +7672,7 @@ def render_solar_sop_agent(selected_plant=None):
                     st.session_state.solar_sop_pending_question = ""
                     st.session_state.solar_sop_options = []
                     st.session_state.solar_sop_last_question = ""
+                    st.session_state.solar_sop_topic_context = ""
                     st.rerun()
             with action_col2:
                 if st.button(clear_label, key="clear_solar_sop_chat", use_container_width=True):
@@ -7670,6 +7681,7 @@ def render_solar_sop_agent(selected_plant=None):
                     st.session_state.solar_sop_options = []
                     st.session_state.solar_sop_stage = "question"
                     st.session_state.solar_sop_last_question = ""
+                    st.session_state.solar_sop_topic_context = ""
                     st.rerun()
         st.markdown(f'<div class="sop-agent-note">{note_text}</div>', unsafe_allow_html=True)
 
