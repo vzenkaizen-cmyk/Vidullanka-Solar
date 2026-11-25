@@ -7520,22 +7520,23 @@ def render_solar_sop_agent(selected_plant=None):
                 st.session_state.solar_sop_agent_open = False
                 st.rerun()
 
-        # The selected language controls both the input guidance and response language.
-        language_options = ["English", "සිංහල"]
-        if st.session_state.get("solar_sop_language_selector") not in language_options:
-            st.session_state["solar_sop_language_selector"] = (
-                "English" if st.session_state.solar_sop_language == "English" else "සිංහල"
-            )
-        language_choice = st.selectbox(
-            "Preferred language / භාෂාව",
-            options=language_options,
-            key="solar_sop_language_selector",
-            help="Select English or සිංහල. The assistant will answer only in the selected language.",
-        )
-        selected_language = "English" if language_choice == "English" else "Sinhala"
-        if selected_language != st.session_state.solar_sop_language:
-            st.session_state.solar_sop_language = selected_language
-            st.rerun()
+        # Language is selected inside the chat using two buttons (not a dropdown).
+        # The selected language is stored for the whole conversation and controls
+        # the question guidance, assistant responses, and suggested follow-up options.
+        language_col1, language_col2 = st.columns(2)
+        with language_col1:
+            english_label = "✓ English" if st.session_state.solar_sop_language == "English" else "English"
+            if st.button(english_label, key="solar_sop_choose_english", use_container_width=True):
+                if st.session_state.solar_sop_language != "English":
+                    st.session_state.solar_sop_language = "English"
+                    st.rerun()
+        with language_col2:
+            sinhala_label = "✓ සිංහල" if st.session_state.solar_sop_language == "Sinhala" else "සිංහල"
+            if st.button(sinhala_label, key="solar_sop_choose_sinhala", use_container_width=True):
+                if st.session_state.solar_sop_language != "Sinhala":
+                    st.session_state.solar_sop_language = "Sinhala"
+                    st.rerun()
+
         language = st.session_state.solar_sop_language
 
         try:
