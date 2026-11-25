@@ -7292,7 +7292,8 @@ def _solar_sop_translate(text_value, language):
 
 def answer_from_mdp_sop(question, pages, language="English"):
     """Create a concise answer using only relevant MDP SOP passages and references."""
-    matches = retrieve_mdp_sop_context(question, pages, limit=6)
+    retrieval_question = _solar_sop_retrieval_query(question)
+    matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=6)
     if not matches:
         no_result = (
             "I couldn't find this information in the uploaded MDP SOP. "
@@ -7334,6 +7335,20 @@ def answer_from_mdp_sop(question, pages, language="English"):
 def _solar_sop_detect_language(text_value):
     """Detect Sinhala script; otherwise default to English."""
     return "Sinhala" if re.search(r"[\u0D80-\u0DFF]", text_value or "") else "English"
+
+
+def _solar_sop_retrieval_query(question):
+    """Translate Sinhala questions to English for the English-keyword SOP retriever."""
+    if _solar_sop_detect_language(question) == "English":
+        return question
+    try:
+        from deep_translator import GoogleTranslator
+        translated = GoogleTranslator(source="si", target="en").translate(question)
+        return translated if translated and translated.strip() else question
+    except Exception:
+        # Keep the original text; the answer function will safely report if no
+        # matching SOP passage can be identified.
+        return question
 
 
 def _solar_sop_clarification_options(question, matches):
@@ -7382,6 +7397,27 @@ def _solar_sop_clarification_options(question, matches):
     ]
 
 
+def _solar_sop_localize_options(options, language):
+    """Keep suggested choices in the user's selected language."""
+    if language == "English":
+        return options
+    translations = {
+        "Cleaning method and mechanism": "පිරිසිදු කිරීමේ ක්‍රමය සහ යාන්ත්‍රණය",
+        "Cleaning equipment and materials": "පිරිසිදු කිරීමේ උපකරණ සහ ද්‍රව්‍ය",
+        "Cleaning steps and procedure": "පිරිසිදු කිරීමේ පියවර සහ ක්‍රියාපටිපාටිය",
+        "Control measures and safety": "පාලන ක්‍රියාමාර්ග සහ ආරක්ෂාව",
+        "Responsible person and duties": "වගකිවයුතු පුද්ගලයා සහ රාජකාරි",
+        "Inspection procedure": "පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "Inspection checklist": "පරීක්ෂණ පිරික්සුම් ලැයිස්තුව",
+        "Recording and reporting": "වාර්තා කිරීම සහ වාර්තා ඉදිරිපත් කිරීම",
+        "Grass cutting / weeding method": "තණකොළ කැපීම / වල් පැළෑටි ඉවත් කිරීමේ ක්‍රමය",
+        "Equipment and materials": "උපකරණ සහ ද්‍රව්‍ය",
+        "Work frequency and procedure": "කාර්යයේ වාර ගණන සහ ක්‍රියාපටිපාටිය",
+        "Procedure and work steps": "ක්‍රියාපටිපාටිය සහ වැඩ පියවර",
+    }
+    return [translations.get(option, _solar_sop_translate(option, "Sinhala")) for option in options]
+
+
 def _solar_sop_requested_site(question, selected_plant):
     """Resolve an explicitly mentioned site; otherwise use the selected site."""
     text_value = (question or "").upper()
@@ -7400,7 +7436,7 @@ def _solar_sop_requested_site(question, selected_plant):
 
 
 def render_solar_sop_agent(selected_plant=None):
-    """Interactive SOP chat: clarify the topic, select one language, then answer."""
+    """Guided, bilingual SOP chat for users who may be new to the solar website."""
     defaults = {
         "solar_sop_agent_open": False,
         "solar_sop_chat_history": [],
@@ -7408,6 +7444,7 @@ def render_solar_sop_agent(selected_plant=None):
         "solar_sop_stage": "question",
         "solar_sop_language": "English",
         "solar_sop_options": [],
+        "solar_sop_last_question": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -7418,7 +7455,7 @@ def render_solar_sop_agent(selected_plant=None):
     <style>
     .st-key-solar_sop_agent{
         position:fixed!important;right:18px!important;top:78px!important;
-        bottom:auto!important;transform:none!important;width:390px!important;
+        bottom:auto!important;transform:none!important;width:410px!important;
         max-width:calc(100vw - 36px)!important;max-height:calc(100vh - 96px)!important;
         overflow-y:auto!important;z-index:2147483000!important;
         background:#f7fbff!important;border:1px solid #b9d8f4!important;
@@ -7472,6 +7509,7 @@ def render_solar_sop_agent(selected_plant=None):
         site_name = (getattr(selected_plant, "name", "") or site_code or "Selected Site")
         site_label = site_name.replace(" Solar Power Plant", "").strip()
         is_mdp_site = site_code == "MDP" or "MDP" in site_name.upper()
+        language = st.session_state.solar_sop_language
 
         title_col, close_col = st.columns([5, 1])
         with title_col:
@@ -7480,7 +7518,7 @@ def render_solar_sop_agent(selected_plant=None):
                 unsafe_allow_html=True
             )
             subtitle = (
-                f"Ask questions from the {site_label} Solar SOP document"
+                "Your guided assistant for questions about the MDP Solar SOP"
                 if is_mdp_site else
                 f"The {site_label} Solar SOP has not been added to the assistant yet"
             )
@@ -7489,6 +7527,20 @@ def render_solar_sop_agent(selected_plant=None):
             if st.button("✕", key="close_solar_sop_agent", help="Minimise SOP Assistant"):
                 st.session_state.solar_sop_agent_open = False
                 st.rerun()
+
+        # Language is a persistent preference. Users can change it at any time.
+        language_label = "Preferred language" if language == "English" else "ඔබ කැමති භාෂාව"
+        language_choice = st.selectbox(
+            language_label,
+            ["English", "සිංහල"],
+            index=0 if language == "English" else 1,
+            key="solar_sop_language_selector",
+        )
+        selected_language = "English" if language_choice == "English" else "Sinhala"
+        if selected_language != st.session_state.solar_sop_language:
+            st.session_state.solar_sop_language = selected_language
+            st.rerun()
+        language = st.session_state.solar_sop_language
 
         try:
             pages, source_name = load_mdp_sop_pages() if is_mdp_site else ([], None)
@@ -7499,7 +7551,7 @@ def render_solar_sop_agent(selected_plant=None):
         if not is_mdp_site:
             st.warning(
                 f"The approved {site_label} site SOP has not been uploaded to this assistant. "
-                "Chat is disabled for this site."
+                "Only the MDP SOP is currently available, so chat is disabled for this site."
             )
         elif not source_name:
             st.warning("MDP SOP PDF not found. Add the MDP SOP PDF to the same project folder as this Python file.")
@@ -7508,23 +7560,85 @@ def render_solar_sop_agent(selected_plant=None):
         else:
             st.caption(f"Knowledge source: {source_name} • {len(pages)} indexed text sections")
 
-        with st.container(height=300, border=False):
-            if not st.session_state.solar_sop_chat_history:
-                st.markdown("**Hello!** Ask me a question about the MDP Solar SOP.")
-                st.caption("For example: Which panel cleaning mechanism is used?")
-            for entry in st.session_state.solar_sop_chat_history[-12:]:
-                with st.chat_message(entry["role"]):
-                    st.markdown(entry["content"])
+        if language == "English":
+            welcome = (
+                "**Hello! I'm your Solar SOP Assistant.**\n\n"
+                "You do not need to know the website or technical terms. Tell me what you want to do "
+                "or what you want to understand, and I will guide you step by step.\n\n"
+                "**You can ask a question or start with one of these topics:**"
+            )
+            starter_topics = [
+                "Panel cleaning",
+                "Grass cutting and weeding",
+                "Inspections and checklists",
+                "Safety and control measures",
+                "Responsible persons and duties",
+            ]
+            choose_prompt = "Which part would you like to know about?"
+            new_question_label = "New question"
+            clear_label = "Clear chat"
+            input_label = "Type your question here…"
+            note_text = "Answers are based only on the indexed MDP SOP. If a detail is not in the SOP, I will tell you rather than guess."
+        else:
+            welcome = (
+                "**ආයුබෝවන්! මම ඔබගේ Solar SOP සහායකයා වෙමි.**\n\n"
+                "මෙම වෙබ් අඩවිය හෝ තාක්ෂණික වචන පිළිබඳ දැනුමක් තිබීම අවශ්‍ය නැහැ. "
+                "ඔබට කිරීමට අවශ්‍ය දේ හෝ දැනගැනීමට අවශ්‍ය දේ කියන්න. මම පියවරෙන් පියවර මඟ පෙන්වන්නම්.\n\n"
+                "**ඔබට ප්‍රශ්නයක් ඇසීමට හෝ පහත මාතෘකාවකින් ආරම්භ කිරීමට හැකියි:**"
+            )
+            starter_topics = [
+                "සූර්ය පැනල පිරිසිදු කිරීම",
+                "තණකොළ කැපීම සහ වල් පැළෑටි ඉවත් කිරීම",
+                "පරීක්ෂණ සහ පිරික්සුම් ලැයිස්තු",
+                "ආරක්ෂාව සහ පාලන ක්‍රියාමාර්ග",
+                "වගකිවයුතු පුද්ගලයන් සහ රාජකාරි",
+            ]
+            choose_prompt = "ඔබට දැනගැනීමට අවශ්‍ය කුමන කොටසද?"
+            new_question_label = "නව ප්‍රශ්නයක්"
+            clear_label = "සංවාදය මකන්න"
+            input_label = "ඔබගේ ප්‍රශ්නය මෙහි ලියන්න…"
+            note_text = "පිළිතුරු ලබා දෙන්නේ MDP SOP ලේඛනයේ ඇති තොරතුරු මත පමණි. ලේඛනයේ නොමැති තොරතුරු අනුමාන කර ලබා නොදෙමි."
 
-        if is_mdp_site and pages:
+        if not is_mdp_site or not pages:
+            if st.session_state.solar_sop_chat_history:
+                for entry in st.session_state.solar_sop_chat_history[-12:]:
+                    with st.chat_message(entry["role"]):
+                        st.markdown(entry["content"])
+        else:
+            # Conversation transcript
+            with st.container(height=330, border=False):
+                if not st.session_state.solar_sop_chat_history:
+                    st.markdown(welcome)
+                for entry in st.session_state.solar_sop_chat_history[-16:]:
+                    with st.chat_message(entry["role"]):
+                        st.markdown(entry["content"])
+
+            # Give first-time users useful starting points without forcing a choice.
+            if not st.session_state.solar_sop_chat_history:
+                st.markdown("**" + ("Start with a topic" if language == "English" else "මාතෘකාවක් තෝරා ආරම්භ කරන්න") + "**")
+                topic_cols = st.columns(2)
+                for index, topic in enumerate(starter_topics):
+                    with topic_cols[index % 2]:
+                        if st.button(topic, key=f"solar_sop_starter_{index}", use_container_width=True):
+                            st.session_state.solar_sop_chat_history.append(
+                                {"role": "user", "content": topic}
+                            )
+                            st.session_state.solar_sop_pending_question = topic
+                            st.session_state.solar_sop_options = _solar_sop_clarification_options(topic, retrieve_mdp_sop_context(topic, pages, limit=6))
+                            st.session_state.solar_sop_stage = "clarify"
+                            st.rerun()
+
             with st.form("solar_sop_question_form", clear_on_submit=True):
                 question = st.text_input(
-                    "Ask about the MDP SOP",
-                    placeholder="Type your SOP question…",
+                    input_label,
+                    placeholder=input_label,
                     label_visibility="collapsed",
                     key="solar_sop_question_input",
                 )
-                submitted = st.form_submit_button("Send", use_container_width=True)
+                submitted = st.form_submit_button(
+                    "Send" if language == "English" else "යවන්න",
+                    use_container_width=True
+                )
 
             if submitted and question.strip():
                 clean_question = question.strip()
@@ -7538,104 +7652,104 @@ def render_solar_sop_agent(selected_plant=None):
                         "ORK": "ORK", "DPV": "DPV"
                     }
                     other_site = site_labels.get(requested_site, requested_site or "selected site")
-                    st.session_state.solar_sop_chat_history.append({
-                        "role": "assistant",
-                        "content": (
-                            f"The {other_site} Solar SOP has not been added yet. "
-                            "Only the MDP Solar SOP is currently available."
-                        )
-                    })
+                    response = (
+                        f"The {other_site} Solar SOP has not been added yet. Only the MDP Solar SOP is currently available."
+                        if language == "English" else
+                        f"{other_site} සූර්ය බලාගාරයේ SOP ලේඛනය තවමත් එක් කර නොමැත. දැනට ලබාගත හැක්කේ MDP Solar SOP ලේඛනය පමණි."
+                    )
+                    st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
                     st.session_state.solar_sop_stage = "question"
                     st.rerun()
 
-                st.session_state.solar_sop_pending_question = clean_question
-                inferred_language = _solar_sop_detect_language(clean_question)
-                st.session_state.solar_sop_language = inferred_language
-
-                broad_terms = (
-                    "mechanism", "process", "procedure", "method", "how does",
-                    "how is", "explain", "details", "mechanism", "ක්‍රමවේදය",
-                    "ක්‍රියාවලිය", "කෙසේද", "විස්තර"
+                # Short follow-up questions inherit the immediately previous topic.
+                previous_question = st.session_state.get("solar_sop_last_question", "")
+                followup_markers = (
+                    "what about", "and ", "more details", "explain that", "this", "it",
+                    "ඒ ගැන", "එතකොට", "තව විස්තර", "එය"
                 )
-                preliminary_matches = retrieve_mdp_sop_context(clean_question, pages, limit=6)
-                if any(term in clean_question.lower() for term in broad_terms):
-                    st.session_state.solar_sop_options = _solar_sop_clarification_options(
-                        clean_question, preliminary_matches
+                if previous_question and (
+                    len(clean_question.split()) <= 4
+                    or any(marker in clean_question.lower() for marker in followup_markers)
+                ):
+                    contextual_question = previous_question + " — " + clean_question
+                else:
+                    contextual_question = clean_question
+
+                st.session_state.solar_sop_pending_question = contextual_question
+                st.session_state.solar_sop_last_question = clean_question
+                preliminary_matches = retrieve_mdp_sop_context(contextual_question, pages, limit=6)
+                broad_terms = (
+                    "mechanism", "process", "procedure", "method", "how", "explain",
+                    "details", "tell me", "help", "panel", "clean", "grass", "weed",
+                    "inspection", "safety", "control", "responsible", "ක්‍රමවේදය",
+                    "ක්‍රියාවලිය", "කෙසේද", "විස්තර", "උදව්", "පිරිසිදු", "පරීක්ෂණ"
+                )
+                is_broad = (
+                    len(clean_question.split()) <= 5
+                    or any(term in clean_question.lower() for term in broad_terms)
+                    or len(preliminary_matches) > 2
+                )
+                if is_broad:
+                    st.session_state.solar_sop_options = _solar_sop_localize_options(
+                        _solar_sop_clarification_options(retrieval_question, preliminary_matches),
+                        language
                     )
                     st.session_state.solar_sop_stage = "clarify"
                 else:
-                    st.session_state.solar_sop_stage = "language"
+                    response, _ = answer_from_mdp_sop(contextual_question, pages, language)
+                    st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
+                    st.session_state.solar_sop_pending_question = ""
+                    st.session_state.solar_sop_stage = "question"
                 st.rerun()
 
+            # Guide users through a selected sub-topic before presenting the SOP answer.
             if st.session_state.solar_sop_stage == "clarify":
-                st.markdown("**Which part would you like to know about?**")
-                choices = st.session_state.solar_sop_options or [
-                    "Procedure and work steps", "Equipment and materials",
-                    "Control measures and safety", "Responsible person and duties"
-                ]
+                st.markdown("**" + choose_prompt + "**")
+                choices = st.session_state.solar_sop_options or starter_topics
                 selected_aspect = st.radio(
                     "Choose a topic",
                     choices,
                     key="solar_sop_clarification_choice",
                     label_visibility="collapsed",
                 )
-                if st.button("Continue", key="solar_sop_clarification_continue", use_container_width=True):
-                    st.session_state.solar_sop_pending_question += " — " + selected_aspect
-                    st.session_state.solar_sop_chat_history.append({
-                        "role": "assistant",
-                        "content": f"**Selected topic:** {selected_aspect}"
-                    })
-                    st.session_state.solar_sop_stage = "language"
-                    st.rerun()
-
-            if st.session_state.solar_sop_stage == "language":
-                st.markdown("**Choose the answer language**")
-                lang_col1, lang_col2 = st.columns(2)
-                with lang_col1:
-                    if st.button("English", key="solar_sop_language_english", use_container_width=True):
-                        st.session_state.solar_sop_language = "English"
-                        response, _ = answer_from_mdp_sop(
-                            st.session_state.solar_sop_pending_question, pages, "English"
-                        )
-                        st.session_state.solar_sop_chat_history.append(
-                            {"role": "assistant", "content": response}
-                        )
-                        st.session_state.solar_sop_pending_question = ""
-                        st.session_state.solar_sop_stage = "question"
-                        st.rerun()
-                with lang_col2:
-                    if st.button("සිංහල", key="solar_sop_language_sinhala", use_container_width=True):
-                        st.session_state.solar_sop_language = "Sinhala"
-                        response, _ = answer_from_mdp_sop(
-                            st.session_state.solar_sop_pending_question, pages, "Sinhala"
-                        )
-                        st.session_state.solar_sop_chat_history.append(
-                            {"role": "assistant", "content": response}
-                        )
-                        st.session_state.solar_sop_pending_question = ""
-                        st.session_state.solar_sop_stage = "question"
-                        st.rerun()
-
-            action_col1, action_col2 = st.columns(2)
-            with action_col1:
-                if st.button("New question", key="solar_sop_new_question", use_container_width=True):
+                if st.button(
+                    "Continue" if language == "English" else "ඉදිරියට යන්න",
+                    key="solar_sop_clarification_continue",
+                    use_container_width=True
+                ):
+                    st.session_state.solar_sop_chat_history.append(
+                        {"role": "user", "content": selected_aspect}
+                    )
+                    combined_question = (
+                        st.session_state.solar_sop_pending_question + " — " + selected_aspect
+                    )
+                    response, _ = answer_from_mdp_sop(combined_question, pages, language)
+                    st.session_state.solar_sop_chat_history.append(
+                        {"role": "assistant", "content": response}
+                    )
+                    st.session_state.solar_sop_last_question = combined_question
                     st.session_state.solar_sop_pending_question = ""
                     st.session_state.solar_sop_options = []
                     st.session_state.solar_sop_stage = "question"
                     st.rerun()
+
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                if st.button(new_question_label, key="solar_sop_new_question", use_container_width=True):
+                    st.session_state.solar_sop_pending_question = ""
+                    st.session_state.solar_sop_options = []
+                    st.session_state.solar_sop_stage = "question"
+                    st.session_state.solar_sop_last_question = ""
+                    st.rerun()
             with action_col2:
-                if st.button("Clear chat", key="clear_solar_sop_chat", use_container_width=True):
+                if st.button(clear_label, key="clear_solar_sop_chat", use_container_width=True):
                     st.session_state.solar_sop_chat_history = []
                     st.session_state.solar_sop_pending_question = ""
                     st.session_state.solar_sop_options = []
                     st.session_state.solar_sop_stage = "question"
+                    st.session_state.solar_sop_last_question = ""
                     st.rerun()
 
-        note_text = (
-            "Answers are based only on the indexed MDP SOP. Follow the approved procedure and authorised personnel."
-            if is_mdp_site else
-            f"The {site_label} SOP is not yet indexed."
-        )
         st.markdown(f'<div class="sop-agent-note">{note_text}</div>', unsafe_allow_html=True)
 
 
