@@ -7411,23 +7411,76 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Return the complete answer in the selected language only."""
+    """Translate the answer into the selected language and preserve accurate bilingual technical terms."""
     if language == "English":
         return text_value
 
-    # Translate the complete response, including headings and SOP metadata labels.
-    # Do not append the English source text if translation is unavailable.
+    # Standard Sinhala equivalents for technical terms used in solar O&M.
+    # Keep the English term beside the Sinhala equivalent so staff can identify
+    # the exact equipment/component named in the original SOP.
+    technical_terms = [
+        (r"\\bMC4 connectors?\\b", "MC4 සම්බන්ධක (MC4 connectors)"),
+        (r"\\bDC switches?\\b", "DC ස්විච් (DC switches)"),
+        (r"\\bAC combiner box\\b", "AC සංයෝජක පෙට්ටිය (AC combiner box)"),
+        (r"\\binverter communication\\b", "ඉන්වර්ටර් සන්නිවේදනය (inverter communication)"),
+        (r"\\binverters?\\b", "ඉන්වර්ටර් (inverter)"),
+        (r"\\bventilation\\b", "වාතාශ්‍රය (ventilation)"),
+        (r"\\bairflow\\b", "වායු ප්‍රවාහය (airflow)"),
+        (r"\\bcooling fans?\\b", "සිසිලන පංකා (cooling fans)"),
+        (r"\\bcorrosion\\b", "විඛාදනය (corrosion)"),
+        (r"\\bjunction box\\b", "සන්ධි පෙට්ටිය (junction box)"),
+        (r"\\bdiodes?\\b", "ඩයෝඩ (diodes)"),
+        (r"\\bfront glass\\b", "ඉදිරිපස වීදුරුව (front glass)"),
+        (r"\\bback glass\\b", "පසුපස වීදුරුව (back glass)"),
+        (r"\\bDC cable\\b", "DC කේබලය (DC cable)"),
+        (r"\\bAC unit\\b", "වායු සමීකරණ ඒකකය (AC unit)"),
+        (r"\\bcompressor\\b", "සම්පීඩකය (compressor)"),
+        (r"\\bcondenser coil\\b", "සංඝනක දඟරය (condenser coil)"),
+        (r"\\bevaporator coil\\b", "වාෂ්පකාරක දඟරය (evaporator coil)"),
+        (r"\\bair filter\\b", "වායු පෙරහන (air filter)"),
+        (r"\\bblower motor\\b", "වායු පිඹින මෝටරය (blower motor)"),
+        (r"\\bisolator\\b", "විසන්ධිකාරකය (isolator)"),
+        (r"\\btransformer\\b", "ට්‍රාන්ස්ෆෝමරය (transformer)"),
+        (r"\\bswitchyard\\b", "ස්විච් අංගනය (switchyard)"),
+        (r"\\bmaintenance\\b", "නඩත්තුව (maintenance)"),
+        (r"\\binspection\\b", "පරීක්ෂාව (inspection)"),
+        (r"\\bsafety precautions\\b", "ආරක්ෂක පූර්වෝපායන් (safety precautions)"),
+        (r"\\bpersonal protective equipment\\b", "පුද්ගලික ආරක්ෂක උපකරණ (personal protective equipment)"),
+        (r"\\bPPE\\b", "පුද්ගලික ආරක්ෂක උපකරණ (PPE)"),
+        (r"\\bshutdown\\b", "ක්‍රියා විරහිත කිරීම (shutdown)"),
+        (r"\\bisolation\\b", "විදුලි සැපයුමෙන් වෙන් කිරීම (isolation)"),
+        (r"\\bchecklist\\b", "පිරික්සුම් ලැයිස්තුව (checklist)"),
+        (r"\\bcommunication\\b", "සන්නිවේදනය (communication)"),
+        (r"\\btemperature\\b", "උෂ්ණත්වය (temperature)"),
+        (r"\\bvibration\\b", "කම්පනය (vibration)"),
+        (r"\\bnoise\\b", "ශබ්දය (noise)"),
+    ]
+
     try:
         from deep_translator import GoogleTranslator
         translated = GoogleTranslator(source="auto", target="si").translate(text_value)
-        if translated and re.search(r"[\u0D80-\u0DFF]", translated):
+        if translated and re.search(r"[\\u0D80-\\u0DFF]", translated):
+            # Add the verified Sinhala equivalent and original English technical
+            # term for terms actually present in the source answer.
+            glossary_lines = []
+            for pattern, bilingual_term in technical_terms:
+                if re.search(pattern, text_value, flags=re.IGNORECASE):
+                    if bilingual_term not in glossary_lines:
+                        glossary_lines.append(bilingual_term)
+
+            if glossary_lines:
+                translated += (
+                    "\\n\\n**තාක්ෂණික වචන (Technical Terms)**\\n\\n"
+                    + "\\n".join(f"- {term}" for term in glossary_lines)
+                )
             return translated
     except Exception:
         pass
 
     return (
-        "සිංහල පිළිතුර ලබාගැනීමට මේ මොහොතේ නොහැකියි. "
-        "කරුණාකර නැවත උත්සාහ කරන්න."
+        "මේ මොහොතේ සිංහල පරිවර්තනය ලබාගත නොහැක. "
+        "කරුණාකර නැවත උත්සාහ කරන්න. "
+        "Please try again to receive the Sinhala translation."
     )
 
 
