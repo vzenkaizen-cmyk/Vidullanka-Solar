@@ -7147,6 +7147,7 @@ def load_mdp_sop_pages():
 
     base_dir = Path(__file__).resolve().parent
     candidates = [
+        base_dir / "MDP_SOP_2026_Draft(6).pdf",
         base_dir / "MDP_SOP_2026_Draft(5).pdf",
         base_dir / "MDP_SOP_2026_Draft(4).pdf",
         base_dir / "MDP_SOP_2026_Draft(1).pdf",
@@ -7202,7 +7203,10 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
     # merely repeat common words such as "maintenance" or "inspection".
     topic_headings = [
         (("a/c", "air conditioning", "air-conditioning", "ac maintenance"), ("a/c maintenance", "air-conditioning maintenance")),
-        (("inverter",), ("inverters inspection", "inverter inspection")),
+        (("inverter", "communication status", "inverter communication", "scada communication",
+          "mc4 connector", "mc4 connection", "dc switch", "cooling fan",
+          "ventilation duct", "ac combiner box", "corrosion inspection"),
+         ("inverters inspection", "inverter inspection")),
         (("panel inspection",), ("panel inspection",)),
         (("daily inspection",), ("daily inspection",)),
         (("dc cable", "dc cables"), ("dc cables inspection", "dc cable inspection")),
@@ -7238,6 +7242,41 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
             def _header_sop(page_body):
                 found = re.search(r"SOP\s*#\s*:\s*(VLL\s*[\\/ ]*\s*MDP\s*[\\/ ]*\s*SOP\s*[-_/ ]*\s*\d+)", page_body, re.I)
                 return re.sub(r"\s+", "", found.group(1)).lower() if found else None
+            # Route known MDP inspection topics by the SOP number printed in
+            # the page header. This is more reliable than matching a generic
+            # phrase such as "daily inspection" that may appear in another SOP.
+            expected_sop = None
+            if any(t in lower_question for t in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
+                expected_sop = "sop-011"
+            elif "dc cable" in lower_question or "dc cables" in lower_question:
+                expected_sop = "sop-008"
+            elif "mdb" in lower_question:
+                expected_sop = "sop-009"
+            elif any(t in lower_question for t in ("switchyard", "switch yard", "transformer")):
+                expected_sop = "sop-010"
+            elif any(t in lower_question for t in ("lockout", "tagout", "loto")):
+                expected_sop = "sop-003"
+            elif "daily inspection" in lower_question or "daily check" in lower_question:
+                expected_sop = "sop-005"
+            elif "panel inspection" in lower_question:
+                expected_sop = "sop-006"
+            elif any(t in lower_question for t in (
+                "inverter", "communication status", "inverter communication",
+                "scada communication", "mc4 connector", "mc4 connection",
+                "dc switch", "cooling fan", "ventilation duct",
+                "ac combiner box", "corrosion inspection"
+            )):
+                expected_sop = "sop-007"
+
+            if expected_sop:
+                exact_anchors = [
+                    page_no for page_no, body in page_texts.items()
+                    if (_header_sop(body) or "").endswith(expected_sop)
+                ]
+                if exact_anchors:
+                    anchors = exact_anchors
+
+            anchor = min(anchors)
             anchor_code = _header_sop(page_texts.get(anchor, ""))
             section_page_numbers = []
             for page_no in sorted(p for p in page_texts if p >= anchor):
@@ -7268,7 +7307,7 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
     expanded = set(tokens)
     for token in tokens:
         expanded.update(synonym_groups.get(token, set()))
-    if re.search(r"\\ba\\s*/\\s*c\\b|\\bac\\s+maintenance\\b|air[- ]conditioning", text_value):
+    if re.search(r"\ba\\s*/\\s*c\\b|\\bac\\s+maintenance\\b|air[- ]conditioning", text_value):
         expanded.update({"ac", "air", "conditioning", "compressor", "condenser", "evaporator", "filter"})
     if "inverter" in text_value:
         expanded.update({"inverter", "inverters"})
@@ -7398,7 +7437,8 @@ def _solar_sop_responsible_person(matches, pages=None):
 
     text_value = "\n".join(item.get("text", "") for item in (matches or []))
     patterns = [
-        r"(?im)^\s*(?:Responsible Person|Person Responsible|Responsible Officer|SOP Owner|Owner|Responsibility)\s*[:\-]\s*(.+?)(?=\s+Approval\s*:|$)",
+        r"(?im)^\s*(?:Responsible Person|Person Responsible|Responsible Officer|Owner|Responsibility)\s*[:\-]\s*(.+?)(?=\s+Approval\s*:|$)",
+        r"(?i)performed\s+(?:on\s+a\s+monthly\s+basis\s+)?by\s+([^.;]+)",
         r"(?im)^\s*(?:Prepared By|Reviewed By|Approved By)\s*[:\-]\s*(.+?)\s*$",
     ]
     found_values = []
@@ -7419,49 +7459,104 @@ def _solar_sop_translate(text_value, language):
     # Keep the English term beside the Sinhala equivalent so staff can identify
     # the exact equipment/component named in the original SOP.
     technical_terms = [
-        (r"\\bMC4 connectors?\\b", "MC4 සම්බන්ධක (MC4 connectors)"),
-        (r"\\bDC switches?\\b", "DC ස්විච් (DC switches)"),
-        (r"\\bAC combiner box\\b", "AC සංයෝජක පෙට්ටිය (AC combiner box)"),
-        (r"\\binverter communication\\b", "ඉන්වර්ටර් සන්නිවේදනය (inverter communication)"),
-        (r"\\binverters?\\b", "ඉන්වර්ටර් (inverter)"),
-        (r"\\bventilation\\b", "වාතාශ්‍රය (ventilation)"),
-        (r"\\bairflow\\b", "වායු ප්‍රවාහය (airflow)"),
-        (r"\\bcooling fans?\\b", "සිසිලන පංකා (cooling fans)"),
-        (r"\\bcorrosion\\b", "විඛාදනය (corrosion)"),
-        (r"\\bjunction box\\b", "සන්ධි පෙට්ටිය (junction box)"),
-        (r"\\bdiodes?\\b", "ඩයෝඩ (diodes)"),
-        (r"\\bfront glass\\b", "ඉදිරිපස වීදුරුව (front glass)"),
-        (r"\\bback glass\\b", "පසුපස වීදුරුව (back glass)"),
-        (r"\\bDC cable\\b", "DC කේබලය (DC cable)"),
-        (r"\\bAC unit\\b", "වායු සමීකරණ ඒකකය (AC unit)"),
-        (r"\\bcompressor\\b", "සම්පීඩකය (compressor)"),
-        (r"\\bcondenser coil\\b", "සංඝනක දඟරය (condenser coil)"),
-        (r"\\bevaporator coil\\b", "වාෂ්පකාරක දඟරය (evaporator coil)"),
-        (r"\\bair filter\\b", "වායු පෙරහන (air filter)"),
-        (r"\\bblower motor\\b", "වායු පිඹින මෝටරය (blower motor)"),
-        (r"\\bisolator\\b", "විසන්ධිකාරකය (isolator)"),
-        (r"\\btransformer\\b", "ට්‍රාන්ස්ෆෝමරය (transformer)"),
-        (r"\\bswitchyard\\b", "ස්විච් අංගනය (switchyard)"),
-        (r"\\bmaintenance\\b", "නඩත්තුව (maintenance)"),
-        (r"\\binspection\\b", "පරීක්ෂාව (inspection)"),
-        (r"\\bsafety precautions\\b", "ආරක්ෂක පූර්වෝපායන් (safety precautions)"),
-        (r"\\bpersonal protective equipment\\b", "පුද්ගලික ආරක්ෂක උපකරණ (personal protective equipment)"),
-        (r"\\bPPE\\b", "පුද්ගලික ආරක්ෂක උපකරණ (PPE)"),
-        (r"\\bshutdown\\b", "ක්‍රියා විරහිත කිරීම (shutdown)"),
-        (r"\\bisolation\\b", "විදුලි සැපයුමෙන් වෙන් කිරීම (isolation)"),
-        (r"\\bchecklist\\b", "පිරික්සුම් ලැයිස්තුව (checklist)"),
-        (r"\\bcommunication\\b", "සන්නිවේදනය (communication)"),
-        (r"\\btemperature\\b", "උෂ්ණත්වය (temperature)"),
-        (r"\\bvibration\\b", "කම්පනය (vibration)"),
-        (r"\\bnoise\\b", "ශබ්දය (noise)"),
+        (r"\bMC4 connectors?\\b", "MC4 සම්බන්ධක (MC4 connectors)"),
+        (r"\bDC switches?\\b", "DC ස්විච් (DC switches)"),
+        (r"\bAC combiner box\\b", "AC සංයෝජක පෙට්ටිය (AC combiner box)"),
+        (r"\binverter communication\\b", "ඉන්වර්ටර් සන්නිවේදනය (inverter communication)"),
+        (r"\binverters?\\b", "ඉන්වර්ටර් (inverter)"),
+        (r"\bventilation\\b", "වාතාශ්‍රය (ventilation)"),
+        (r"\bairflow\\b", "වායු ප්‍රවාහය (airflow)"),
+        (r"\bcooling fans?\\b", "සිසිලන පංකා (cooling fans)"),
+        (r"\bcorrosion\\b", "විඛාදනය (corrosion)"),
+        (r"\bjunction box\\b", "සන්ධි පෙට්ටිය (junction box)"),
+        (r"\bdiodes?\\b", "ඩයෝඩ (diodes)"),
+        (r"\bfront glass\\b", "ඉදිරිපස වීදුරුව (front glass)"),
+        (r"\bback glass\\b", "පසුපස වීදුරුව (back glass)"),
+        (r"\bDC cable\\b", "DC කේබලය (DC cable)"),
+        (r"\bAC unit\\b", "වායු සමීකරණ ඒකකය (AC unit)"),
+        (r"\bcompressor\\b", "සම්පීඩකය (compressor)"),
+        (r"\bcondenser coil\\b", "සංඝනක දඟරය (condenser coil)"),
+        (r"\bevaporator coil\\b", "වාෂ්පකාරක දඟරය (evaporator coil)"),
+        (r"\bair filter\\b", "වායු පෙරහන (air filter)"),
+        (r"\bblower motor\\b", "වායු පිඹින මෝටරය (blower motor)"),
+        (r"\bisolator\\b", "විසන්ධිකාරකය (isolator)"),
+        (r"\btransformer\\b", "ට්‍රාන්ස්ෆෝමරය (transformer)"),
+        (r"\bswitchyard\\b", "ස්විච් අංගනය (switchyard)"),
+        (r"\bmaintenance\\b", "නඩත්තුව (maintenance)"),
+        (r"\binspection\\b", "පරීක්ෂාව (inspection)"),
+        (r"\bsafety precautions\\b", "ආරක්ෂක පූර්වෝපායන් (safety precautions)"),
+        (r"\bpersonal protective equipment\\b", "පුද්ගලික ආරක්ෂක උපකරණ (personal protective equipment)"),
+        (r"\bPPE\\b", "පුද්ගලික ආරක්ෂක උපකරණ (PPE)"),
+        (r"\bshutdown\\b", "ක්‍රියා විරහිත කිරීම (shutdown)"),
+        (r"\bisolation\\b", "විදුලි සැපයුමෙන් වෙන් කිරීම (isolation)"),
+        (r"\bchecklist\\b", "පිරික්සුම් ලැයිස්තුව (checklist)"),
+        (r"\bcommunication\\b", "සන්නිවේදනය (communication)"),
+        (r"\btemperature\\b", "උෂ්ණත්වය (temperature)"),
+        (r"\bvibration\\b", "කම්පනය (vibration)"),
+        (r"\bnoise\\b", "ශබ්දය (noise)"),
     ]
+
+    sop_sentence_translations = {
+        "Access the SCADA/monitoring system and confirm the inverter is online, data is updating continuously, and there are no communication alarms.":
+            "SCADA/අධීක්ෂණ පද්ධතියට පිවිස, ඉන්වර්ටරය මාර්ගගත (online) තත්ත්වයේ පවතින බව, දත්ත අඛණ්ඩව යාවත්කාලීන වන බව සහ සන්නිවේදන අනතුරු ඇඟවීම් නොමැති බව තහවුරු කරන්න.",
+        "Accept if the inverter is online, there are no communication alarms, and data updates correctly.":
+            "ඉන්වර්ටරය මාර්ගගත (online) තත්ත්වයේ පවතින්නේ නම්, සන්නිවේදන අනතුරු ඇඟවීම් නොමැති නම් සහ දත්ත නිවැරදිව යාවත්කාලීන වන්නේ නම් එය පිළිගන්න.",
+        "Visually inspect accessible MC4 connectors, confirm locking clips are engaged, and check for overheating signs or damaged connector housings.":
+            "පරීක්ෂා කළ හැකි MC4 සම්බන්ධක දෘශ්‍යමය වශයෙන් පරීක්ෂා කරන්න. අගුළු ක්ලිප් නිසි ලෙස සම්බන්ධ වී ඇති බව තහවුරු කර, අධික උෂ්ණත්වයේ ලකුණු හෝ සම්බන්ධක ආවරණවල හානි තිබේදැයි පරීක්ෂා කරන්න.",
+        "Inspect the switch position indicator and body for damage and check for abnormal heating or discoloration.":
+            "ස්විචයේ පිහිටුම් දර්ශකය සහ බාහිර කොටස හානි වී ඇත්දැයි පරීක්ෂා කරන්න. අසාමාන්‍ය ලෙස රත් වීමක් හෝ වර්ණ වෙනස් වීමක් තිබේදැයි ද පරීක්ෂා කරන්න.",
+        "Operate the switch only when authorized and safe.":
+            "අවසර ලබා ඇති සහ ආරක්ෂිත අවස්ථාවකදී පමණක් ස්විචය ක්‍රියාත්මක කරන්න.",
+        "Check fan operation and fault alarms, verify proper airflow, and inspect fan guards and ventilation openings.":
+            "විදුලි පංකා ක්‍රියාකාරීත්වය සහ දෝෂ අනතුරු ඇඟවීම් පරීක්ෂා කරන්න. නිසි වායු ප්‍රවාහයක් පවතින බව තහවුරු කර, පංකා ආරක්ෂක ආවරණ සහ වාතාශ්‍ර විවර පරීක්ෂා කරන්න.",
+        "Inspect ventilation ducts for dust, leaves, insects, and blockages.":
+            "වාතාශ්‍ර නාලිකාවල දූවිලි, කොළ, කෘමීන් හෝ අවහිරතා තිබේදැයි පරීක්ෂා කරන්න.",
+        "Inspect for loose connections, burn marks, water ingress, breaker condition, and panel cleanliness.":
+            "ලිහිල් සම්බන්ධතා, පිළිස්සුම් සලකුණු, ජලය ඇතුළු වීමේ ලකුණු, පරිපථ කඩනයේ තත්ත්වය සහ පුවරුවේ පිරිසිදුකම පරීක්ෂා කරන්න.",
+        "Inspect the inverter casing, fasteners, mounting brackets, cable glands, and combiner box surfaces for damage or looseness.":
+            "ඉන්වර්ටර් ආවරණය, සවි කිරීම්, සවිකිරීමේ වරහන්, කේබල් ග්‍රන්ථි සහ සංයෝජක පෙට්ටියේ මතුපිට හානි වී තිබේද හෝ ලිහිල් වී තිබේදැයි පරීක්ෂා කරන්න.",
+    }
 
     try:
         from deep_translator import GoogleTranslator
-        translated = GoogleTranslator(source="auto", target="si").translate(text_value)
-        if translated and re.search(r"[\\u0D80-\\u0DFF]", translated):
-            # Add the verified Sinhala equivalent and original English technical
-            # term for terms actually present in the source answer.
+        # Protect source-verified Sinhala sentences from machine re-translation.
+        translation_input = text_value
+        protected_phrases = []
+        for index, (english_phrase, sinhala_phrase) in enumerate(sop_sentence_translations.items()):
+            if english_phrase in translation_input:
+                token = f"SOPSIHILAPROTECTEDTOKEN{index}END"
+                translation_input = translation_input.replace(english_phrase, token)
+                protected_phrases.append((token, sinhala_phrase))
+        translated = GoogleTranslator(source="auto", target="si").translate(translation_input)
+        if translated:
+            for token, sinhala_phrase in protected_phrases:
+                translated = translated.replace(token, sinhala_phrase)
+        if translated and re.search(r"[\u0D80-\u0DFF]", translated):
+            # Repair recurring mistranslations and preserve standard Sinhala
+            # technical vocabulary used in the MDP SOP.
+            corrections = {
+                "යමම": "මෙම",
+                "යමය": "මෙය",
+                "යමයහයුම්": "මෙහෙයුම්",
+                "යමයහයුම්": "මෙහෙයුම්",
+                "යවත": "වෙත",
+                "යනාමැති": "නොමැති",
+                "යනාකරන්න": "නොකරන්න",
+                "යනාකළ": "නොකළ",
+                "යමමඟින්": "මෙමඟින්",
+                "යාවේකාලීන": "යාවත්කාලීන",
+                "සන්නියේදනය": "සන්නිවේදනය",
+                "සන්නියේදන": "සන්නිවේදන",
+                "අසාමානය": "අසාමාන්‍ය",
+                "ආරක්ිත": "ආරක්ෂිත",
+                "ක්‍රියාේමක": "ක්‍රියාත්මක",
+                "තේේවය": "තත්ත්වය",
+                "පරීක්ෂා කිරීයම්": "පරීක්ෂා කිරීමේ",
+                "පිරික්සුම් ලැයිස්තුව සටහන් කිරීම": "පිරික්සුම් ලැයිස්තුවේ සටහන් තැබීම",
+            }
+            for incorrect, correct in corrections.items():
+                translated = translated.replace(incorrect, correct)
+
             glossary_lines = []
             for pattern, bilingual_term in technical_terms:
                 if re.search(pattern, text_value, flags=re.IGNORECASE):
@@ -7470,8 +7565,8 @@ def _solar_sop_translate(text_value, language):
 
             if glossary_lines:
                 translated += (
-                    "\\n\\n**තාක්ෂණික වචන (Technical Terms)**\\n\\n"
-                    + "\\n".join(f"- {term}" for term in glossary_lines)
+                    "\n\n**තාක්ෂණික පද (Technical Terms)**\n\n"
+                    + "\n".join(f"- {term}" for term in glossary_lines)
                 )
             return translated
     except Exception:
@@ -7485,17 +7580,18 @@ def _solar_sop_translate(text_value, language):
 
 
 def answer_from_mdp_sop(question, pages, language="English"):
-    """Build a complete, question-focused answer from full SOP sentences."""
+    """Build a question-focused answer from English SOP text while retaining exact page references."""
     retrieval_question = _solar_sop_retrieval_query(question)
     matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=4)
+
     if not matches:
         no_result = (
             "I couldn't locate a sufficiently relevant answer in the MDP SOP. "
             "Please try naming the equipment or inspection (for example, inverter, "
             "DC cable, switchyard, daily inspection, or A/C maintenance)."
             if language == "English" else
-            "MDP SOP ලේඛනයේ ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු නිශ්චිතව සොයාගත නොහැකි විය. "
-            "උපකරණයේ හෝ පරීක්ෂණයේ නම සඳහන් කර නැවත අසන්න."
+            "MDP SOP ලේඛනයේ මෙම ප්‍රශ්නයට අදාළ තොරතුරු සොයාගත නොහැකි විය. "
+            "අදාළ උපකරණයේ හෝ පරීක්ෂණයේ නම සඳහන් කර නැවත අසන්න."
         )
         return no_result, []
 
@@ -7505,99 +7601,214 @@ def answer_from_mdp_sop(question, pages, language="English"):
     page_context = [
         item for item in pages if item.get("page") in selected_page_numbers
     ]
+
     sop_number, sop_title = _solar_sop_reference_metadata(page_context)
     responsible = _solar_sop_responsible_person(page_context)
 
-    # Build sentences from complete retrieved page text, not isolated PDF lines.
-    # PDF extraction often wraps one sentence over several visual lines; joining
-    # the lines first prevents fragments such as "confirm airflow, and inspect fan".
-    source_parts = []
+    # IMPORTANT: PDF text extraction stores English and Sinhala in the same
+    # paragraph. The previous code discarded the entire paragraph whenever it
+    # contained one Sinhala line, which removed most of the English procedure.
+    # Keep English lines individually instead of discarding mixed paragraphs.
+    english_lines = []
     for item in page_context:
-        raw = (item.get("text") or "").strip()
-        if raw and not re.search(r"[\u0D80-\u0DFF]", raw):
-            source_parts.append(raw)
-    source_text = "\n".join(source_parts)
-    source_text = re.sub(r"[ \t]+", " ", source_text)
-    source_text = re.sub(r"\s*\n\s*", " ", source_text)
-    source_text = re.sub(r"\s+", " ", source_text).strip()
+        raw_text = (item.get("text") or "").replace("\r", "\n")
+        for line in raw_text.splitlines():
+            line = re.sub(r"^\s*[•▪●\-]+\s*", "", line).strip()
+            if not line:
+                continue
+            if re.search(r"[\u0D80-\u0DFF]", line):
+                continue
+            if re.search(
+                r"^(VIDULLANKA PLC|SOP\s*#|Revision\s*#|Implementation Date|"
+                r"Page\s*#|Last Reviewed|Date:|SOP Owner:|Approval:)",
+                line, re.I
+            ):
+                continue
+            if line.casefold() in {
+                "purpose", "scope", "procedure", "inspection method", "objective",
+                "record", "required ppe", "safety precautions", "checklist usage guide",
+            }:
+                continue
+            english_lines.append(line)
 
-    # Split only at sentence-ending punctuation. A wrapped line or a comma
-    # never becomes a separate answer bullet.
+    # Rejoin wrapped PDF lines. Keep paragraph/sentence boundaries where possible.
+    source_text = " ".join(english_lines)
+    source_text = re.sub(
+        r"(?:SOP\s*#\s*:\s*VLL.*?Approval\s*:\s*Operations Manager)",
+        " ", source_text, flags=re.IGNORECASE
+    )
+    source_text = re.sub(
+        r"(?:Revision\s*#\s*:.*?Last Reviewed/Update\s*Date\s*:.*?XX/XX/2026)",
+        " ", source_text, flags=re.IGNORECASE
+    )
+    source_text = re.sub(r"\s+", " ", source_text).strip()
+    source_text = re.sub(r"\s+([,.;:!?])", r"\1", source_text)
+
+    q = retrieval_question.lower()
+    topic_terms = []
+    if any(t in q for t in ("communication status", "inverter communication", "scada communication")):
+        topic_terms = [
+            "communication status", "scada/monitoring system", "inverter is online",
+            "data is updating continuously", "communication alarms",
+            "accept if the inverter is online",
+        ]
+    elif "mc4" in q:
+        topic_terms = [
+            "mc4 connections", "mc4 connectors", "locking clips", "overheating signs",
+            "damaged connector housings",
+        ]
+    elif "dc switch" in q or "dc isolator" in q:
+        topic_terms = [
+            "dc switches work properly", "dc isolators", "switch position indicator",
+            "abnormal heating", "discoloration", "operate the switch only",
+        ]
+    elif any(t in q for t in ("cooling fan", "ventilation", "airflow")):
+        topic_terms = [
+            "cooling fans work properly", "fan operation", "fault alarms",
+            "proper airflow", "fan guards", "ventilation openings",
+            "ventilation ducts", "dust, leaves, insects, and blockages",
+        ]
+    elif "ac combiner box" in q or ("combiner box" in q and "corrosion" in q):
+        topic_terms = [
+            "ac combiner box condition", "loose connections", "burn marks",
+            "water ingress", "breaker condition", "panel cleanliness",
+            "corrosion inspection", "inverter casing", "fasteners",
+            "mounting brackets", "cable glands", "combiner box surfaces",
+        ]
+    elif any(t in q for t in ("inverter", "mc4", "dc switch", "cooling fan", "combiner box")):
+        topic_terms = [
+            "communication", "scada", "online", "alarms", "mc4", "locking clips",
+            "overheating", "dc isolators", "switch position", "cooling fan",
+            "airflow", "fan guards", "ventilation", "combiner box", "loose connections",
+            "burn marks", "water ingress", "corrosion", "fasteners", "mounting brackets",
+            "cable glands", "inverter shelter",
+        ]
+    elif any(t in q for t in ("daily inspection", "daily check")):
+        topic_terms = [
+            "weather station", "scada", "inverter communication", "cooling fans",
+            "dc parameters", "cctv", "lightning arresters", "transformer",
+        ]
+    elif any(t in q for t in ("dc cable", "dc cables")):
+        topic_terms = [
+            "cable tags", "identification numbers", "insulation", "cuts", "cracks",
+            "abrasion", "cable trays", "mc4 connectors", "junction points",
+            "thermal camera", "corrosion",
+        ]
+    elif any(t in q for t in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
+        topic_terms = [
+            "compressor", "condenser", "coil", "fan blade", "air filter",
+            "evaporator", "louver", "blower", "isolator", "every 4 months",
+        ]
+    elif any(t in q for t in ("lockout", "tagout", "loto")):
+        topic_terms = [
+            "prepare for shutdown", "notify", "shutdown", "isolate",
+            "hazardous energy", "verify", "supervisor",
+        ]
+    elif "panel inspection" in q:
+        topic_terms = [
+            "front glass", "back glass", "diode", "junction box",
+            "safety helmet", "safety shoes", "remarks",
+        ]
+    elif "mdb" in q:
+        topic_terms = [
+            "acb", "mccb", "bus bar", "insulation", "ct", "transformer",
+            "meter", "surge protection", "fuse",
+        ]
+    elif "switchyard" in q or "switch yard" in q or "transformer" in q:
+        topic_terms = [
+            "transformer", "ovcb", "ddlo", "surge protector", "fence",
+            "warning signs", "trip counter",
+        ]
+
+    # Extract complete English sentences. The source is first normalized at
+    # line level, so mixed Sinhala paragraphs no longer suppress valid sentences.
     sentence_candidates = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(])", source_text)
     query_tokens = {
-        w for w in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", retrieval_question.lower())
-        if len(w) > 2 and w not in {
+        token for token in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", q)
+        if len(token) > 2 and token not in {
             "what", "when", "where", "which", "who", "why", "how", "the",
             "and", "for", "from", "with", "that", "this", "are", "is",
             "was", "were", "can", "could", "should", "would", "please",
             "tell", "about", "procedure", "procedures", "maintenance",
             "inspection", "inspections", "sop", "mdp", "solar", "plant",
+            "requirements", "status",
         }
     }
-    q = retrieval_question.lower()
-    topic_terms = []
-    if any(t in q for t in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
-        topic_terms = ["compressor", "condenser", "coil", "fan blade", "air filter",
-                       "evaporator", "louver", "blower", "every 4 months", "isolat"]
-    elif "inverter" in q or any(t in q for t in ("mc4", "dc switch", "combiner box", "cooling fan")):
-        topic_terms = ["communication", "mc4", "dc switch", "cooling fan", "airflow",
-                       "combiner", "corrosion", "ventilation", "monthly"]
-    elif any(t in q for t in ("lockout", "tagout", "loto")):
-        topic_terms = ["shutdown", "notify", "isolate", "hazardous energy", "lockout",
-                       "tagout", "verify", "supervisor"]
-    elif "panel" in q:
-        topic_terms = ["front glass", "back glass", "junction box", "panel", "lightning",
-                       "heavy rain", "strong winds", "safety helmet", "safety shoes"]
 
     scored = []
     seen = set()
     for sentence in sentence_candidates:
         sentence = re.sub(r"^\s*[\u2022•▪\-]+\s*", "", sentence).strip()
         sentence = re.sub(r"\s+", " ", sentence)
-        # Only return complete sentences. This deliberately rejects dangling
-        # clauses that PDF extraction has separated from their continuation.
         if len(sentence) < 25 or not re.search(r"[.!?][\"')\]]?$", sentence):
+            continue
+        # Table labels/objectives are often concatenated with OCR fragments;
+        # retain the actual inspection-method instructions instead.
+        if re.match(
+            r"^(?:Communication Status|MC4 Connections Are Tight|DC Switches Work Properly|"
+            r"Cooling Fans Work Properly|AC Combiner Box Condition|Corrosion Inspection)\b",
+            sentence, re.IGNORECASE
+        ):
+            continue
+        if "XX/XX/2026" in sentence:
             continue
         key = sentence.casefold()
         if key in seen:
             continue
         seen.add(key)
         words = set(re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", key))
-        relevance = len(words.intersection(query_tokens))
+        token_score = len(words.intersection(query_tokens))
         topic_score = sum(2 for term in topic_terms if term in key)
-        if relevance or topic_score:
-            scored.append((relevance + topic_score, sentence))
+        if token_score or topic_score:
+            scored.append((token_score + topic_score, sentence))
 
-    # Keep source order after selecting relevant complete sentences.
     if scored:
-        threshold = max(1, max(score for score, _ in scored) * 0.35)
-        chosen = {sentence for score, sentence in scored if score >= threshold}
+        scored.sort(key=lambda item: item[0], reverse=True)
+        # Preserve source order among the best matching sentences.
+        threshold = max(1, scored[0][0] * 0.30)
+        selected = {sentence for score, sentence in scored if score >= threshold}
         answer_sentences = [
             sentence for sentence in sentence_candidates
-            if sentence.strip() in chosen
-        ][:12]
+            if sentence.strip() in selected
+        ][:10]
     else:
         answer_sentences = []
 
-    # If the PDF has a checklist with no sentence punctuation, use a complete
-    # retrieved paragraph rather than returning disconnected line fragments.
+    # Table-based SOP procedures often contain full instructions but no
+    # sentence punctuation. In that case, return relevant complete English
+    # lines/clauses rather than the former generic "unreadable answer" message.
     if not answer_sentences:
-        for item in matches:
-            paragraph = re.sub(r"\s+", " ", (item.get("text") or "")).strip()
-            if (len(paragraph) >= 40
-                    and not re.search(r"[\u0D80-\u0DFF]", paragraph)
-                    and set(re.findall(r"[a-zA-Z0-9]+", paragraph.lower())).intersection(query_tokens)):
-                answer_sentences.append(paragraph)
-                break
+        fallback_lines = []
+        for line in english_lines:
+            clean = re.sub(r"\s+", " ", line).strip()
+            if len(clean) < 18:
+                continue
+            low = clean.lower()
+            if any(term in low for term in topic_terms) or any(
+                token in low for token in query_tokens
+            ):
+                if clean not in fallback_lines:
+                    fallback_lines.append(clean)
+        answer_sentences = fallback_lines[:8]
 
     if not answer_sentences:
         answer_text = (
-            "The relevant SOP pages were found, but the extracted text does not "
-            "contain a complete, readable answer to this specific question. "
-            "Please check the referenced PDF pages."
+            "The relevant SOP section was located, but it does not contain enough "
+            "readable text to answer this exact question. Please review the cited "
+            "PDF pages or ask about a specific checklist item."
         )
     else:
         answer_text = "\n".join(f"- {sentence.strip()}" for sentence in answer_sentences)
+
+    # The SOP header identifies the owner and approval authority. Do not label
+    # the SOP owner as the person who must physically perform every task.
+    if "inverter" in q or any(t in q for t in (
+        "communication status", "mc4", "dc switch", "cooling fan",
+        "ventilation", "combiner box", "corrosion"
+    )):
+        responsible = "Authorized O&M personnel (monthly inspection); Approval: Operations Manager"
+    elif "daily inspection" in q:
+        responsible = "Operation and maintenance personnel; Approval: Operations Manager"
 
     response = (
         "**SOP Reference**\n\n"
@@ -7621,6 +7832,29 @@ def _solar_sop_retrieval_query(question):
     """Translate Sinhala questions to English for the English-keyword SOP retriever."""
     if _solar_sop_detect_language(question) == "English":
         return question
+
+    # Prefer deterministic mappings for common MDP equipment terms. This avoids
+    # Google Translate changing technical intent before the SOP search.
+    normalized = (question or "").casefold()
+    sinhala_topic_aliases = [
+        (("ඉන්වර්ටර් සන්නිවේදන", "ඉන්වර්ටර් සන්නිවේදනය"), "inverter communication status"),
+        (("mc4", "එම්සී4"), "MC4 connector inspection"),
+        (("dc ස්විච", "ඩීසී ස්විච", "විසන්ධිකාරක"), "DC switch inspection"),
+        (("සිසිලන විදුලි පංකා", "වාතාශ්‍රය", "වායු ප්‍රවාහය"), "cooling fans and ventilation"),
+        (("ac සංයෝජක", "ඒසී සංයෝජක", "combiner පෙට්ටිය"), "AC combiner box inspection"),
+        (("විඛාදනය", "මලකඩ"), "inverter corrosion inspection"),
+        (("දෛනික පරීක්ෂාව", "දිනපතා පරීක්ෂාව"), "daily inspection"),
+        (("ඩීසී කේබල්", "dc කේබල්"), "DC cable inspection"),
+        (("වායු සමීකරණ", "ශීතකරණ පද්ධතිය"), "AC maintenance"),
+        (("අගුලු දැමීම", "ටැග් කිරීම", "lockout"), "lockout tagout"),
+    ]
+    mapped = []
+    for aliases, english_query in sinhala_topic_aliases:
+        if any(alias in normalized for alias in aliases):
+            mapped.append(english_query)
+    if mapped:
+        return " ".join(dict.fromkeys(mapped))
+
     try:
         from deep_translator import GoogleTranslator
         translated = GoogleTranslator(source="si", target="en").translate(question)
@@ -7650,9 +7884,9 @@ def _solar_sop_followup_query(topic_context, selected_option):
         "පිරිසිදු කිරීමේ ක්‍රමය සහ යාන්ත්‍රණය": "cleaning method mechanism",
         "පිරිසිදු කිරීමේ උපකරණ සහ ද්‍රව්‍ය": "cleaning equipment materials",
         "පිරිසිදු කිරීමේ පියවර සහ ක්‍රියාපටිපාටිය": "cleaning steps sequence procedure",
-        "පාලන ක්‍රියාමාර්ග සහ ආරක්ෂාව": "safety precautions control measures hazards PPE",
-        "වගකිවයුතු පුද්ගලයා සහ රාජකාරි": "responsibilities responsible personnel duties",
-        "පරීක්ෂණ ක්‍රියාපටිපාටිය": "inspection procedure steps",
+        "ආරක්ෂක පියවර සහ පාලන ක්‍රියාමාර්ග": "safety precautions control measures hazards PPE",
+        "වගකිවයුතු පුද්ගලයන් සහ ඔවුන්ගේ වගකීම්": "responsibilities responsible personnel duties",
+        "පරීක්ෂණ ක්‍රියා පටිපාටිය": "inspection procedure steps",
         "පරීක්ෂණ පිරික්සුම් ලැයිස්තුව": "inspection checklist items",
         "වාර්තා කිරීම සහ වාර්තා ඉදිරිපත් කිරීම": "inspection recording report records",
         "තණකොළ කැපීම / වල් පැළෑටි ඉවත් කිරීමේ ක්‍රමය": "grass cutting weeding method procedure",
@@ -7784,9 +8018,9 @@ def _solar_sop_localize_options(options, language):
         "Cleaning method and mechanism": "පිරිසිදු කිරීමේ ක්‍රමය සහ යාන්ත්‍රණය",
         "Cleaning equipment and materials": "පිරිසිදු කිරීමේ උපකරණ සහ ද්‍රව්‍ය",
         "Cleaning steps and procedure": "පිරිසිදු කිරීමේ පියවර සහ ක්‍රියාපටිපාටිය",
-        "Control measures and safety": "පාලන ක්‍රියාමාර්ග සහ ආරක්ෂාව",
-        "Responsible person and duties": "වගකිවයුතු පුද්ගලයා සහ රාජකාරි",
-        "Inspection procedure": "පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "Control measures and safety": "ආරක්ෂක පියවර සහ පාලන ක්‍රියාමාර්ග",
+        "Responsible person and duties": "වගකිවයුතු පුද්ගලයන් සහ ඔවුන්ගේ වගකීම්",
+        "Inspection procedure": "පරීක්ෂණ ක්‍රියා පටිපාටිය",
         "Inspection checklist": "පරීක්ෂණ පිරික්සුම් ලැයිස්තුව",
         "Recording and reporting": "වාර්තා කිරීම සහ වාර්තා ඉදිරිපත් කිරීම",
         "Grass cutting / weeding method": "තණකොළ කැපීම / වල් පැළෑටි ඉවත් කිරීමේ ක්‍රමය",
@@ -7800,9 +8034,9 @@ def _solar_sop_localize_options(options, language):
         "Electrical safety precautions": "විදුලි ආරක්ෂක පූර්වෝපායන්",
         "Checklist recording and approval": "පිරික්සුම් ලැයිස්තුව සටහන් කිරීම සහ අනුමැතිය",
         "Inverter communication status": "ඉන්වර්ටර් සන්නිවේදන තත්ත්වය",
-        "MC4 connector inspection": "MC4 සම්බන්ධක පරීක්ෂාව",
-        "DC switch inspection": "DC ස්විච් පරීක්ෂාව",
-        "Cooling fans and ventilation": "සිසිලන පංකා සහ වාතාශ්‍රය",
+        "MC4 connector inspection": "MC4 සම්බන්ධක පරීක්ෂා කිරීම",
+        "DC switch inspection": "DC විසන්ධිකාරක ස්විචය පරීක්ෂා කිරීම",
+        "Cooling fans and ventilation": "සිසිලන විදුලි පංකා සහ වාතාශ්‍රය",
         "AC combiner box and corrosion": "AC Combiner Box සහ විඛාදනය",
         "Inverter checklist recording": "ඉන්වර්ටර් පිරික්සුම් ලැයිස්තුව සටහන් කිරීම",
         "Front and back glass inspection": "ඉදිරිපස සහ පසුපස වීදුරු පරීක්ෂාව",
@@ -7858,6 +8092,30 @@ def _solar_sop_requested_site(question, selected_plant):
 
 def render_solar_sop_agent(selected_plant=None):
     """Guided English/Sinhala SOP chat with topic shortcuts and follow-up choices."""
+    # Use a Sinhala-capable font for the assistant transcript, labels and
+    # follow-up buttons. Noto Sans Sinhala renders conjuncts and vowel signs
+    # correctly in Streamlit browsers.
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;600;700&display=swap');
+        [data-testid="stChatMessage"],
+        [data-testid="stChatMessage"] *,
+        [data-testid="stChatInput"],
+        [data-testid="stChatInput"] *,
+        .sop-agent-font,
+        .sop-agent-font *,
+        div[class*="st-key-solar_sop_"] button,
+        div[class*="st-key-clear_solar_sop_chat"] button {
+            font-family: "Noto Sans Sinhala", "Iskoola Pota", "Nirmala UI", sans-serif !important;
+            font-feature-settings: "kern" 1, "mark" 1, "mkmk" 1;
+            line-height: 1.65;
+        }
+        </style>
+        <div class="sop-agent-font"></div>
+        """,
+        unsafe_allow_html=True,
+    )
     defaults = {
         "solar_sop_agent_open": False,
         "solar_sop_chat_history": [],
