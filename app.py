@@ -7277,11 +7277,12 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Translate SOP text into the requested language with provider fallbacks.
+    """Translate SOP text into the requested language using independent fallbacks.
 
-    Google Translate remains the primary provider. If it is temporarily
-    unavailable or returns incomplete text, MyMemory is tried for that chunk.
-    Short chunks reduce request-size failures for extracted PDF content.
+    Each short chunk is translated independently. Automatic source detection is
+    tried first because SOP passages can contain Sinhala, English labels, and
+    technical terms in the same paragraph. Explicit Sinhala detection and
+    MyMemory are used as fallbacks.
     """
     text_value = str(text_value or "")
     target = "si" if str(language).lower().startswith("si") else "en"
@@ -7289,6 +7290,8 @@ def _solar_sop_translate(text_value, language):
     has_sinhala = bool(re.search(sinhala_pattern, text_value))
     has_english = bool(re.search(r"[A-Za-z]{3,}", text_value))
 
+    if not text_value.strip():
+        return text_value
     if target == "en" and not has_sinhala:
         return text_value
     if target == "si" and has_sinhala and not has_english:
@@ -7297,71 +7300,94 @@ def _solar_sop_translate(text_value, language):
     try:
         from deep_translator import GoogleTranslator, MyMemoryTranslator
 
-        source_language = "si" if target == "en" and has_sinhala else "auto"
-        google_translator = GoogleTranslator(source=source_language, target=target)
+        def is_valid_translation(result):
+            if not result or not str(result).strip():
+                return False
+            result = str(result).strip()
+            if target == "en" and re.search(sinhala_pattern, result):
+                return False
+            if target == "si" and not re.search(sinhala_pattern, result):
+                return False
+            return True
 
         def translate_chunk(chunk):
             chunk = chunk.strip()
             if not chunk:
                 return chunk
 
-            # Provider 1: Google Translate. Try explicit Sinhala first for
-            # Sinhala-to-English, then automatic detection if required.
-            google_errors = []
-            try:
-                result = google_translator.translate(chunk)
-                if result and not (
-                    target == "en" and re.search(sinhala_pattern, result)
-                ) and not (
-                    target == "si" and not re.search(sinhala_pattern, result)
-                ):
-                    return result.strip()
-                google_errors.append("Google returned incomplete translation")
-            except Exception as exc:
-                google_errors.append(str(exc))
+            # Do not send English-only chunks to a translator when English is
+            # requested, or Sinhala-only chunks when Sinhala is requested.
+            chunk_has_sinhala = bool(re.search(sinhala_pattern, chunk))
+            chunk_has_english = bool(re.search(r"[A-Za-z]{3,}", chunk))
+            if target == "en" and not chunk_has_sinhala:
+                return chunk
+            if target == "si" and chunk_has_sinhala and not chunk_has_english:
+                return chunk
 
-            # Provider 2: MyMemory. Its request limit is smaller, so each
-            # paragraph is divided into short chunks before reaching here.
+            errors = []
+
+            # Try auto-detection first for code-mixed SOP text. Construct a
+            # translator per chunk so a failed request cannot poison later calls.
+            google_sources = ["auto"]
+            if chunk_has_sinhala:
+                google_sources.append("si")
+            elif target == "si":
+                google_sources.append("en")
+
+            for source_language in google_sources:
+                try:
+                    result = GoogleTranslator(
+                        source=source_language, target=target
+                    ).translate(chunk)
+                    if is_valid_translation(result):
+                        return str(result).strip()
+                    errors.append("Google returned incomplete translation")
+                except Exception as exc:
+                    errors.append(str(exc))
+
+            # MyMemory is the secondary provider. Its source language is chosen
+            # from the actual chunk, not from the whole SOP response.
+            memory_source = "si" if chunk_has_sinhala else "en"
             try:
-                memory_source = "si" if target == "en" and re.search(sinhala_pattern, chunk) else "en"
                 result = MyMemoryTranslator(
                     source=memory_source, target=target
                 ).translate(chunk)
-                if result and not (
-                    target == "en" and re.search(sinhala_pattern, result)
-                ) and not (
-                    target == "si" and not re.search(sinhala_pattern, result)
-                ):
-                    return result.strip()
+                if is_valid_translation(result):
+                    return str(result).strip()
+                errors.append("MyMemory returned incomplete translation")
             except Exception as exc:
-                google_errors.append(str(exc))
+                errors.append(str(exc))
 
             raise RuntimeError(
-                "All translation providers failed: " + "; ".join(google_errors[-2:])
+                "Translation providers failed for a text chunk: "
+                + "; ".join(errors[-3:])
             )
 
         translated_paragraphs = []
-        for paragraph in text_value.split("\n"):
+        for paragraph in text_value.splitlines():
             if not paragraph.strip():
                 translated_paragraphs.append("")
                 continue
 
-            # Preserve English-only labels when producing English.
+            # Keep paragraphs already written entirely in the requested language.
             if target == "en" and not re.search(sinhala_pattern, paragraph):
                 translated_paragraphs.append(paragraph)
                 continue
-
-            # Preserve Sinhala-only paragraphs when producing Sinhala.
-            if target == "si" and re.search(sinhala_pattern, paragraph) and not re.search(r"[A-Za-z]{3,}", paragraph):
+            if (
+                target == "si"
+                and re.search(sinhala_pattern, paragraph)
+                and not re.search(r"[A-Za-z]{3,}", paragraph)
+            ):
                 translated_paragraphs.append(paragraph)
                 continue
 
-            # Use short requests so both Google and MyMemory can process them.
+            # Keep requests comfortably below MyMemory's request-size limit.
             words = paragraph.split()
-            chunks, current = [], ""
+            chunks = []
+            current = ""
             for word in words:
                 candidate = f"{current} {word}".strip()
-                if len(candidate) > 400 and current:
+                if len(candidate) > 220 and current:
                     chunks.append(current)
                     current = word
                 else:
@@ -7369,7 +7395,9 @@ def _solar_sop_translate(text_value, language):
             if current:
                 chunks.append(current)
 
-            translated_paragraphs.append(" ".join(translate_chunk(chunk) for chunk in chunks))
+            translated_paragraphs.append(
+                " ".join(translate_chunk(chunk) for chunk in chunks)
+            )
 
         translated = "\n".join(translated_paragraphs).strip()
         if not translated:
@@ -7380,7 +7408,15 @@ def _solar_sop_translate(text_value, language):
             raise ValueError("English translation still contains Sinhala script")
         return translated
 
-    except Exception:
+    except Exception as exc:
+        # Keep the failure message in the selected language, while logging the
+        # actual provider error for diagnosis in Streamlit Cloud logs.
+        try:
+            import logging
+            logging.exception("Solar SOP translation failed: %s", exc)
+        except Exception:
+            pass
+
         if target == "si":
             return (
                 "මෙම SOP තොරතුරු සිංහලට පරිවර්තනය කිරීම තාවකාලිකව අසාර්ථක විය. "
