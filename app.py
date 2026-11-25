@@ -7277,12 +7277,11 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Translate SOP text into exactly one requested language.
+    """Translate SOP text into the requested language with provider fallbacks.
 
-    Keep text already in the requested language unchanged. Translate mixed or
-    opposite-language text in smaller chunks, explicitly identifying Sinhala
-    source text when converting it to English. This avoids sending long,
-    mixed-script SOP passages to Google Translate as one request.
+    Google Translate remains the primary provider. If it is temporarily
+    unavailable or returns incomplete text, MyMemory is tried for that chunk.
+    Short chunks reduce request-size failures for extracted PDF content.
     """
     text_value = str(text_value or "")
     target = "si" if str(language).lower().startswith("si") else "en"
@@ -7296,29 +7295,50 @@ def _solar_sop_translate(text_value, language):
         return text_value
 
     try:
-        from deep_translator import GoogleTranslator
+        from deep_translator import GoogleTranslator, MyMemoryTranslator
 
-        # Automatic detection can misidentify short Sinhala SOP passages.
         source_language = "si" if target == "en" and has_sinhala else "auto"
-        translator = GoogleTranslator(source=source_language, target=target)
+        google_translator = GoogleTranslator(source=source_language, target=target)
 
         def translate_chunk(chunk):
             chunk = chunk.strip()
             if not chunk:
                 return chunk
 
-            # Retry with automatic source detection if explicit Sinhala
-            # detection is rejected by the translation endpoint.
+            # Provider 1: Google Translate. Try explicit Sinhala first for
+            # Sinhala-to-English, then automatic detection if required.
+            google_errors = []
             try:
-                result = translator.translate(chunk)
-            except Exception:
-                if source_language != "si":
-                    raise
-                result = GoogleTranslator(source="auto", target=target).translate(chunk)
+                result = google_translator.translate(chunk)
+                if result and not (
+                    target == "en" and re.search(sinhala_pattern, result)
+                ) and not (
+                    target == "si" and not re.search(sinhala_pattern, result)
+                ):
+                    return result.strip()
+                google_errors.append("Google returned incomplete translation")
+            except Exception as exc:
+                google_errors.append(str(exc))
 
-            if not result:
-                raise ValueError("Empty translation chunk")
-            return result
+            # Provider 2: MyMemory. Its request limit is smaller, so each
+            # paragraph is divided into short chunks before reaching here.
+            try:
+                memory_source = "si" if target == "en" and re.search(sinhala_pattern, chunk) else "en"
+                result = MyMemoryTranslator(
+                    source=memory_source, target=target
+                ).translate(chunk)
+                if result and not (
+                    target == "en" and re.search(sinhala_pattern, result)
+                ) and not (
+                    target == "si" and not re.search(sinhala_pattern, result)
+                ):
+                    return result.strip()
+            except Exception as exc:
+                google_errors.append(str(exc))
+
+            raise RuntimeError(
+                "All translation providers failed: " + "; ".join(google_errors[-2:])
+            )
 
         translated_paragraphs = []
         for paragraph in text_value.split("\n"):
@@ -7326,18 +7346,22 @@ def _solar_sop_translate(text_value, language):
                 translated_paragraphs.append("")
                 continue
 
-            # Preserve English-only Markdown labels when producing English.
+            # Preserve English-only labels when producing English.
             if target == "en" and not re.search(sinhala_pattern, paragraph):
                 translated_paragraphs.append(paragraph)
                 continue
 
-            # Split long extracted PDF passages at word boundaries to reduce
-            # failures from oversized translation requests.
+            # Preserve Sinhala-only paragraphs when producing Sinhala.
+            if target == "si" and re.search(sinhala_pattern, paragraph) and not re.search(r"[A-Za-z]{3,}", paragraph):
+                translated_paragraphs.append(paragraph)
+                continue
+
+            # Use short requests so both Google and MyMemory can process them.
             words = paragraph.split()
             chunks, current = [], ""
             for word in words:
                 candidate = f"{current} {word}".strip()
-                if len(candidate) > 700 and current:
+                if len(candidate) > 400 and current:
                     chunks.append(current)
                     current = word
                 else:
@@ -7355,13 +7379,17 @@ def _solar_sop_translate(text_value, language):
         if target == "en" and re.search(sinhala_pattern, translated):
             raise ValueError("English translation still contains Sinhala script")
         return translated
+
     except Exception:
         if target == "si":
-            return ("මෙම SOP තොරතුරු සිංහලට පරිවර්තනය කිරීම මේ මොහොතේ සිදු කළ නොහැක. "
-                    "කරුණාකර අන්තර්ජාල සම්බන්ධතාව පරීක්ෂා කර නැවත උත්සාහ කරන්න.")
-        return ("The SOP content could not be translated fully into English at this time. "
-                "Please check the internet connection and try again.")
-
+            return (
+                "මෙම SOP තොරතුරු සිංහලට පරිවර්තනය කිරීම තාවකාලිකව අසාර්ථක විය. "
+                "කරුණාකර මඳ වේලාවකින් නැවත උත්සාහ කරන්න."
+            )
+        return (
+            "The SOP content could not be translated into English because the "
+            "translation services are temporarily unavailable. Please try again shortly."
+        )
 
 def _solar_sop_translation_failed(value):
     """Identify the explicit fallback returned when the translation service fails."""
