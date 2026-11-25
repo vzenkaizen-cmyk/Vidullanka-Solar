@@ -7548,7 +7548,7 @@ def render_solar_sop_agent(selected_plant=None):
             welcome = ("**Hello! I'm your Solar SOP Assistant.**\n\n"
                        "You do not need to know the website or technical terms. Ask in your own words. "
                        "I will explain the relevant SOP information in clear points.\n\n"
-                       "**Choose a topic below or type any question.**")
+                       "**Choose a topic above or type any question.**")
             topics_title = "Start with a topic"
             starter_topics = ["Panel cleaning", "Grass cutting and weeding",
                               "Inspections and checklists", "Safety and control measures",
