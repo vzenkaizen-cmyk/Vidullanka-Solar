@@ -7277,28 +7277,37 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Return one language only; never append English to a failed Sinhala translation."""
+    """Return the complete answer in the selected language only."""
     if language == "English":
         return text_value
+
+    # Translate the complete response, including headings and SOP metadata labels.
+    # Do not append the English source text if translation is unavailable.
     try:
         from deep_translator import GoogleTranslator
-        return GoogleTranslator(source="auto", target="si").translate(text_value)
+        translated = GoogleTranslator(source="auto", target="si").translate(text_value)
+        if translated and re.search(r"[\u0D80-\u0DFF]", translated):
+            return translated
     except Exception:
-        return (
-            "සිංහල පරිවර්තනය ලබාගැනීමට මේ මොහොතේ නොහැකියි. "
-            "කරුණාකර පසුව නැවත උත්සාහ කරන්න."
-        )
+        pass
+
+    return (
+        "සිංහල පිළිතුර ලබාගැනීමට මේ මොහොතේ නොහැකියි. "
+        "කරුණාකර නැවත උත්සාහ කරන්න."
+    )
 
 
 def answer_from_mdp_sop(question, pages, language="English"):
-    """Answer from retrieved MDP SOP passages in clear, numbered point form."""
+    """Give a focused, source-based answer in the selected language only."""
     retrieval_question = _solar_sop_retrieval_query(question)
     matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=6)
     if not matches:
         no_result = (
-            "I couldn't find this information in the uploaded MDP SOP. Please rephrase the question or choose a related topic."
+            "I couldn't find this information in the uploaded MDP SOP. "
+            "Try asking with a more specific term, or choose one of the topics above."
             if language == "English" else
-            "උඩුගත කර ඇති MDP SOP ලේඛනයේ මෙම තොරතුරු සොයාගත නොහැකි විය. කරුණාකර ප්‍රශ්නය වෙනත් ආකාරයකින් අසන්න හෝ අදාළ මාතෘකාවක් තෝරන්න."
+            "උඩුගත කර ඇති MDP SOP ලේඛනයේ මෙම තොරතුරු සොයාගත නොහැකි විය. "
+            "වඩාත් නිශ්චිත වචන භාවිතයෙන් නැවත අසන්න හෝ ඉහත මාතෘකාවක් තෝරන්න."
         )
         return no_result, []
 
@@ -7306,7 +7315,9 @@ def answer_from_mdp_sop(question, pages, language="English"):
     responsible = _solar_sop_responsible_person(matches)
     page_numbers = sorted({item["page"] for item in matches if item.get("page")})
 
-    # Convert retrieved source passages into readable points without adding facts.
+    # Use only concise statements present in the retrieved SOP passages.
+    # Limit the answer to seven useful points so it is readable without losing
+    # the practical detail needed to understand the procedure.
     points = []
     for item in matches:
         raw = item.get("text", "") or ""
@@ -7317,21 +7328,22 @@ def answer_from_mdp_sop(question, pages, language="English"):
             fragments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(])|(?<=।)\s+", line)
             for fragment in fragments:
                 fragment = fragment.strip(" •-\t")
-                if len(fragment) >= 18 and fragment not in points:
+                if len(fragment) >= 24 and fragment not in points:
                     points.append(fragment)
+
     if not points:
         points = [" ".join(item.get("text", "").split()) for item in matches if item.get("text")]
 
-    points = points[:14]
-    answer_bullets = "\n".join(f"{index}. {point}" for index, point in enumerate(points, 1))
+    points = points[:7]
+    answer_points = "\n".join(f"{index}. {point}" for index, point in enumerate(points, 1))
     response = (
         "**SOP Reference**\n\n"
         f"- **SOP No.:** {sop_number}\n"
         f"- **SOP Title:** {sop_title}\n"
         f"- **Relevant Page(s):** {', '.join(map(str, page_numbers)) if page_numbers else 'Not identified'}\n"
         f"- **Responsible Person:** {responsible}\n\n"
-        "**Answer (point form)**\n\n"
-        f"{answer_bullets}\n\n"
+        "**Answer**\n\n"
+        f"{answer_points}\n\n"
         "*Follow the approved SOP and instructions from authorised site personnel.*"
     )
     return _solar_sop_translate(response, language), matches
@@ -7511,8 +7523,8 @@ def render_solar_sop_agent(selected_plant=None):
         # The selected language controls both the input guidance and response language.
         language = st.session_state.solar_sop_language
         language_choice = st.selectbox(
-            "Preferred language" if language == "English" else "ඔබ කැමති භාෂාව",
-            ["English", "සිංහල"],
+            "Preferred language / භාෂාව",
+            ["English", "සිංහල (Sinhala)"],
             index=0 if language == "English" else 1,
             key="solar_sop_language_selector",
         )
