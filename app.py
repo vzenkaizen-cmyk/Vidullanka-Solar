@@ -7147,6 +7147,8 @@ def load_mdp_sop_pages():
 
     base_dir = Path(__file__).resolve().parent
     candidates = [
+        base_dir / "MDP_SOP_2026_Draft(5).pdf",
+        base_dir / "MDP_SOP_2026_Draft(4).pdf",
         base_dir / "MDP_SOP_2026_Draft(1).pdf",
         base_dir / "MDP_SOP_2026_Draft.pdf",
         base_dir / "MDP_SOP_2026.pdf",
@@ -7175,43 +7177,172 @@ def load_mdp_sop_pages():
 
 
 def retrieve_mdp_sop_context(question, pages, limit=4):
-    """Simple local keyword retrieval; never invents details outside the PDF."""
-    import re
+    """Retrieve the most relevant MDP SOP passages using weighted term matching."""
     from collections import Counter
+    import math
 
     stop_words = {
         "what", "when", "where", "which", "who", "why", "how", "does", "do",
         "the", "and", "for", "from", "with", "that", "this", "are", "is",
         "was", "were", "can", "could", "should", "would", "please", "tell",
         "about", "according", "procedure", "sop", "mdp", "solar", "plant",
+        "explain", "details", "detail", "information", "please", "me",
+        "maintenance", "procedure", "procedures", "inspection", "inspections",
     }
-    tokens = [w for w in re.findall(r"[a-zA-Z0-9]+", question.lower()) if len(w) > 2 and w not in stop_words]
+    text_value = (question or "").lower()
+    tokens = [
+        w for w in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", text_value)
+        if len(w) > 2 and w not in stop_words
+    ]
     if not tokens:
         return []
-    query_counts = Counter(tokens)
-    scored = []
-    for item in pages:
-        body = item["text"].lower()
-        words = re.findall(r"[a-zA-Z0-9]+", body)
-        counts = Counter(words)
-        score = sum(min(counts[token], 3) * weight for token, weight in query_counts.items())
-        # Reward exact multi-word phrase matches and matching SOP/checklist identifiers.
-        normalized_question = " ".join(tokens)
-        if normalized_question and normalized_question in " ".join(words):
-            score += 5
-        if score:
-            scored.append((score, item))
-    scored.sort(key=lambda pair: (pair[0], -pair[1]["page"]), reverse=True)
-    selected = []
-    seen_pages = set()
-    for score, item in scored:
-        if item["page"] not in seen_pages:
-            selected.append(item)
-            seen_pages.add(item["page"])
-        if len(selected) >= limit:
-            break
-    return selected
 
+    # Prefer a clearly identified SOP section when the user names a known
+    # equipment/inspection topic. This prevents matching unrelated pages that
+    # merely repeat common words such as "maintenance" or "inspection".
+    topic_headings = [
+        (("a/c", "air conditioning", "air-conditioning", "ac maintenance"), ("a/c maintenance", "air-conditioning maintenance")),
+        (("inverter",), ("inverters inspection", "inverter inspection")),
+        (("panel inspection",), ("panel inspection",)),
+        (("daily inspection",), ("daily inspection",)),
+        (("dc cable", "dc cables"), ("dc cables inspection", "dc cable inspection")),
+        (("mdb",), ("mdb inspection",)),
+        (("switchyard", "switch yard"), ("switchyard inspection", "switch yard inspection")),
+        (("lockout", "tagout", "loto"), ("lock out tagout", "lockout tagout")),
+    ]
+    lower_question = text_value
+    # The uploaded MDP SOP covers panel inspection, not panel cleaning or
+    # grass cutting. Do not substitute a different procedure for those requests.
+    if "panel cleaning" in lower_question or "grass cutting" in lower_question or "weeding" in lower_question:
+        return []
+    heading_targets = []
+    for triggers, headings in topic_headings:
+        if any(trigger in lower_question for trigger in triggers):
+            heading_targets.extend(headings)
+    if heading_targets:
+        page_texts = {}
+        for item in pages:
+            page_texts.setdefault(item.get("page"), "")
+            page_texts[item.get("page")] += " " + (item.get("text") or "")
+        anchors = []
+        for page_no, body in page_texts.items():
+            compact = re.sub(r"[^a-z0-9]+", " ", body.lower())
+            if int(page_no or 0) >= 5 and any(
+                re.sub(r"[^a-z0-9]+", " ", h.lower()) in compact
+                for h in heading_targets
+            ):
+                anchors.append(page_no)
+        if anchors:
+            anchor = min(anchors)
+            # Use the SOP number in the page header to find the exact section end.
+            def _header_sop(page_body):
+                found = re.search(r"SOP\s*#\s*:\s*(VLL\s*[\\/ ]*\s*MDP\s*[\\/ ]*\s*SOP\s*[-_/ ]*\s*\d+)", page_body, re.I)
+                return re.sub(r"\s+", "", found.group(1)).lower() if found else None
+            anchor_code = _header_sop(page_texts.get(anchor, ""))
+            section_page_numbers = []
+            for page_no in sorted(p for p in page_texts if p >= anchor):
+                if page_no > anchor and anchor_code:
+                    current_code = _header_sop(page_texts[page_no])
+                    if current_code and current_code != anchor_code:
+                        break
+                section_page_numbers.append(page_no)
+            return [dict(item, _relevance=1.0) for item in pages
+                    if item.get("page") in section_page_numbers]
+
+    # Add only close technical synonyms so ordinary questions map to the
+    # terminology used in the MDP SOP without broadening into unrelated topics.
+    synonym_groups = {
+        "ac": {"air", "conditioning", "air-conditioning", "cooling", "evaporator", "condenser", "compressor", "filter"},
+        "air": {"ac", "conditioning", "cooling", "evaporator", "condenser"},
+        "inverter": {"inverters", "fan", "fans", "ventilation", "mc4", "dc", "ac"},
+        "panel": {"pv", "module", "modules", "glass", "diode", "junction"},
+        "inspection": {"inspect", "checklist", "checking", "check", "condition"},
+        "safety": {"ppe", "hazard", "precaution", "precautions", "isolate", "isolation"},
+        "cable": {"cables", "dc", "insulation", "connection"},
+        "transformer": {"oil", "insulator", "surge", "sound", "leak"},
+        "switchyard": {"switch", "yard", "ovcb", "ddlo", "fence"},
+        "daily": {"daily", "routine", "everyday"},
+        "start": {"startup", "start-up", "restart", "shutdown", "suspension"},
+        "lockout": {"tagout", "loto", "isolate", "isolation"},
+    }
+    expanded = set(tokens)
+    for token in tokens:
+        expanded.update(synonym_groups.get(token, set()))
+    if re.search(r"\\ba\\s*/\\s*c\\b|\\bac\\s+maintenance\\b|air[- ]conditioning", text_value):
+        expanded.update({"ac", "air", "conditioning", "compressor", "condenser", "evaporator", "filter"})
+    if "inverter" in text_value:
+        expanded.update({"inverter", "inverters"})
+    if "lockout" in text_value or "tagout" in text_value or "loto" in text_value:
+        expanded.update({"lockout", "tagout", "loto", "isolate", "isolation"})
+
+    documents = []
+    df = Counter()
+    for item in pages:
+        body = (item.get("text") or "").lower()
+        words = re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", body)
+        counts = Counter(words)
+        documents.append((item, counts, set(words)))
+        df.update(set(words))
+
+    total_docs = max(len(documents), 1)
+    scored = []
+    for item, counts, word_set in documents:
+        if int(item.get("page", 0) or 0) <= 4:
+            continue
+        score = 0.0
+        matched = set()
+        for token in expanded:
+            if token in word_set:
+                matched.add(token)
+                idf = math.log(1 + (total_docs - df[token] + 0.5) / (df[token] + 0.5))
+                # Original question words carry more weight than added synonyms.
+                weight = 2.2 if token in tokens else 0.65
+                score += weight * idf * min(counts[token], 3)
+        # A strong phrase match is useful, but never enough on its own to
+        # outweigh a page that actually matches several question terms.
+        normalized = " ".join(tokens)
+        body_text = " ".join(word_set)
+        if len(normalized) > 5 and normalized in body_text:
+            score += 3.0
+        # Exact equipment / SOP phrase matches strongly identify the correct section.
+        if "inverter" in text_value and "inspection" in text_value and "inverter" in body_text and "inspection" in body_text:
+            score += 12.0
+        if ("a/c" in text_value or "air-conditioning" in text_value or "air conditioning" in text_value) and (
+            "air" in body_text or "compressor" in body_text or "evaporator" in body_text
+        ):
+            score += 12.0
+        if ("lockout" in text_value or "tagout" in text_value or "loto" in text_value) and (
+            "lockout" in body_text or "tagout" in body_text
+        ):
+            score += 12.0
+        coverage = len(matched.intersection(tokens)) / max(len(set(tokens)), 1)
+        score *= (0.65 + coverage)
+        if score > 0:
+            scored.append((score, coverage, item))
+
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    if not scored or scored[0][0] < 0.8:
+        return []
+
+    # Keep only pages with a meaningful score. Return relevant text chunks from
+    # those pages, rather than one arbitrary paragraph per page.
+    best_by_page = {}
+    for score, coverage, item in scored:
+        page_no = item.get("page")
+        if page_no not in best_by_page:
+            best_by_page[page_no] = score
+    selected_pages = [
+        page_no for page_no, score in sorted(
+            best_by_page.items(), key=lambda pair: pair[1], reverse=True
+        ) if score >= max(scored[0][0] * 0.28, 0.8)
+    ][:max(1, min(limit, 4))]
+
+    selected = []
+    for score, coverage, item in scored:
+        if item.get("page") in selected_pages:
+            selected.append(dict(item, _relevance=score))
+    selected.sort(key=lambda x: x.get("_relevance", 0), reverse=True)
+    return selected[:12]
 
 def _solar_sop_reference_metadata(matches, pages=None):
     """Extract SOP metadata from the most relevant retrieved SOP passages."""
@@ -7221,7 +7352,8 @@ def _solar_sop_reference_metadata(matches, pages=None):
     text_value = "\n".join(item.get("text", "") for item in source_items)
 
     number_patterns = [
-        r"(?im)^\s*SOP\s*(?:Number|No\.?|#)\s*[:\-]\s*([A-Z0-9][A-Z0-9._/\- ]{1,60})",
+        r"(?im)SOP\s*#\s*:\s*(VLL\s*[\\/ ]*\s*MDP\s*[\\/ ]*\s*SOP\s*[-_/ ]*\s*\d{1,5})",
+        r"\b(VLL\s*[\\/ ]*\s*MDP\s*[\\/ ]*\s*(?:SOP|CHK)\s*[-_/ ]*\s*\d{1,5})\b",
         r"\b((?:MDP[-_/ ]*)?SOP[-_/ ]?\d{1,5}(?:[-_/]\w+)?)\b",
     ]
     sop_number = None
@@ -7232,6 +7364,8 @@ def _solar_sop_reference_metadata(matches, pages=None):
             break
 
     title_patterns = [
+        r"(?is)Standard\s+Operation(?:s)?\s+Procedure\s+for\s+(.+?)(?:\s*-\s*VLL\s*/\s*MDP\s*/\s*CHK|\s*Purpose\s*/|\Z)",
+        r"(?is)Standard\s+Operating\s+Procedure\s+for\s+(.+?)(?:\s*Purpose\s*/|\Z)",
         r"(?im)^\s*SOP\s*Title\s*[:\-]\s*(.+?)\s*$",
         r"(?im)^\s*Document\s*Title\s*[:\-]\s*(.+?)\s*$",
     ]
@@ -7239,7 +7373,7 @@ def _solar_sop_reference_metadata(matches, pages=None):
     for pattern in title_patterns:
         found = re.search(pattern, text_value)
         if found:
-            sop_title = found.group(1).strip(" .,:;")
+            sop_title = " ".join(found.group(1).split()).strip(" .,:;")
             break
 
     if not sop_title:
@@ -7264,7 +7398,7 @@ def _solar_sop_responsible_person(matches, pages=None):
 
     text_value = "\n".join(item.get("text", "") for item in (matches or []))
     patterns = [
-        r"(?im)^\s*(?:Responsible Person|Person Responsible|Responsible Officer|SOP Owner|Owner|Responsibility)\s*[:\-]\s*(.+?)\s*$",
+        r"(?im)^\s*(?:Responsible Person|Person Responsible|Responsible Officer|SOP Owner|Owner|Responsibility)\s*[:\-]\s*(.+?)(?=\s+Approval\s*:|$)",
         r"(?im)^\s*(?:Prepared By|Reviewed By|Approved By)\s*[:\-]\s*(.+?)\s*$",
     ]
     found_values = []
@@ -7298,55 +7432,112 @@ def _solar_sop_translate(text_value, language):
 
 
 def answer_from_mdp_sop(question, pages, language="English"):
-    """Give a focused, source-based answer in the selected language only."""
+    """Answer the exact question from the strongest matching MDP SOP passages."""
     retrieval_question = _solar_sop_retrieval_query(question)
-    matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=6)
+    matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=4)
     if not matches:
         no_result = (
-            "I couldn't find this information in the uploaded MDP SOP. "
-            "Try asking with a more specific term, or choose one of the topics above."
+            "I couldn't locate a sufficiently relevant answer in the MDP SOP. "
+            "Please try naming the equipment or inspection (for example, inverter, "
+            "DC cable, switchyard, daily inspection, or A/C maintenance)."
             if language == "English" else
-            "උඩුගත කර ඇති MDP SOP ලේඛනයේ මෙම තොරතුරු සොයාගත නොහැකි විය. "
-            "වඩාත් නිශ්චිත වචන භාවිතයෙන් නැවත අසන්න හෝ ඉහත මාතෘකාවක් තෝරන්න."
+            "MDP SOP ලේඛනයේ ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු නිශ්චිතව සොයාගත නොහැකි විය. "
+            "උපකරණයේ හෝ පරීක්ෂණයේ නම සඳහන් කර නැවත අසන්න."
         )
         return no_result, []
 
-    sop_number, sop_title = _solar_sop_reference_metadata(matches)
-    responsible = _solar_sop_responsible_person(matches)
-    page_numbers = sorted({item["page"] for item in matches if item.get("page")})
+    # Use all retrieved chunks belonging to the selected SOP pages for metadata.
+    selected_page_numbers = sorted({item.get("page") for item in matches if item.get("page")})
+    page_context = [item for item in pages if item.get("page") in selected_page_numbers]
+    sop_number, sop_title = _solar_sop_reference_metadata(page_context)
+    responsible = _solar_sop_responsible_person(page_context)
+    page_numbers = selected_page_numbers
 
-    # Use only concise statements present in the retrieved SOP passages.
-    # Join related statements into a readable explanation instead of numbering
-    # every sentence, which made the answer difficult to follow.
-    sentences = []
-    for item in matches:
-        raw = item.get("text", "") or ""
-        for line in raw.splitlines():
-            line = " ".join(line.split()).strip(" •-\t")
-            if not line:
+    # Extract only question-relevant source lines. English mode deliberately
+    # excludes Sinhala source lines so the answer never mixes languages.
+    query_tokens = set(
+        w for w in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", retrieval_question.lower())
+        if len(w) > 2 and w not in {
+            "what", "when", "where", "which", "who", "why", "how", "the",
+            "and", "for", "from", "with", "that", "this", "are", "is",
+            "was", "were", "can", "could", "should", "would", "please",
+            "tell", "about", "procedure", "procedures", "maintenance",
+            "inspection", "inspections", "sop", "mdp", "solar", "plant",
+        }
+    )
+    question_lower = retrieval_question.lower()
+    topic_terms = []
+    if any(term in question_lower for term in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
+        topic_terms = [
+            "every 4 months", "clean", "dust", "debris", "compressor", "condenser",
+            "coil", "fan blade", "air filter", "evaporator", "louver", "blower",
+            "control panel", "isolate the power", "report if any issue",
+        ]
+    elif "inverter" in question_lower:
+        topic_terms = [
+            "communication", "mc4", "dc switch", "cooling fan", "airflow",
+            "ac combiner", "corrosion", "ventilation", "monthly", "report if",
+        ]
+    elif "lockout" in question_lower or "tagout" in question_lower or "loto" in question_lower:
+        topic_terms = [
+            "prepare for shutdown", "notify all affected", "shutdown the equipment",
+            "isolate the equipment", "hazardous energy", "lockout", "tagout",
+            "verify", "supervisor", "site staff",
+        ]
+    elif "panel" in question_lower:
+        topic_terms = [
+            "do not step", "designated pathways", "lightning", "heavy rain",
+            "strong winds", "safety helmet", "safety shoes", "reflective vest",
+            "front glass", "back glass", "junction box", "panel id",
+        ]
+
+    candidate_lines = []
+    seen_lines = set()
+    for item in page_context:
+        for raw_line in (item.get("text") or "").splitlines():
+            line = " ".join(raw_line.split()).strip(" •-\t")
+            if len(line) < 18 or re.search(r"[\u0D80-\u0DFF]", line):
                 continue
-            fragments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(])|(?<=।)\s+", line)
-            for fragment in fragments:
-                fragment = fragment.strip(" •-\t")
-                if len(fragment) >= 24 and fragment not in sentences:
-                    sentences.append(fragment)
+            key = line.lower()
+            if key in seen_lines:
+                continue
+            seen_lines.add(key)
+            words = set(re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", key))
+            relevance = len(words.intersection(query_tokens))
+            topic_match = any(term in key for term in topic_terms)
+            if relevance or topic_match:
+                candidate_lines.append((relevance + (5 if topic_match else 0), line))
 
-    if not sentences:
-        sentences = [" ".join(item.get("text", "").split()) for item in matches if item.get("text")]
-
-    answer_text = " ".join(sentences[:7])
+    candidate_lines.sort(key=lambda pair: pair[0], reverse=True)
+    answer_lines = [line for _, line in candidate_lines[:10]]
+    if not answer_lines:
+        answer_lines = [
+            " ".join(item.get("text", "").split())
+            for item in page_context[:3] if item.get("text")
+            and not re.search(r"[\u0D80-\u0DFF]", item.get("text", ""))
+        ]
+    if ("lockout" in question_lower or "tagout" in question_lower or "loto" in question_lower):
+        loto_steps = []
+        for item in page_context:
+            for raw_line in (item.get("text") or "").splitlines():
+                line = " ".join(raw_line.split()).strip(" •-\t")
+                if re.search(r"(?i)prepare for shutdown|notify all affected|shutdown the equipment|isolate the equipment|hazardous energy|apply lock|tag", line):
+                    if not re.search(r"[\u0D80-\u0DFF]", line) and line not in loto_steps:
+                        loto_steps.append(line)
+        if loto_steps:
+            answer_lines = loto_steps[:8]
+    answer_text = "\n".join(f"- {line}" for line in answer_lines[:10])
     response = (
         "**SOP Reference**\n\n"
         f"- **SOP No.:** {sop_number}\n"
         f"- **SOP Title:** {sop_title}\n"
-        f"- **Relevant Page(s):** {', '.join(map(str, page_numbers)) if page_numbers else 'Not identified'}\n"
+        f"- **Relevant PDF Page(s):** {', '.join(map(str, page_numbers)) if page_numbers else 'Not identified'}\n"
         f"- **Responsible Person:** {responsible}\n\n"
         "**Answer**\n\n"
         f"{answer_text}\n\n"
         "*Follow the approved SOP and instructions from authorised site personnel.*"
     )
     return _solar_sop_translate(response, language), matches
-
 
 def _solar_sop_detect_language(text_value):
     """Detect Sinhala script; otherwise default to English."""
@@ -7367,51 +7558,124 @@ def _solar_sop_retrieval_query(question):
         return question
 
 
+def _solar_sop_followup_query(topic_context, selected_option):
+    """Convert an Explore-next click into a precise, independent SOP question."""
+    option = (selected_option or "").strip().lower()
+    # Sinhala labels map back to their English retrieval intent.
+    option_map = {
+        "cleaning method and mechanism": "cleaning method mechanism",
+        "පිරිසිදු කිරීමේ ක්‍රමය සහ යාන්ත්‍රණය": "cleaning method mechanism",
+        "cleaning equipment and materials": "cleaning equipment materials",
+        "පිරිසිදු කිරීමේ උපකරණ සහ ද්‍රව්‍ය": "cleaning equipment materials",
+        "cleaning steps and procedure": "cleaning steps sequence procedure",
+        "පිරිසිදු කිරීමේ පියවර සහ ක්‍රියාපටිපාටිය": "cleaning steps sequence procedure",
+        "control measures and safety": "safety precautions control measures hazards PPE",
+        "පාලන ක්‍රියාමාර්ග සහ ආරක්ෂාව": "safety precautions control measures hazards PPE",
+        "responsible person and duties": "responsibilities responsible personnel duties",
+        "වගකිවයුතු පුද්ගලයා සහ රාජකාරි": "responsibilities responsible personnel duties",
+        "inspection procedure": "inspection procedure steps",
+        "පරීක්ෂණ ක්‍රියාපටිපාටිය": "inspection procedure steps",
+        "inspection checklist": "inspection checklist items",
+        "පරීක්ෂණ පිරික්සුම් ලැයිස්තුව": "inspection checklist items",
+        "recording and reporting": "inspection recording report records",
+        "වාර්තා කිරීම සහ වාර්තා ඉදිරිපත් කිරීම": "inspection recording report records",
+        "grass cutting / weeding method": "grass cutting weeding",
+        "තණකොළ කැපීම / වල් පැළෑටි ඉවත් කිරීමේ ක්‍රමය": "grass cutting weeding",
+        "equipment and materials": "equipment tools materials",
+        "උපකරණ සහ ද්‍රව්‍ය": "equipment tools materials",
+        "work frequency and procedure": "frequency schedule procedure",
+        "කාර්යයේ වාර ගණන සහ ක්‍රියාපටිපාටිය": "frequency schedule procedure",
+        "procedure and work steps": "procedure steps",
+        "ක්‍රියාපටිපාටිය සහ වැඩ පියවර": "procedure steps",
+    }
+    intent = option_map.get(option, selected_option)
+    # Keep the original equipment/topic, but do not append the entire chat history.
+    return f"{topic_context} {intent}".strip()
+
+
 def _solar_sop_clarification_options(question, matches):
-    """Offer focused follow-up choices based on the question and retrieved SOP text."""
+    """Offer follow-up questions tied to the actual MDP SOP section."""
     q = (question or "").lower()
-    if any(word in q for word in ("panel", "clean", "module")):
+
+    if any(term in q for term in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
         return [
-            "Cleaning method and mechanism",
-            "Cleaning equipment and materials",
-            "Cleaning steps and procedure",
-            "Control measures and safety",
-            "Responsible person and duties",
+            "Outdoor unit inspection",
+            "Outdoor unit cleaning every 4 months",
+            "Indoor unit inspection",
+            "Indoor unit cleaning every 4 months",
+            "Electrical safety precautions",
+            "Checklist recording and approval",
         ]
-    if any(word in q for word in ("inspection", "check", "record")):
+    if "inverter" in q:
         return [
-            "Inspection procedure",
-            "Inspection checklist",
-            "Recording and reporting",
-            "Responsible person and duties",
+            "Inverter communication status",
+            "MC4 connector inspection",
+            "DC switch inspection",
+            "Cooling fans and ventilation",
+            "AC combiner box and corrosion",
+            "Inverter checklist recording",
         ]
-    if any(word in q for word in ("grass", "weed", "vegetation")):
+    if "panel inspection" in q:
         return [
-            "Grass cutting / weeding method",
-            "Equipment and materials",
-            "Work frequency and procedure",
-            "Control measures and safety",
-            "Responsible person and duties",
+            "Front and back glass inspection",
+            "Diode and junction box inspection",
+            "Panel inspection safety precautions",
+            "Recording damage and remarks",
+            "Panel inspection checklist",
+        ]
+    if any(term in q for term in ("daily inspection", "daily check")):
+        return [
+            "Daily inspection procedure",
+            "Required PPE and safety",
+            "Inverter and auxiliary equipment checks",
+            "Recording and reporting findings",
+            "Daily inspection checklist",
+        ]
+    if any(term in q for term in ("dc cable", "dc cables")):
+        return [
+            "DC cable inspection procedure",
+            "Cable condition and damage",
+            "Safety precautions and PPE",
+            "Recording inspection findings",
+            "DC cable checklist",
+        ]
+    if "mdb" in q:
+        return [
+            "MDB inspection procedure",
+            "ACB and MCCB checks",
+            "Busbar and cable insulation",
+            "Protection and meter checks",
+            "MDB checklist recording",
+        ]
+    if "switchyard" in q or "switch yard" in q:
+        return [
+            "Switchyard inspection procedure",
+            "OVCB and DDLO checks",
+            "Transformer inspection",
+            "Fence and warning signs",
+            "Switchyard checklist recording",
+        ]
+    if "lockout" in q or "tagout" in q or "loto" in q:
+        return [
+            "Prepare for shutdown",
+            "Notify affected employees",
+            "Shutdown and isolate equipment",
+            "Verify hazardous energy isolation",
+            "Supervisor and site staff responsibilities",
         ]
 
-    # If the query is broad, use headings/phrases found in the retrieved text.
+    # Only offer headings actually found in the retrieved SOP passages.
     choices = []
-    for item in matches[:5]:
-        for line in item.get("text", "").splitlines():
+    for item in matches[:8]:
+        for line in (item.get("text") or "").splitlines():
             line = " ".join(line.split()).strip(" .:-")
-            if 8 <= len(line) <= 90 and line not in choices:
+            if 8 <= len(line) <= 90 and not re.search(r"[\u0D80-\u0DFF]", line) and line not in choices:
                 choices.append(line)
             if len(choices) == 4:
                 break
         if len(choices) == 4:
             break
-    return choices or [
-        "Procedure and work steps",
-        "Equipment and materials",
-        "Control measures and safety",
-        "Responsible person and duties",
-    ]
-
+    return choices
 
 def _solar_sop_localize_options(options, language):
     """Keep suggested choices in the user's selected language."""
@@ -7430,6 +7694,48 @@ def _solar_sop_localize_options(options, language):
         "Equipment and materials": "උපකරණ සහ ද්‍රව්‍ය",
         "Work frequency and procedure": "කාර්යයේ වාර ගණන සහ ක්‍රියාපටිපාටිය",
         "Procedure and work steps": "ක්‍රියාපටිපාටිය සහ වැඩ පියවර",
+        "Outdoor unit inspection": "බාහිර ඒකකය පරීක්ෂා කිරීම",
+        "Outdoor unit cleaning every 4 months": "සෑම මාස 4කට වරක් බාහිර ඒකකය පිරිසිදු කිරීම",
+        "Indoor unit inspection": "අභ්‍යන්තර ඒකකය පරීක්ෂා කිරීම",
+        "Indoor unit cleaning every 4 months": "සෑම මාස 4කට වරක් අභ්‍යන්තර ඒකකය පිරිසිදු කිරීම",
+        "Electrical safety precautions": "විදුලි ආරක්ෂක පූර්වෝපායන්",
+        "Checklist recording and approval": "පිරික්සුම් ලැයිස්තුව සටහන් කිරීම සහ අනුමැතිය",
+        "Inverter communication status": "ඉන්වර්ටර් සන්නිවේදන තත්ත්වය",
+        "MC4 connector inspection": "MC4 සම්බන්ධක පරීක්ෂාව",
+        "DC switch inspection": "DC ස්විච් පරීක්ෂාව",
+        "Cooling fans and ventilation": "සිසිලන පංකා සහ වාතාශ්‍රය",
+        "AC combiner box and corrosion": "AC Combiner Box සහ විඛාදනය",
+        "Inverter checklist recording": "ඉන්වර්ටර් පිරික්සුම් ලැයිස්තුව සටහන් කිරීම",
+        "Front and back glass inspection": "ඉදිරිපස සහ පසුපස වීදුරු පරීක්ෂාව",
+        "Diode and junction box inspection": "ඩයෝඩ් සහ Junction Box පරීක්ෂාව",
+        "Panel inspection safety precautions": "පැනල් පරීක්ෂණ ආරක්ෂක පූර්වෝපායන්",
+        "Recording damage and remarks": "හානි සහ අදහස් සටහන් කිරීම",
+        "Panel inspection checklist": "පැනල් පරීක්ෂණ පිරික්සුම් ලැයිස්තුව",
+        "Daily inspection procedure": "දෛනික පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "Required PPE and safety": "අවශ්‍ය පුද්ගලික ආරක්ෂක උපකරණ සහ ආරක්ෂාව",
+        "Inverter and auxiliary equipment checks": "ඉන්වර්ටර් සහ අනුබද්ධ උපකරණ පරීක්ෂා කිරීම",
+        "Recording and reporting findings": "සොයාගැනීම් සටහන් කිරීම සහ වාර්තා කිරීම",
+        "Daily inspection checklist": "දෛනික පරීක්ෂණ පිරික්සුම් ලැයිස්තුව",
+        "DC cable inspection procedure": "DC කේබල් පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "Cable condition and damage": "කේබල් තත්ත්වය සහ හානි",
+        "Safety precautions and PPE": "ආරක්ෂක පූර්වෝපායන් සහ PPE",
+        "Recording inspection findings": "පරීක්ෂණ සොයාගැනීම් සටහන් කිරීම",
+        "DC cable checklist": "DC කේබල් පිරික්සුම් ලැයිස්තුව",
+        "MDB inspection procedure": "MDB පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "ACB and MCCB checks": "ACB සහ MCCB පරීක්ෂා කිරීම",
+        "Busbar and cable insulation": "Busbar සහ කේබල් පරිවාරකය",
+        "Protection and meter checks": "ආරක්ෂණ සහ මීටර් පරීක්ෂා කිරීම",
+        "MDB checklist recording": "MDB පිරික්සුම් ලැයිස්තුව සටහන් කිරීම",
+        "Switchyard inspection procedure": "Switchyard පරීක්ෂණ ක්‍රියාපටිපාටිය",
+        "OVCB and DDLO checks": "OVCB සහ DDLO පරීක්ෂා කිරීම",
+        "Transformer inspection": "ට්‍රාන්ස්ෆෝමරය පරීක්ෂා කිරීම",
+        "Fence and warning signs": "වැට සහ අනතුරු ඇඟවීමේ පුවරු",
+        "Switchyard checklist recording": "Switchyard පිරික්සුම් ලැයිස්තුව සටහන් කිරීම",
+        "Prepare for shutdown": "වසා දැමීමට සූදානම් වීම",
+        "Notify affected employees": "බලපෑමට ලක්වන සේවකයින්ට දැනුම් දීම",
+        "Shutdown and isolate equipment": "උපකරණ ක්‍රියා විරහිත කර වෙන් කිරීම",
+        "Verify hazardous energy isolation": "අවදානම් ශක්ති ප්‍රභව වෙන් කර ඇති බව තහවුරු කිරීම",
+        "Supervisor and site staff responsibilities": "අධීක්ෂක සහ ස්ථාන කාර්ය මණ්ඩලයේ වගකීම්",
     }
     return [translations.get(option, _solar_sop_translate(option, "Sinhala")) for option in options]
 
@@ -7507,7 +7813,7 @@ def render_solar_sop_agent(selected_plant=None):
         site_code = (getattr(selected_plant, "code", "") or "").upper()
         site_name = getattr(selected_plant, "name", "") or site_code or "Selected Site"
         site_label = site_name.replace(" Solar Power Plant", "").strip()
-        is_mdp_site = site_code == "MDP" or "MDP" in site_name.upper()
+        is_mdp_site = site_code == "MDP" or "MDP" in site_name.upper() or "MADAMPE" in site_name.upper()
 
         title_col, close_col = st.columns([5, 1])
         with title_col:
@@ -7622,7 +7928,7 @@ def render_solar_sop_agent(selected_plant=None):
                             # Search the selected Explore-next subject directly, retaining
                             # only the broad topic as context instead of chaining every
                             # previous follow-up into the query.
-                            followup_question = f"{topic_context} {option}".strip()
+                            followup_question = _solar_sop_followup_query(topic_context, option)
                             st.session_state.solar_sop_chat_history.append({"role": "user", "content": option})
                             response, matches = answer_from_mdp_sop(followup_question, pages, language)
                             st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
