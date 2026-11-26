@@ -2377,7 +2377,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         if dpv_reference:
             # DPV: show 15 zones on grass map and table-status markers on panel map.
             grass_records = merged_map_records(grass_category, "Weeding Grass Cutting", "Zone")
-            zone_assets = asset_list(plant, "Zone")
+            # DPV has 15 mapped zones. Ignore an older cached/database zone_count of 10.
+            zone_assets = [f"Z-{i:02d}" for i in range(1, 16)]
             # Keep every DPV grass-zone marker inside the visible solar-array
             # footprint (not on the access road or the buildings at the right).
             # Normalized centre points are aligned to the 15 actual coloured
@@ -3276,16 +3277,26 @@ def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
     return windows
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count completed fixed calendar cycles from 1 January 2023.
+    """Count completed cycles against every calendar cycle since 1 January 2023.
 
-    Panel Cleaning: every registered table must have a completed record in the
-    same Jan-Jun or Jul-Dec window.
-    Grass Cutting: every registered zone must be complete in the same
-    Jan-Apr, May-Aug or Sep-Dec window. HRN 1's individual table traces are
-    combined into their assigned zones. Grass Cutting and Weeding Grass
-    Cutting records are treated as the same maintenance activity.
+    Panel Cleaning: Jan-Jun and Jul-Dec (2 cycles/year).
+    Grass Cutting: Jan-Apr, May-Aug and Sep-Dec (3 cycles/year).
+    Every period in the requested date range is included in the denominator,
+    even if no activity was recorded in that period. A period is completed
+    only when every registered table/zone has a completed record in that same
+    period. Grass Cutting also includes Weeding Grass Cutting records.
     """
-    if category not in ("Panel Cleaning", "Grass Cutting"):
+    if category not in ("Panel Cleaning", "Grass Cutting") or start_date > end_date:
+        return 0, 0
+
+    # The reporting baseline is fixed. Do not move the baseline to the first
+    # record date: doing so incorrectly removes earlier cycles from the total.
+    baseline = date(2023, 1, 1)
+    range_start = max(start_date, baseline)
+    windows = maintenance_cycle_plan(
+        range_start, end_date, category, anchor_date=baseline
+    )
+    if not windows:
         return 0, 0
 
     is_panel = category == "Panel Cleaning"
@@ -3294,25 +3305,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
 
-    # Establish the cycle start independently for each plant and category,
-    # using its first real maintenance record (e.g. May 2023), not 1 Jan 2023.
-    first_record_date = (
-        db.query(func.min(MaintenanceRecord.task_date))
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date <= end_date,
-        )
-        .scalar()
-    )
-    if not first_record_date or first_record_date > end_date:
-        return 0, 0
-
-    windows = maintenance_cycle_plan(
-        first_record_date, end_date, category, anchor_date=first_record_date
-    )
-    if not windows:
-        return 0, 0
     plant_identity = (
         f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
     ).upper().replace(" ", "")
@@ -3353,7 +3345,6 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         } or "green - completed" in normalized
 
     completed_cycles = 0
-    recorded_windows = 0
     for window_start, window_end in windows:
         rows = (
             db.query(MaintenanceRecord)
@@ -3366,96 +3357,56 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
             .all()
         )
-        # A cycle is counted only when at least one activity record exists
-        # inside its period. Empty future or historical periods are excluded.
-        if not rows:
-            continue
-        recorded_windows += 1
+
+        # Resolve the final status for each asset within this cycle. A later
+        # pending/not-completed entry must override an earlier completed entry.
+        latest_by_asset = {}
+        for row in rows:
+            latest_by_asset[_asset_key(row.asset_id)] = row
 
         if is_panel:
-            completed_assets = {
-                _asset_key(row.asset_id)
-                for row in rows if _is_completed(row.status)
-            }
             required = {_asset_key(asset) for asset in expected_assets}
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if _is_completed(row.status)
+            }
             cycle_complete = bool(required) and required.issubset(completed_assets)
 
         elif is_hsn1:
             completed_tables = {
-                _asset_key(row.asset_id)
-                for row in rows
-                if _asset_key(row.asset_id).startswith("T-") and _is_completed(row.status)
+                asset for asset, row in latest_by_asset.items()
+                if asset.startswith("T-") and _is_completed(row.status)
             }
             completed_zones = set()
-            for row in rows:
-                zone_key = _asset_key(row.asset_id)
-                if not zone_key.startswith("Z-"):
-                    continue
-                details = parse_details(row)
-                checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
-                if _is_completed(row.status) and not checks:
-                    completed_zones.add(zone_key)
-                    continue
-                if isinstance(checks, dict) and checks:
-                    checked_tables = {
-                        _asset_key(trace_id)
-                        for trace_id, value in checks.items()
-                        if _is_completed(value)
-                    }
-                    completed_tables.update(checked_tables)
-
             for zone, traces in zone_trace_map.items():
                 required_traces = {_asset_key(trace) for trace in traces}
                 if required_traces.issubset(completed_tables):
                     completed_zones.add(_asset_key(zone))
-
             required_zones = {_asset_key(zone) for zone in expected_assets}
             cycle_complete = bool(required_zones) and required_zones.issubset(completed_zones)
 
         else:
-            completed_assets = {
-                _asset_key(row.asset_id)
-                for row in rows if _is_completed(row.status)
-            }
             required = {_asset_key(asset) for asset in expected_assets}
+            completed_assets = {
+                asset for asset, row in latest_by_asset.items()
+                if _is_completed(row.status)
+            }
             cycle_complete = bool(required) and required.issubset(completed_assets)
 
         if cycle_complete:
             completed_cycles += 1
 
-    return completed_cycles, recorded_windows
+    # Denominator is all calendar periods from 2023-01-01 through end_date,
+    # not only periods that happen to contain activity records.
+    return completed_cycles, len(windows)
 
 def maintenance_cycle_window_to_date(db, plant, task_date, category):
-    """Return the calendar cycle start based on this plant's first recorded work."""
-    categories = (
-        ["Panel Cleaning", "Weeding Panel Cleaning"]
-        if category == "Panel Cleaning"
-        else ["Grass Cutting", "Weeding Grass Cutting"]
-    )
-    first_record = (
-        db.query(func.min(MaintenanceRecord.task_date))
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date <= task_date,
-        )
-        .scalar()
-    )
-    if not first_record:
+    """Return the fixed calendar-cycle start, aligned from 1 January 2023."""
+    if category not in ("Panel Cleaning", "Grass Cutting"):
         return task_date
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
-    period_month = ((first_record.month - 1) // months_per_cycle) * months_per_cycle + 1
-    cycle_start = date(first_record.year, period_month, 1)
-    if first_record > cycle_start:
-        cycle_start = first_record
-    while True:
-        next_start = _add_months_to_date(
-            date(cycle_start.year, cycle_start.month, 1), months_per_cycle
-        )
-        if next_start > task_date:
-            return cycle_start
-        cycle_start = next_start
-
+    period_month = ((task_date.month - 1) // months_per_cycle) * months_per_cycle + 1
+    return date(task_date.year, period_month, 1)
 
 def _overview_target_label(done, total, target_days, unit):
     remaining = max(0, total - done)
@@ -7433,38 +7384,61 @@ def _solar_sop_responsible_person(matches, pages=None):
 
 
 def _solar_sop_translate(text_value, language):
-    """Return the complete answer in the selected language only."""
+    """Translate the complete answer into Sinhala in safe-sized chunks."""
     if language == "English":
         return text_value
-
-    # Translate the complete response, including headings and SOP metadata labels.
-    # Do not append the English source text if translation is unavailable.
     try:
         from deep_translator import GoogleTranslator
-        translated = GoogleTranslator(source="auto", target="si").translate(text_value)
-        if translated and re.search(r"[\u0D80-\u0DFF]", translated):
-            return translated
+        translator = GoogleTranslator(source="auto", target="si")
+        paragraphs = str(text_value or "").splitlines()
+        translated_lines = []
+        for line in paragraphs:
+            if not line.strip():
+                translated_lines.append("")
+                continue
+            # Google translation endpoints may reject long requests. Split long
+            # paragraphs into sentence-sized pieces and translate each one.
+            chunks = []
+            remaining = line
+            while len(remaining) > 3000:
+                cut = remaining.rfind(" ", 0, 3000)
+                if cut < 1000:
+                    cut = 3000
+                chunks.append(remaining[:cut])
+                remaining = remaining[cut:].lstrip()
+            if remaining:
+                chunks.append(remaining)
+            translated_chunks = []
+            for chunk in chunks:
+                translated = translator.translate(chunk)
+                if not translated:
+                    raise ValueError("Empty Sinhala translation")
+                translated_chunks.append(translated)
+            translated_lines.append(" ".join(translated_chunks))
+        result = "\n".join(translated_lines).strip()
+        if result and re.search(r"[\u0D80-\u0DFF]", result):
+            return result
     except Exception:
         pass
-
     return (
         "සිංහල පිළිතුර ලබාගැනීමට මේ මොහොතේ නොහැකියි. "
         "කරුණාකර නැවත උත්සාහ කරන්න."
     )
 
 
+
 def answer_from_mdp_sop(question, pages, language="English"):
-    """Build a complete, question-focused answer from full SOP sentences."""
+    """Answer in the question language using relevant SOP paragraphs/checklist items."""
     retrieval_question = _solar_sop_retrieval_query(question)
     matches = retrieve_mdp_sop_context(retrieval_question, pages, limit=4)
+
     if not matches:
         no_result = (
-            "I couldn't locate a sufficiently relevant answer in the MDP SOP. "
-            "Please try naming the equipment or inspection (for example, inverter, "
-            "DC cable, switchyard, daily inspection, or A/C maintenance)."
+            "I could not find a sufficiently relevant passage in the MDP SOP. "
+            "Please try naming the equipment, activity, location, responsibility, or inspection."
             if language == "English" else
-            "MDP SOP ලේඛනයේ ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු නිශ්චිතව සොයාගත නොහැකි විය. "
-            "උපකරණයේ හෝ පරීක්ෂණයේ නම සඳහන් කර නැවත අසන්න."
+            "MDP SOP ලේඛනය තුළ මෙම ප්‍රශ්නයට අදාළ තොරතුරු සොයාගත නොහැකි විය. "
+            "කරුණාකර උපකරණය, කාර්යය, ස්ථානය, වගකීම හෝ පරීක්ෂණය සඳහන් කර නැවත අසන්න."
         )
         return no_result, []
 
@@ -7473,29 +7447,23 @@ def answer_from_mdp_sop(question, pages, language="English"):
     })
     page_context = [
         item for item in pages if item.get("page") in selected_page_numbers
-    ]
+    ] or matches
+
     sop_number, sop_title = _solar_sop_reference_metadata(page_context)
     responsible = _solar_sop_responsible_person(page_context)
 
-    # Build sentences from complete retrieved page text, not isolated PDF lines.
-    # PDF extraction often wraps one sentence over several visual lines; joining
-    # the lines first prevents fragments such as "confirm airflow, and inspect fan".
-    source_parts = []
-    for item in page_context:
-        raw = (item.get("text") or "").strip()
-        if raw and not re.search(r"[\u0D80-\u0DFF]", raw):
-            source_parts.append(raw)
-    source_text = "\n".join(source_parts)
+    # Retain checklist rows, numbered steps and paragraphs. The old logic
+    # discarded them unless they ended in sentence punctuation.
+    source_text = "\n".join(
+        (item.get("text") or "").strip() for item in page_context
+        if item.get("text")
+    )
     source_text = re.sub(r"[ \t]+", " ", source_text)
-    source_text = re.sub(r"\s*\n\s*", " ", source_text)
-    source_text = re.sub(r"\s+", " ", source_text).strip()
+    source_text = re.sub(r"\n{2,}", "\n", source_text).strip()
 
-    # Split only at sentence-ending punctuation. A wrapped line or a comma
-    # never becomes a separate answer bullet.
-    sentence_candidates = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(])", source_text)
     query_tokens = {
-        w for w in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", retrieval_question.lower())
-        if len(w) > 2 and w not in {
+        token for token in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", retrieval_question.lower())
+        if len(token) > 2 and token not in {
             "what", "when", "where", "which", "who", "why", "how", "the",
             "and", "for", "from", "with", "that", "this", "are", "is",
             "was", "were", "can", "could", "should", "would", "please",
@@ -7503,70 +7471,50 @@ def answer_from_mdp_sop(question, pages, language="English"):
             "inspection", "inspections", "sop", "mdp", "solar", "plant",
         }
     }
-    q = retrieval_question.lower()
-    topic_terms = []
-    if any(t in q for t in ("a/c", "air conditioning", "air-conditioning", "ac maintenance")):
-        topic_terms = ["compressor", "condenser", "coil", "fan blade", "air filter",
-                       "evaporator", "louver", "blower", "every 4 months", "isolat"]
-    elif "inverter" in q or any(t in q for t in ("mc4", "dc switch", "combiner box", "cooling fan")):
-        topic_terms = ["communication", "mc4", "dc switch", "cooling fan", "airflow",
-                       "combiner", "corrosion", "ventilation", "monthly"]
-    elif any(t in q for t in ("lockout", "tagout", "loto")):
-        topic_terms = ["shutdown", "notify", "isolate", "hazardous energy", "lockout",
-                       "tagout", "verify", "supervisor"]
-    elif "panel" in q:
-        topic_terms = ["front glass", "back glass", "junction box", "panel", "lightning",
-                       "heavy rain", "strong winds", "safety helmet", "safety shoes"]
+
+    candidates = []
+    for paragraph in re.split(r"\n|(?<=[.!?])\s+(?=[A-Z0-9])", source_text):
+        paragraph = re.sub(r"^\s*[-•▪]+\s*", "", paragraph).strip()
+        paragraph = re.sub(r"\s+", " ", paragraph)
+        if len(paragraph) < 18:
+            continue
+        if re.search(r"(?i)^(?:SOP\s*#|Revision\s*#|Implementation Date|Page #)", paragraph):
+            continue
+        candidates.append(paragraph)
 
     scored = []
-    seen = set()
-    for sentence in sentence_candidates:
-        sentence = re.sub(r"^\s*[\u2022•▪\-]+\s*", "", sentence).strip()
-        sentence = re.sub(r"\s+", " ", sentence)
-        # Only return complete sentences. This deliberately rejects dangling
-        # clauses that PDF extraction has separated from their continuation.
-        if len(sentence) < 25 or not re.search(r"[.!?][\"')\]]?$", sentence):
-            continue
-        key = sentence.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        words = set(re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", key))
-        relevance = len(words.intersection(query_tokens))
-        topic_score = sum(2 for term in topic_terms if term in key)
-        if relevance or topic_score:
-            scored.append((relevance + topic_score, sentence))
+    for index, paragraph in enumerate(candidates):
+        words = set(re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", paragraph.lower()))
+        overlap = len(words.intersection(query_tokens))
+        if overlap:
+            scored.append((overlap, index, paragraph))
 
-    # Keep source order after selecting relevant complete sentences.
     if scored:
-        threshold = max(1, max(score for score, _ in scored) * 0.35)
-        chosen = {sentence for score, sentence in scored if score >= threshold}
-        answer_sentences = [
-            sentence for sentence in sentence_candidates
-            if sentence.strip() in chosen
-        ][:12]
-    else:
-        answer_sentences = []
-
-    # If the PDF has a checklist with no sentence punctuation, use a complete
-    # retrieved paragraph rather than returning disconnected line fragments.
-    if not answer_sentences:
-        for item in matches:
-            paragraph = re.sub(r"\s+", " ", (item.get("text") or "")).strip()
-            if (len(paragraph) >= 40
-                    and not re.search(r"[\u0D80-\u0DFF]", paragraph)
-                    and set(re.findall(r"[a-zA-Z0-9]+", paragraph.lower())).intersection(query_tokens)):
-                answer_sentences.append(paragraph)
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        answer_items, seen = [], set()
+        for _, _, paragraph in scored:
+            key = paragraph.casefold()
+            if key not in seen:
+                seen.add(key)
+                answer_items.append(paragraph)
+            if len(answer_items) >= 12:
                 break
-
-    if not answer_sentences:
-        answer_text = (
-            "The relevant SOP pages were found, but the extracted text does not "
-            "contain a complete, readable answer to this specific question. "
-            "Please check the referenced PDF pages."
-        )
+        answer_text = "\n".join(f"- {item}" for item in answer_items)
     else:
-        answer_text = "\n".join(f"- {sentence.strip()}" for sentence in answer_sentences)
+        # If the wording differs from the SOP, use the relevant retrieved
+        # source paragraphs rather than returning a false "no answer" result.
+        fallback = [
+            re.sub(r"\s+", " ", item.get("text") or "").strip()
+            for item in matches
+        ]
+        fallback = [item for item in fallback if len(item) >= 35]
+        answer_text = "\n".join(f"- {item[:900]}" for item in fallback[:6])
+
+    if not answer_text:
+        answer_text = (
+            "The relevant SOP section was located, but its extracted text could not "
+            "be converted into a readable answer. Please inspect the cited PDF pages."
+        )
 
     response = (
         "**SOP Reference**\n\n"
@@ -7578,7 +7526,39 @@ def answer_from_mdp_sop(question, pages, language="English"):
         f"{answer_text}\n\n"
         "*Follow the approved SOP and instructions from authorised site personnel.*"
     )
-    return _solar_sop_translate(response, language), matches
+
+    if language == "English":
+        return response, matches
+
+    translated = _solar_sop_translate(response, "Sinhala")
+    if translated and "සිංහල පිළිතුර ලබාගැනීමට මේ මොහොතේ නොහැකියි" not in translated:
+        return translated, matches
+
+    # Prefer native Sinhala content from the bilingual PDF if online translation
+    # is unavailable. Never silently show the English answer as a Sinhala reply.
+    sinhala_parts = []
+    for item in page_context:
+        for paragraph in re.split(r"\n{1,}|(?<=[.!?])\s+", item.get("text") or ""):
+            paragraph = re.sub(r"\s+", " ", paragraph).strip()
+            if re.search(r"[\u0D80-\u0DFF]", paragraph) and len(paragraph) >= 12:
+                if paragraph not in sinhala_parts:
+                    sinhala_parts.append(paragraph)
+    if sinhala_parts:
+        sinhala_response = (
+            f"**SOP යොමුව**\n\n"
+            f"- **SOP අංකය:** {sop_number}\n"
+            f"- **SOP මාතෘකාව:** {sop_title}\n"
+            f"- **අදාළ PDF පිටු:** {', '.join(map(str, selected_page_numbers))}\n\n"
+            "**පිළිතුර**\n\n"
+            + "\n".join(f"- {part}" for part in sinhala_parts[:10])
+        )
+        return sinhala_response, matches
+
+    return (
+        "මෙම ප්‍රශ්නයට අදාළ SOP කොටස සොයාගත් නමුත් එය සිංහලට පරිවර්තනය කිරීමට "
+        "දැනට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.",
+        matches,
+    )
 
 
 def _solar_sop_detect_language(text_value):
