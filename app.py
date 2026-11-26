@@ -1,7 +1,7 @@
 
 import os 
 import re
-import io 
+import io
 import json
 import base64
 import uuid
@@ -791,7 +791,7 @@ def seed_database():
         # Keep site totals aligned, while preserving HRN 1's specific 80-table layout.
         for configured_plant in db.query(Plant).filter(Plant.active == True).all():
             configured_plant.table_count = 80 if configured_plant.code == "HS1" else 79
-            configured_plant.zone_count = 10
+            configured_plant.zone_count = 15 if configured_plant.code == "DPV" else 10
 
         db.commit()
         st.session_state["_database_seeded"] = True
@@ -2395,10 +2395,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 (.535, .500),  # Z9 — middle blue zone
                 (.638, .475),  # Z10 — middle-right green zone
                 (.170, .690),  # Z11 — lower-left purple zone
-                (.317, .690),  # Z12 — lower blue zone
-                (.452, .655),  # Z13 — lower-centre yellow zone
+                (.307, .680),  # Z12 — inset from the lower blue-zone boundary
+                (.442, .645),  # Z13 — inset from the lower-centre yellow-zone boundary
                 (.374, .755),  # Z14 — lower-middle turquoise zone; keep marker inside its own zone
-                (.593, .620),  # Z15 — lower-right pink zone
+                (.583, .610),  # Z15 — inset from the lower-right pink-zone boundary
             ]
             if map_mode == "grass":
                 dx, dy, dtext = [], [], []
@@ -2410,7 +2410,7 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     dtext.append(f"{asset} — Grass cutting: {'Completed' if done else 'Pending'}")
                 clean_fig.add_trace(go.Scatter(
                     x=dx, y=dy, mode="markers+text",
-                    marker=dict(size=25, color=["#16e879" if "Completed" in t else "#ff2638" for t in dtext],
+                    marker=dict(size=19, color=["#16e879" if "Completed" in t else "#ff2638" for t in dtext],
                                 line=dict(color="#ffffff", width=2)),
                     text=[f"Z{i+1}" for i in range(len(dx))], textposition="middle center",
                     textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
@@ -2422,6 +2422,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                 # Every table receives its own red/green status overlay and hover label.
                 panel_records = merged_map_records(panel_category, "Weeding Panel Cleaning", "Table")
                 table_assets = asset_list(plant, "Table")
+                # DPV: 17 visible panel banks, allocated to exactly 79
+                # registered solar tables. The former overlay began too far
+                # to the right; shift each bank left while retaining its width
+                # and keeping every rectangle within the image canvas.
                 dpv_array_regions = [
                     (.265, .165, .382, .415), (.402, .165, .514, .415),
                     (.534, .165, .646, .415), (.666, .165, .778, .415),
@@ -2433,8 +2437,29 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     (.537, .705, .650, .945), (.667, .705, .780, .945),
                     (.800, .705, .912, .885),
                 ]
-                # 79 trace rectangles distributed over the 17 panel banks.
+                # Fit the traced banks to the full visible solar-array width:
+                # the old first bank started at 26.5% of the image, while the
+                # physical left edge of the panel field is about 11%. Stretch
+                # the complete layout leftward across the panel field.
+                source_left, source_right = 0.250, 0.999
+                target_left, target_right = 0.105, 0.990
+                x_scale = (target_right - target_left) / (source_right - source_left)
+                dpv_array_regions = [
+                    (
+                        target_left + (left - source_left) * x_scale,
+                        top,
+                        target_left + (right - source_left) * x_scale,
+                        bottom,
+                    )
+                    for left, top, right, bottom in dpv_array_regions
+                ]
+                # Exactly 79 table traces: 11 banks x 5 + 6 banks x 4.
                 trace_counts = [5] * 11 + [4] * 6
+                if len(table_assets) != 79 or sum(trace_counts) != 79:
+                    raise ValueError(
+                        f"DPV layout requires exactly 79 registered tables; "
+                        f"found {len(table_assets)}"
+                    )
                 table_cursor = 0
                 for region_index, (left, top, right, bottom) in enumerate(dpv_array_regions):
                     bank_assets = table_assets[table_cursor:table_cursor + trace_counts[region_index]]
@@ -3224,27 +3249,30 @@ def _add_months_to_date(value, months):
 
 
 def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
-    """Return fixed maintenance-cycle windows from 1 January 2023.
+    """Return calendar-aligned maintenance windows beginning with first data.
 
-    Panel Cleaning uses January-June and July-December (2 cycles per year).
-    Grass Cutting uses January-April, May-August and September-December
-    (3 cycles per year). Activities can be recorded on different dates;
-    a cycle is complete only when every required table/zone is completed
-    within that cycle window.
+    Panel Cleaning: Jan-Jun and Jul-Dec (2 cycles/year).
+    Grass Cutting: Jan-Apr, May-Aug and Sep-Dec (3 cycles/year).
+    If a plant first records work part-way through a period, its first cycle
+    begins on that first recorded date; later cycles use normal calendar
+    boundaries. No daily-maintenance assumption is made.
     """
+    if category not in ("Panel Cleaning", "Grass Cutting") or start_date > end_date:
+        return []
+
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
-    # The historical reporting baseline is fixed, not the first activity date.
-    # This keeps cycle counts comparable even when work starts late or is irregular.
-    cycle_start = date(2023, 1, 1)
+    anchor = anchor_date or start_date
+    first_period_month = ((anchor.month - 1) // months_per_cycle) * months_per_cycle + 1
+    period_start = date(anchor.year, first_period_month, 1)
     windows = []
 
-    while cycle_start <= end_date:
-        next_start = _add_months_to_date(cycle_start, months_per_cycle)
-        cycle_end = next_start - timedelta(days=1)
-        if cycle_end >= start_date and cycle_start <= end_date:
-            windows.append((cycle_start, cycle_end))
-        cycle_start = next_start
-
+    while period_start <= end_date:
+        next_start = _add_months_to_date(period_start, months_per_cycle)
+        window_start = max(start_date, period_start)
+        window_end = min(next_start - timedelta(days=1), end_date)
+        if window_start <= window_end:
+            windows.append((window_start, window_end))
+        period_start = next_start
     return windows
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
@@ -3260,24 +3288,31 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
 
-    cycle_baseline = date(2023, 1, 1)
-    if end_date < cycle_baseline:
-        return 0, 0
-    start_date = max(start_date, cycle_baseline)
-    if start_date > end_date:
-        return 0, 0
-
-    windows = maintenance_cycle_plan(
-        start_date, end_date, category, anchor_date=cycle_baseline
-    )
-    if not windows:
-        return 0, 0
-
     is_panel = category == "Panel Cleaning"
     categories = (
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
+
+    # Establish the cycle start independently for each plant and category,
+    # using its first real maintenance record (e.g. May 2023), not 1 Jan 2023.
+    first_record_date = (
+        db.query(func.min(MaintenanceRecord.task_date))
+        .filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(categories),
+            MaintenanceRecord.task_date <= end_date,
+        )
+        .scalar()
+    )
+    if not first_record_date or first_record_date > end_date:
+        return 0, 0
+
+    windows = maintenance_cycle_plan(
+        first_record_date, end_date, category, anchor_date=first_record_date
+    )
+    if not windows:
+        return 0, 0
     plant_identity = (
         f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
     ).upper().replace(" ", "")
@@ -3318,6 +3353,7 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         } or "green - completed" in normalized
 
     completed_cycles = 0
+    recorded_windows = 0
     for window_start, window_end in windows:
         rows = (
             db.query(MaintenanceRecord)
@@ -3330,6 +3366,11 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
             .all()
         )
+        # A cycle is counted only when at least one activity record exists
+        # inside its period. Empty future or historical periods are excluded.
+        if not rows:
+            continue
+        recorded_windows += 1
 
         if is_panel:
             completed_assets = {
@@ -3382,17 +3423,35 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         if cycle_complete:
             completed_cycles += 1
 
-    return completed_cycles, len(windows)
+    return completed_cycles, recorded_windows
 
 def maintenance_cycle_window_to_date(db, plant, task_date, category):
-    """Return the fixed calendar cycle start containing task_date."""
-    if task_date < date(2023, 1, 1):
+    """Return the calendar cycle start based on this plant's first recorded work."""
+    categories = (
+        ["Panel Cleaning", "Weeding Panel Cleaning"]
+        if category == "Panel Cleaning"
+        else ["Grass Cutting", "Weeding Grass Cutting"]
+    )
+    first_record = (
+        db.query(func.min(MaintenanceRecord.task_date))
+        .filter(
+            MaintenanceRecord.plant_id == plant.id,
+            MaintenanceRecord.category.in_(categories),
+            MaintenanceRecord.task_date <= task_date,
+        )
+        .scalar()
+    )
+    if not first_record:
         return task_date
-
     months_per_cycle = 6 if category == "Panel Cleaning" else 4
-    cycle_start = date(2023, 1, 1)
+    period_month = ((first_record.month - 1) // months_per_cycle) * months_per_cycle + 1
+    cycle_start = date(first_record.year, period_month, 1)
+    if first_record > cycle_start:
+        cycle_start = first_record
     while True:
-        next_start = _add_months_to_date(cycle_start, months_per_cycle)
+        next_start = _add_months_to_date(
+            date(cycle_start.year, cycle_start.month, 1), months_per_cycle
+        )
         if next_start > task_date:
             return cycle_start
         cycle_start = next_start
