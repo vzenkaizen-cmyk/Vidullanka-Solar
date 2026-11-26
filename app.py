@@ -1,4 +1,4 @@
- 
+
 import os 
 import re
 import io
@@ -660,7 +660,8 @@ def seed_database():
             ork_plant.table_count = 79
         dpv_plant = db.query(Plant).filter(Plant.code == "DPV").first()
         if dpv_plant:
-            dpv_plant.zone_count = 10
+            # DPV's supplied zone reference contains 15 distinct maintenance zones.
+            dpv_plant.zone_count = 15
             dpv_plant.table_count = 79
         db.commit()
 
@@ -2415,62 +2416,56 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
                     textfont=dict(size=9, color="#ffffff"), hovertext=dtext, hoverinfo="text",
                     showlegend=False))
             else:
-                # DPV panel cleaning: keep the original satellite photo clean and
-                # apply a translucent green overlay only to completed panel areas.
-                # Pending panels remain the untouched satellite image; no red grid
-                # or artificial table-layout is drawn over the photograph.
+                # DPV panel cleaning: draw individual table traces over the 17
+                # visible panel banks. The current DPV register contains 79 tables
+                # (not the legacy 366-table assumption used by an earlier layout).
+                # Every table receives its own red/green status overlay and hover label.
                 panel_records = merged_map_records(panel_category, "Weeding Panel Cleaning", "Table")
                 table_assets = asset_list(plant, "Table")
-                # DPV satellite coordinates traced to the actual blue panel banks.
-                # Each rectangle stays within a solar-panel surface and excludes
-                # the pale access roads, vegetation, and buildings between arrays.
-                # These 17 regions follow the visible upper, middle, and lower banks.
                 dpv_array_regions = [
-                    # Upper bank
                     (.265, .165, .382, .415), (.402, .165, .514, .415),
                     (.534, .165, .646, .415), (.666, .165, .778, .415),
                     (.800, .165, .912, .415), (.934, .165, .999, .415),
-                    # Middle bank
                     (.263, .445, .390, .685), (.407, .445, .520, .685),
                     (.537, .445, .650, .685), (.667, .445, .780, .685),
                     (.800, .445, .912, .685), (.934, .445, .999, .685),
-                    # Lower bank
                     (.250, .705, .390, .945), (.407, .705, .520, .945),
                     (.537, .705, .650, .945), (.667, .705, .780, .945),
                     (.800, .705, .912, .885),
                 ]
-                # Distribute the 366 table records across the 17 visible banks.
-                counts = [22, 22, 22, 22, 22, 22, 22, 22, 22, 21, 21, 21, 21, 21, 21, 21, 21]
-                asset_idx = 0
-                for region_idx, (left, top, right, bottom) in enumerate(dpv_array_regions):
-                    region_assets = table_assets[asset_idx:asset_idx + counts[region_idx]]
-                    asset_idx += counts[region_idx]
-                    if not region_assets:
+                # 79 trace rectangles distributed over the 17 panel banks.
+                trace_counts = [5] * 11 + [4] * 6
+                table_cursor = 0
+                for region_index, (left, top, right, bottom) in enumerate(dpv_array_regions):
+                    bank_assets = table_assets[table_cursor:table_cursor + trace_counts[region_index]]
+                    table_cursor += trace_counts[region_index]
+                    if not bank_assets:
                         continue
-                    completed_rows = sum(
-                        1 for asset in region_assets
-                        if panel_records.get(asset) and panel_records[asset].status == "Completed"
-                    )
-                    if completed_rows <= 0:
-                        continue
-                    # Tint the corresponding completed portion of the solar-array
-                    # surface, clipped to the array region; preserve image detail.
-                    fraction = completed_rows / len(region_assets)
-                    green_bottom = bottom - (bottom - top) * fraction
-                    clean_fig.add_shape(
-                        type="rect", x0=left * img_width, x1=right * img_width,
-                        y0=(1 - bottom) * img_height,
-                        y1=(1 - green_bottom) * img_height,
-                        line=dict(width=0), fillcolor="rgba(0,78,48,0.62)",
-                        layer="above",
-                    )
-                    clean_fig.add_trace(go.Scatter(
-                        x=[((left + right) / 2) * img_width],
-                        y=[(1 - (top + bottom) / 2) * img_height],
-                        mode="markers", marker=dict(size=1, opacity=0),
-                        hovertext=[f"DPV solar array {region_idx + 1}: {completed_rows}/{len(region_assets)} tables completed"],
-                        hoverinfo="text", showlegend=False,
-                    ))
+                    bank_width = (right - left) / len(bank_assets)
+                    for trace_index, asset in enumerate(bank_assets):
+                        x0 = left + trace_index * bank_width
+                        x1 = x0 + bank_width
+                        record = panel_records.get(asset)
+                        done = bool(record and record.status == "Completed")
+                        clean_fig.add_shape(
+                            type="rect",
+                            x0=x0 * img_width, x1=x1 * img_width,
+                            y0=(1 - bottom) * img_height,
+                            y1=(1 - top) * img_height,
+                            line=dict(color="rgba(255,255,255,0.88)", width=1),
+                            fillcolor=("rgba(0,190,105,0.62)" if done
+                                       else "rgba(239,45,58,0.28)"),
+                            layer="above",
+                        )
+                        clean_fig.add_trace(go.Scatter(
+                            x=[((x0 + x1) / 2) * img_width],
+                            y=[(1 - (top + bottom) / 2) * img_height],
+                            mode="markers",
+                            marker=dict(size=1, opacity=0),
+                            hovertext=[f"{asset} — Panel cleaning: {'Completed' if done else 'Pending'}"],
+                            hoverinfo="text",
+                            showlegend=False,
+                        ))
         if ork_grass_reference:
             # Show a large, high-contrast status dot in each of ORK's 10 zones.
             # Positions follow the visible zone layout on the supplied aerial image.
@@ -2641,8 +2636,8 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
         block_specs = []
     elif plant_code == "ORK":
         # ORK panel-cleaning footprints follow the user's hand-drawn layout.
-        # These seven groups cover all visible panel rows; their row counts are
-        # 1 + 6 + 7 + 13 + 14 + 2 + 9 = 52 tables.
+        # These seven groups cover the visible panel banks. The trace allocation
+        # is calculated below for all 79 registered ORK tables.
         block_specs = [
             (.095, .555, .235, .590, "y"),  # Group 1: far-left single row
             (.160, .265, .300, .405, "y"),  # Group 2: left group, 6 rows
@@ -2696,9 +2691,10 @@ def satellite_table_map_page(db, user, plant, embedded=False, task_date=None, sh
             # four upper groups with 9, 6, 7, and 8 rows, followed by four
             # lower groups with 10 rows each (70 rows total).
             counts = [9, 6, 7, 8, 10, 10, 10, 10]
-        elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 52:
-            # Match the user's ORK table-row counts exactly.
-            counts = [1, 6, 7, 13, 14, 2, 9]
+        elif plant_code == "ORK" and len(block_specs) == 7 and len(assets) == 79:
+            # Allocate all 79 ORK table records across the seven mapped panel banks.
+            # Counts are proportional to the visible footprint sizes and sum to 79.
+            counts = [2, 9, 11, 19, 21, 3, 14]
         elif plant_code == "MDP" and len(block_specs) == 21 and len(assets) == 220:
             # Exact MDP sketch counts: 11x5 main grid, then the remaining banks.
             counts = [55, 9, 11, 5, 11, 11, 8, 2, 11, 11, 11, 7, 7, 7, 7, 5, 5, 5, 9, 11, 12]
@@ -3252,41 +3248,36 @@ def maintenance_cycle_plan(start_date, end_date, category, anchor_date=None):
     return windows
 
 def maintenance_cycle_summary(db, plant, start_date, end_date, category):
-    """Count fully completed maintenance cycles in the reporting range.
+    """Count completed fixed calendar cycles from 1 January 2023.
 
-    Panel Cleaning: every configured table must have a Completed record
-    within the same six-month calendar cycle (two cycles per year).
-
-    Grass Cutting: every configured zone must have a Completed record
-    within the same four-month calendar cycle (three cycles per year).
-    Grass Cutting and Weeding Grass Cutting records are combined.
-
-    The cycle calendar starts on 1 January 2023. Records on different dates
-    are combined within the same cycle; daily records are not required.
+    Panel Cleaning: every registered table must have a completed record in the
+    same Jan-Jun or Jul-Dec window.
+    Grass Cutting: every registered zone must be complete in the same
+    Jan-Apr, May-Aug or Sep-Dec window. HRN 1's individual table traces are
+    combined into their assigned zones. Grass Cutting and Weeding Grass
+    Cutting records are treated as the same maintenance activity.
     """
     if category not in ("Panel Cleaning", "Grass Cutting"):
         return 0, 0
 
+    cycle_baseline = date(2023, 1, 1)
+    if end_date < cycle_baseline:
+        return 0, 0
+    start_date = max(start_date, cycle_baseline)
     if start_date > end_date:
-        start_date, end_date = end_date, start_date
+        return 0, 0
+
+    windows = maintenance_cycle_plan(
+        start_date, end_date, category, anchor_date=cycle_baseline
+    )
+    if not windows:
+        return 0, 0
 
     is_panel = category == "Panel Cleaning"
     categories = (
         ["Panel Cleaning", "Weeding Panel Cleaning"]
         if is_panel else ["Grass Cutting", "Weeding Grass Cutting"]
     )
-
-    cycle_baseline = date(2023, 1, 1)
-    if end_date < cycle_baseline:
-        return 0, 0
-
-    windows = maintenance_cycle_plan(
-        max(start_date, cycle_baseline), end_date, category,
-        anchor_date=cycle_baseline
-    )
-    if not windows:
-        return 0, 0
-
     plant_identity = (
         f"{getattr(plant, 'code', '')} {getattr(plant, 'name', '')}"
     ).upper().replace(" ", "")
@@ -3296,140 +3287,101 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         expected_assets = asset_list(plant, "Table")
         zone_trace_map = {}
     elif is_hsn1:
-        zone_trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
+        trace_counts = [13, 12, 7, 7, 7, 7, 7, 7, 7, 6]
         zone_trace_map = {}
         cursor = 1
-        for zone_index, trace_count in enumerate(zone_trace_counts, start=1):
+        for zone_index, trace_count in enumerate(trace_counts, start=1):
             zone_trace_map[f"Z-{zone_index:02d}"] = [
                 f"T-{n:02d}" for n in range(cursor, cursor + trace_count)
             ]
             cursor += trace_count
-        expected_assets = list(zone_trace_map.keys())
+        expected_assets = list(zone_trace_map)
     else:
         expected_assets = asset_list(plant, "Zone")
         zone_trace_map = {}
 
-    # Read all relevant history in the selected reporting range.
-    # A cycle is counted by cumulative completion coverage: every required
-    # table/zone must have one completed occurrence. The work dates do not
-    # need to fall inside the same fixed 4/6-month window because these
-    # activities are performed irregularly.
-    period_rows = (
-        db.query(MaintenanceRecord)
-        .filter(
-            MaintenanceRecord.plant_id == plant.id,
-            MaintenanceRecord.category.in_(categories),
-            MaintenanceRecord.task_date >= max(start_date, cycle_baseline),
-            MaintenanceRecord.task_date <= end_date,
-        )
-        .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
-        .all()
-    )
+    def _asset_key(value):
+        value = str(value or "").strip().upper()
+        value = re.sub(r"^(?:TABLE)[\s_-]*", "T-", value)
+        value = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", value)
+        match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", value)
+        return f"{match.group(1)}-{int(match.group(2)):02d}" if match else re.sub(r"\s+", "", value)
 
     def _is_completed(value):
         normalized = str(value or "").strip().lower()
-        if not normalized:
-            return False
-        if any(flag in normalized for flag in (
-            "not completed", "not-completed", "pending", "failed",
-            "not ok", "red",
+        if not normalized or any(flag in normalized for flag in (
+            "not completed", "not-completed", "pending", "failed", "not ok", "red"
         )):
             return False
-        return (
-            normalized in {
-                "true", "1", "yes", "y", "completed", "complete",
-                "done", "green", "ok",
-            }
-            or "green - completed" in normalized
+        return normalized in {
+            "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
+        } or "green - completed" in normalized
+
+    completed_cycles = 0
+    for window_start, window_end in windows:
+        rows = (
+            db.query(MaintenanceRecord)
+            .filter(
+                MaintenanceRecord.plant_id == plant.id,
+                MaintenanceRecord.category.in_(categories),
+                MaintenanceRecord.task_date >= window_start,
+                MaintenanceRecord.task_date <= window_end,
+            )
+            .order_by(MaintenanceRecord.task_date.asc(), MaintenanceRecord.id.asc())
+            .all()
         )
 
-    def _asset_key(value):
-        """Normalize legacy asset IDs such as T1, T-1, T-01, and Z-01."""
-        normalized = str(value or "").strip().upper()
-        normalized = re.sub(r"^(?:TABLE)[\\s_-]*", "T-", normalized)
-        normalized = re.sub(r"^(?:ZONE)[\\s_-]*", "Z-", normalized)
-        match = re.match(r"^([TZ])[\\s_-]*0*(\\d+)$", normalized)
-        if match:
-            return f"{match.group(1)}-{int(match.group(2)):02d}"
-        return re.sub(r"\\s+", "", normalized)
+        if is_panel:
+            completed_assets = {
+                _asset_key(row.asset_id)
+                for row in rows if _is_completed(row.status)
+            }
+            required = {_asset_key(asset) for asset in expected_assets}
+            cycle_complete = bool(required) and required.issubset(completed_assets)
 
-    # Track distinct completed work dates per required asset. Repeated saves
-    # for the same asset on the same date count only once.
-    completed_dates_by_asset = { _asset_key(asset): set() for asset in expected_assets }
+        elif is_hsn1:
+            completed_tables = {
+                _asset_key(row.asset_id)
+                for row in rows
+                if _asset_key(row.asset_id).startswith("T-") and _is_completed(row.status)
+            }
+            completed_zones = set()
+            for row in rows:
+                zone_key = _asset_key(row.asset_id)
+                if not zone_key.startswith("Z-"):
+                    continue
+                details = parse_details(row)
+                checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
+                if _is_completed(row.status) and not checks:
+                    completed_zones.add(zone_key)
+                    continue
+                if isinstance(checks, dict) and checks:
+                    checked_tables = {
+                        _asset_key(trace_id)
+                        for trace_id, value in checks.items()
+                        if _is_completed(value)
+                    }
+                    completed_tables.update(checked_tables)
 
-    if is_panel:
-        for row in period_rows:
-            asset_key = _asset_key(row.asset_id)
-            if asset_key in completed_dates_by_asset and _is_completed(row.status):
-                completed_dates_by_asset[asset_key].add(row.task_date)
+            for zone, traces in zone_trace_map.items():
+                required_traces = {_asset_key(trace) for trace in traces}
+                if required_traces.issubset(completed_tables):
+                    completed_zones.add(_asset_key(zone))
 
-    elif is_hsn1:
-        # HRN 1 stores some grass-cutting work against individual tables.
-        # A zone is completed on a date when its legacy zone record is complete,
-        # all its assigned table records are complete, or all explicit table
-        # checks in the zone record are checked.
-        rows_by_date_asset = {}
-        for row in period_rows:
-            rows_by_date_asset.setdefault((row.task_date, _asset_key(row.asset_id)), []).append(row)
+            required_zones = {_asset_key(zone) for zone in expected_assets}
+            cycle_complete = bool(required_zones) and required_zones.issubset(completed_zones)
 
-        for zone, traces in zone_trace_map.items():
-            zone_key = _asset_key(zone)
-            trace_keys = {_asset_key(trace) for trace in traces}
-            for work_date in sorted({row.task_date for row in period_rows}):
-                date_rows = rows_by_date_asset
-                zone_rows = date_rows.get((work_date, zone_key), [])
-                legacy_zone_completed = False
-                explicit_checks_complete = False
+        else:
+            completed_assets = {
+                _asset_key(row.asset_id)
+                for row in rows if _is_completed(row.status)
+            }
+            required = {_asset_key(asset) for asset in expected_assets}
+            cycle_complete = bool(required) and required.issubset(completed_assets)
 
-                for row in zone_rows:
-                    details = parse_details(row)
-                    checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
-                    if isinstance(checks, dict) and checks:
-                        normalized_checks = {
-                            _asset_key(trace_id): value
-                            for trace_id, value in checks.items()
-                        }
-                        explicit_checks_complete = (
-                            trace_keys.issubset(normalized_checks)
-                            and all(
-                                _is_completed(normalized_checks[trace_key])
-                                for trace_key in trace_keys
-                            )
-                        )
-                    elif _is_completed(row.status):
-                        legacy_zone_completed = True
+        if cycle_complete:
+            completed_cycles += 1
 
-                completed_trace_keys = {
-                    trace_key
-                    for trace_key in trace_keys
-                    if any(
-                        _is_completed(row.status)
-                        for row in date_rows.get((work_date, trace_key), [])
-                    )
-                }
-                all_trace_records_complete = bool(trace_keys) and trace_keys.issubset(
-                    completed_trace_keys
-                )
-
-                if legacy_zone_completed or explicit_checks_complete or all_trace_records_complete:
-                    completed_dates_by_asset[zone_key].add(work_date)
-
-    else:
-        for row in period_rows:
-            asset_key = _asset_key(row.asset_id)
-            if asset_key in completed_dates_by_asset and _is_completed(row.status):
-                completed_dates_by_asset[asset_key].add(row.task_date)
-
-    # One completed cycle means every required asset has been completed at
-    # least once. Further cycles are counted by the number of complete rounds
-    # available across all assets, even when their work dates differ.
-    if completed_dates_by_asset and all(completed_dates_by_asset.values()):
-        completed_cycles = min(len(dates) for dates in completed_dates_by_asset.values())
-    else:
-        completed_cycles = 0
-
-    # Keep the planned-cycle denominator based on 6-month / 4-month frequency.
-    completed_cycles = min(completed_cycles, len(windows))
     return completed_cycles, len(windows)
 
 def maintenance_cycle_window_to_date(db, plant, task_date, category):
@@ -7147,6 +7099,7 @@ def load_mdp_sop_pages():
 
     base_dir = Path(__file__).resolve().parent
     candidates = [
+        base_dir / "MDP_SOP_2026_Draft(10).pdf",
         base_dir / "MDP_SOP_2026_Draft(5).pdf",
         base_dir / "MDP_SOP_2026_Draft(4).pdf",
         base_dir / "MDP_SOP_2026_Draft(1).pdf",
@@ -7201,14 +7154,19 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
     # equipment/inspection topic. This prevents matching unrelated pages that
     # merely repeat common words such as "maintenance" or "inspection".
     topic_headings = [
+        (("function responsibilities", "functions", "responsibilities", "duties"), ("function responsibilities",)),
+        (("location responsibilities", "site locations", "locations"), ("location responsibilities",)),
         (("a/c", "air conditioning", "air-conditioning", "ac maintenance"), ("a/c maintenance", "air-conditioning maintenance")),
         (("inverter",), ("inverters inspection", "inverter inspection")),
-        (("panel inspection",), ("panel inspection",)),
-        (("daily inspection",), ("daily inspection",)),
+        (("panel inspection", "pv panel inspection"), ("panel inspection",)),
+        (("daily inspection", "daily check"), ("daily inspection",)),
         (("dc cable", "dc cables"), ("dc cables inspection", "dc cable inspection")),
-        (("mdb",), ("mdb inspection",)),
-        (("switchyard", "switch yard"), ("switchyard inspection", "switch yard inspection")),
+        (("mdb", "main distribution board"), ("mdb inspection",)),
+        (("switchyard", "switch yard", "transformer"), ("switchyard inspection", "switch yard inspection")),
         (("lockout", "tagout", "loto"), ("lock out tagout", "lockout tagout")),
+        (("start-up", "startup", "restart", "short-term suspension"), ("standard start-up operation after the short-term",)),
+        (("plant shutdown", "shut down", "shutdown approval"), ("authority level for plant shut down purpose",)),
+        (("inventory", "stores", "stock", "receiving goods"), ("inventory process",)),
     ]
     lower_question = text_value
     # The uploaded MDP SOP covers panel inspection, not panel cleaning or
@@ -7264,6 +7222,11 @@ def retrieve_mdp_sop_context(question, pages, limit=4):
         "daily": {"daily", "routine", "everyday"},
         "start": {"startup", "start-up", "restart", "shutdown", "suspension"},
         "lockout": {"tagout", "loto", "isolate", "isolation"},
+        "startup": {"start-up", "restart", "suspension", "scada", "grid"},
+        "shutdown": {"shut", "down", "permit", "approval", "downtime"},
+        "inventory": {"stores", "stock", "receiving", "storage", "disposal"},
+        "responsibility": {"responsibilities", "duties", "supervisor", "engineer", "technician"},
+        "location": {"locations", "office", "control", "room", "switchyard", "garden"},
     }
     expanded = set(tokens)
     for token in tokens:
@@ -7606,6 +7569,19 @@ def _solar_sop_followup_query(topic_context, selected_option):
         "උපකරණ සහ ද්‍රව්‍ය": "equipment tools materials",
         "කාර්යයේ වාර ගණන සහ ක්‍රියාපටිපාටිය": "work frequency schedule procedure",
         "ක්‍රියාපටිපාටිය සහ වැඩ පියවර": "procedure steps",
+        "ආරම්භයට පෙර අවශ්‍යතා සහ සූදානම්භාවය පරීක්ෂා කිරීම": "startup prerequisites readiness checks",
+        "ආරම්භයට පෙර පරීක්ෂාව": "pre-startup inspection",
+        "බලාගාරය ආරම්භ කිරීමේ පියවර": "plant startup sequence",
+        "ආරම්භයෙන් පසු පළමු මිනිත්තු 30 නිරීක්ෂණය": "first 30 minute post startup monitoring",
+        "අසාමාන්‍ය තත්ත්ව සහ ප්‍රතිචාර": "abnormal conditions response",
+        "භාණ්ඩ භාරගැනීම සහ පරීක්ෂා කිරීම": "receiving and inspection of items",
+        "ගබඩා කිරීම සහ සංවිධානය": "storage and organization",
+        "තොග අධීක්ෂණය සහ සටහන් කිරීම": "inventory tracking and recording",
+        "තොග පාලනය": "inventory control",
+        "ආපසු භාරදීම සහ බැහැර කිරීම": "returns and disposal",
+        "තොග වාර්තාකරණය සහ විශ්ලේෂණය": "inventory reporting and analysis",
+        "කාර්යයන් අනුව වගකීම්": "function responsibilities",
+        "ස්ථාන අනුව වගකීම්": "location responsibilities",
     }
     intent = option_map.get(option.casefold(), option)
     generic = {
@@ -7691,6 +7667,40 @@ def _solar_sop_clarification_options(question, matches):
             "Shutdown and isolate equipment",
             "Verify hazardous energy isolation",
             "Supervisor and site staff responsibilities",
+        ]
+    if any(term in q for term in ("start-up", "startup", "restart", "short-term suspension")):
+        return [
+            "Startup prerequisites and readiness checks",
+            "Supervisor, technician and engineer responsibilities",
+            "Pre-startup inspection",
+            "Plant startup sequence",
+            "First 30-minute post-startup monitoring",
+            "Abnormal conditions and response",
+        ]
+    if any(term in q for term in ("plant shutdown", "shutdown approval", "shut down", "downtime")):
+        return [
+            "Who discusses and initiates the shutdown request?",
+            "Who prepares the shutdown permit?",
+            "OM and DO approval sequence",
+            "When is CEO approval required?",
+            "Emergency shutdown and documentation",
+        ]
+    if any(term in q for term in ("inventory", "stores", "stock", "receiving")):
+        return [
+            "Receiving and inspection of items",
+            "Storage and organization",
+            "Inventory tracking and recording",
+            "Inventory control",
+            "Returns and disposal",
+            "Inventory reporting and analysis",
+        ]
+    if any(term in q for term in ("responsibil", "duties", "personnel", "functions", "locations")):
+        return [
+            "Function-wise responsibilities",
+            "Location-wise responsibilities",
+            "Engineering department responsibilities",
+            "Supervisor and site staff duties",
+            "Relevant roles and designations",
         ]
     if any(term in q for term in ("grass", "weeding")):
         return [
@@ -7782,6 +7792,28 @@ def _solar_sop_localize_options(options, language):
         "Shutdown and isolate equipment": "උපකරණ ක්‍රියා විරහිත කර වෙන් කිරීම",
         "Verify hazardous energy isolation": "අවදානම් ශක්ති ප්‍රභව වෙන් කර ඇති බව තහවුරු කිරීම",
         "Supervisor and site staff responsibilities": "අධීක්ෂක සහ ස්ථාන කාර්ය මණ්ඩලයේ වගකීම්",
+        "Startup prerequisites and readiness checks": "ආරම්භයට පෙර අවශ්‍යතා සහ සූදානම්භාවය පරීක්ෂා කිරීම",
+        "Supervisor, technician and engineer responsibilities": "අධීක්ෂක, කාර්මික ශිල්පී සහ ඉංජිනේරු වගකීම්",
+        "Pre-startup inspection": "ආරම්භයට පෙර පරීක්ෂාව",
+        "Plant startup sequence": "බලාගාරය ආරම්භ කිරීමේ පියවර",
+        "First 30-minute post-startup monitoring": "ආරම්භයෙන් පසු පළමු මිනිත්තු 30 නිරීක්ෂණය",
+        "Abnormal conditions and response": "අසාමාන්‍ය තත්ත්ව සහ ප්‍රතිචාර",
+        "Who discusses and initiates the shutdown request?": "වසා දැමීමේ ඉල්ලීම සාකච්ඡා කර ආරම්භ කරන්නේ කවුද?",
+        "Who prepares the shutdown permit?": "වසා දැමීමේ අවසර පත්‍රය සකස් කරන්නේ කවුද?",
+        "OM and DO approval sequence": "OM සහ DO අනුමැති ක්‍රියාවලිය",
+        "When is CEO approval required?": "CEO අනුමැතිය අවශ්‍ය වන්නේ කවදාද?",
+        "Emergency shutdown and documentation": "හදිසි වසා දැමීම සහ ලේඛනගත කිරීම",
+        "Receiving and inspection of items": "භාණ්ඩ භාරගැනීම සහ පරීක්ෂා කිරීම",
+        "Storage and organization": "ගබඩා කිරීම සහ සංවිධානය",
+        "Inventory tracking and recording": "තොග අධීක්ෂණය සහ සටහන් කිරීම",
+        "Inventory control": "තොග පාලනය",
+        "Returns and disposal": "ආපසු භාරදීම සහ බැහැර කිරීම",
+        "Inventory reporting and analysis": "තොග වාර්තාකරණය සහ විශ්ලේෂණය",
+        "Function-wise responsibilities": "කාර්යයන් අනුව වගකීම්",
+        "Location-wise responsibilities": "ස්ථාන අනුව වගකීම්",
+        "Engineering department responsibilities": "ඉංජිනේරු දෙපාර්තමේන්තුවේ වගකීම්",
+        "Supervisor and site staff duties": "අධීක්ෂක සහ ස්ථාන කාර්ය මණ්ඩලයේ රාජකාරි",
+        "Relevant roles and designations": "අදාළ තනතුරු සහ වගකීම්",
     }
     return [translations.get(option, _solar_sop_translate(option, "Sinhala")) for option in options]
 
@@ -7811,6 +7843,7 @@ def render_solar_sop_agent(selected_plant=None):
         "solar_sop_pending_question": "",
         "solar_sop_stage": "question",
         "solar_sop_language": "English",
+        "solar_sop_last_language": "English",
         "solar_sop_options": [],
         "solar_sop_last_question": "",
         "solar_sop_topic_context": "",
@@ -7903,9 +7936,20 @@ def render_solar_sop_agent(selected_plant=None):
                        "I will explain the relevant SOP information in clear points.\n\n"
                        "**Choose a topic below or type any question.**")
             topics_title = "Start with a topic"
-            starter_topics = ["Panel cleaning", "Grass cutting and weeding",
-                              "Inspections and checklists", "Safety and control measures",
-                              "Responsible persons and duties"]
+            starter_topics = [
+                "Daily inspection (CHK-001)",
+                "Panel inspection (CHK-002)",
+                "Inverter inspection (CHK-003)",
+                "DC cable inspection (CHK-004)",
+                "MDB inspection (CHK-005)",
+                "Switchyard inspection (CHK-006)",
+                "A/C maintenance (CHK-007)",
+                "Lockout / Tagout (SOP-003)",
+                "Plant start-up after suspension (SOP-004)",
+                "Plant shutdown approval (SOP-012)",
+                "Function and location responsibilities",
+                "Inventory process",
+            ]
             input_label = "Type your question here…"
             send_label, new_label, clear_label = "Send", "New question", "Clear chat"
             more_label = "What would you like to explore next?"
@@ -7919,9 +7963,20 @@ def render_solar_sop_agent(selected_plant=None):
                        "ඔබට අවශ්‍ය දේ ඔබගේම වචනවලින් සිංහලෙන් අසන්න. මම SOP තොරතුරු පැහැදිලි කරුණු ලෙස ලබා දෙන්නම්.\n\n"
                        "**පහත මාතෘකාවක් තෝරන්න හෝ ඔබගේ ප්‍රශ්නය ටයිප් කරන්න.**")
             topics_title = "මාතෘකාවක් තෝරා ආරම්භ කරන්න"
-            starter_topics = ["සූර්ය පැනල පිරිසිදු කිරීම", "තණකොළ කැපීම සහ වල් පැළෑටි ඉවත් කිරීම",
-                              "පරීක්ෂණ සහ පිරික්සුම් ලැයිස්තු", "ආරක්ෂාව සහ පාලන ක්‍රියාමාර්ග",
-                              "වගකිවයුතු පුද්ගලයන් සහ රාජකාරි"]
+            starter_topics = [
+                "දෛනික පරීක්ෂාව (CHK-001)",
+                "සූර්ය පැනල පරීක්ෂාව (CHK-002)",
+                "ඉන්වර්ටර් පරීක්ෂාව (CHK-003)",
+                "DC කේබල් පරීක්ෂාව (CHK-004)",
+                "MDB පරීක්ෂාව (CHK-005)",
+                "Switchyard පරීක්ෂාව (CHK-006)",
+                "වායු සමීකරණ නඩත්තුව (CHK-007)",
+                "Lockout / Tagout (SOP-003)",
+                "නැවත ආරම්භ කිරීම (SOP-004)",
+                "බලාගාරය වසා දැමීමේ අනුමැතිය (SOP-012)",
+                "කාර්යයන් සහ ස්ථාන වගකීම්",
+                "ගබඩා සහ තොග ක්‍රියාවලිය",
+            ]
             input_label = "ඔබගේ ප්‍රශ්නය මෙහි සිංහලෙන් ලියන්න…"
             send_label, new_label, clear_label = "යවන්න", "නව ප්‍රශ්නයක්", "සංවාදය මකන්න"
             more_label = "ඔබට ඊළඟට දැනගැනීමට අවශ්‍ය කුමන කරුණද?"
@@ -7946,6 +8001,7 @@ def render_solar_sop_agent(selected_plant=None):
             for index, topic in enumerate(starter_topics):
                 with topic_cols[index % 2]:
                     if st.button(topic, key=f"solar_sop_starter_{index}", use_container_width=True):
+                        st.session_state.solar_sop_last_language = language
                         st.session_state.solar_sop_chat_history.append({"role": "user", "content": topic})
                         response, matches = answer_from_mdp_sop(topic, pages, language)
                         st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
@@ -7976,11 +8032,12 @@ def render_solar_sop_agent(selected_plant=None):
                             # previous follow-up into the query.
                             followup_question = _solar_sop_followup_query(topic_context, option)
                             st.session_state.solar_sop_chat_history.append({"role": "user", "content": option})
-                            response, matches = answer_from_mdp_sop(followup_question, pages, language)
+                            answer_language = st.session_state.get("solar_sop_last_language", language)
+                            response, matches = answer_from_mdp_sop(followup_question, pages, answer_language)
                             st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
                             st.session_state.solar_sop_last_question = followup_question
                             st.session_state.solar_sop_options = _solar_sop_localize_options(
-                                _solar_sop_clarification_options(_solar_sop_retrieval_query(followup_question), matches), language)
+                                _solar_sop_clarification_options(_solar_sop_retrieval_query(followup_question), matches), answer_language)
                             st.rerun()
 
             with st.form("solar_sop_question_form", clear_on_submit=True):
@@ -7990,13 +8047,15 @@ def render_solar_sop_agent(selected_plant=None):
 
             if submitted and question.strip():
                 clean_question = question.strip()
+                answer_language = _solar_sop_detect_language(clean_question)
+                st.session_state.solar_sop_last_language = answer_language
                 st.session_state.solar_sop_chat_history.append({"role": "user", "content": clean_question})
                 requested_site = _solar_sop_requested_site(clean_question, selected_plant)
                 if requested_site != "MDP":
                     site_labels = {"HS1": "HRN 1", "HS2": "HRN 2", "MTR": "MTR", "ORK": "ORK", "DPV": "DPV"}
                     other_site = site_labels.get(requested_site, requested_site or "selected site")
                     response = (f"The {other_site} Solar SOP has not been added yet. Only the MDP Solar SOP is currently available."
-                                if language == "English" else
+                                if answer_language == "English" else
                                 f"{other_site} සූර්ය බලාගාරයේ SOP ලේඛනය තවමත් එක් කර නොමැත. දැනට ලබාගත හැක්කේ MDP Solar SOP ලේඛනය පමණි.")
                     st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
                     st.session_state.solar_sop_options = []
@@ -8011,11 +8070,11 @@ def render_solar_sop_agent(selected_plant=None):
                         contextual_question = clean_question
                         st.session_state.solar_sop_topic_context = clean_question
 
-                    response, matches = answer_from_mdp_sop(contextual_question, pages, language)
+                    response, matches = answer_from_mdp_sop(contextual_question, pages, answer_language)
                     st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
                     st.session_state.solar_sop_last_question = contextual_question
                     st.session_state.solar_sop_options = _solar_sop_localize_options(
-                        _solar_sop_clarification_options(_solar_sop_retrieval_query(contextual_question), matches), language)
+                        _solar_sop_clarification_options(_solar_sop_retrieval_query(contextual_question), matches), answer_language)
                 st.rerun()
 
             # Keep both actions available after sending: start fresh or clear the transcript.
@@ -8026,6 +8085,7 @@ def render_solar_sop_agent(selected_plant=None):
                     st.session_state.solar_sop_options = []
                     st.session_state.solar_sop_last_question = ""
                     st.session_state.solar_sop_topic_context = ""
+                    st.session_state.solar_sop_last_language = language
                     st.rerun()
             with action_col2:
                 if st.button(clear_label, key="clear_solar_sop_chat", use_container_width=True):
@@ -8035,6 +8095,7 @@ def render_solar_sop_agent(selected_plant=None):
                     st.session_state.solar_sop_stage = "question"
                     st.session_state.solar_sop_last_question = ""
                     st.session_state.solar_sop_topic_context = ""
+                    st.session_state.solar_sop_last_language = language
                     st.rerun()
         st.markdown(f'<div class="sop-agent-note">{note_text}</div>', unsafe_allow_html=True)
 
