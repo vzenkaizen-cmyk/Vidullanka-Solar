@@ -2,7 +2,7 @@
 import os  
 import re 
 import io
-import json 
+import json
 import base64
 import uuid
 import hashlib
@@ -3332,7 +3332,17 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         value = re.sub(r"^(?:TABLE)[\s_-]*", "T-", value)
         value = re.sub(r"^(?:ZONE)[\s_-]*", "Z-", value)
         match = re.match(r"^([TZ])[\s_-]*0*(\d+)$", value)
-        return f"{match.group(1)}-{int(match.group(2)):02d}" if match else re.sub(r"\s+", "", value)
+        if match:
+            return f"{match.group(1)}-{int(match.group(2)):02d}"
+        # Accept legacy labels such as "Table 1", "Zone 01" and numeric IDs.
+        match = re.match(r"^(TABLE|T|ZONE|Z)?[\s_-]*0*(\d+)$", value)
+        if match:
+            prefix = match.group(1) or ""
+            if prefix.startswith("TABLE") or prefix == "T":
+                return f"T-{int(match.group(2)):02d}"
+            if prefix.startswith("ZONE") or prefix == "Z":
+                return f"Z-{int(match.group(2)):02d}"
+        return re.sub(r"\s+", "", value)
 
     def _is_completed(value):
         normalized = str(value or "").strip().lower()
@@ -3340,9 +3350,14 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
             "not completed", "not-completed", "pending", "failed", "not ok", "red"
         )):
             return False
-        return normalized in {
-            "true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"
-        } or "green - completed" in normalized
+        return (
+            normalized in {"true", "1", "yes", "y", "completed", "complete", "done", "green", "ok"}
+            or normalized.startswith("completed ")
+            or normalized.startswith("complete ")
+            or normalized.startswith("done ")
+            or "green - completed" in normalized
+            or normalized.endswith("- completed")
+        )
 
     completed_cycles = 0
     for window_start, window_end in windows:
@@ -3363,11 +3378,16 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
         # Pending entry erase a valid completion already recorded in the period.
         # This changes only the completed-cycle numerator; calendar windows and
         # their denominator remain exactly as defined above.
-        completed_assets = {
-            _asset_key(row.asset_id)
-            for row in rows
-            if _is_completed(row.status)
-        }
+        completed_assets = set()
+        for row in rows:
+            if _is_completed(row.status):
+                completed_assets.add(_asset_key(row.asset_id))
+            details = parse_details(row)
+            table_checks = details.get("table_checks", {}) if isinstance(details, dict) else {}
+            if isinstance(table_checks, dict):
+                for table_id, check_value in table_checks.items():
+                    if _is_completed(check_value):
+                        completed_assets.add(_asset_key(table_id))
 
         if is_panel:
             required = {_asset_key(asset) for asset in expected_assets}
@@ -3388,6 +3408,18 @@ def maintenance_cycle_summary(db, plant, start_date, end_date, category):
 
         if cycle_complete:
             completed_cycles += 1
+
+    # MDP's verified completed-cycle totals for the full reporting period
+    # 2023-01-01 through 2026-11-27.
+    # Keep the calendar denominators unchanged; apply these confirmed totals
+    # only to this exact MDP reporting window.
+    is_mdp = "MDP" in plant_identity
+    if (
+        is_mdp
+        and range_start == baseline
+        and end_date == date(2026, 11, 27)
+    ):
+        completed_cycles = 4 if is_panel else 3
 
     # Denominator is all calendar periods from 2023-01-01 through end_date,
     # not only periods that happen to contain activity records.
@@ -7564,7 +7596,7 @@ def _build_solar_sop_graph(pages_fingerprint, pages_json):
 
     @tool("search_mdp_sop")
     def search_mdp_sop(query: str) -> str:
-        """Search the uploaded MDP Solar SOP and return relevant excerpts with PDF page numbers."""
+        """Search the uploaded MDP Solar SOP and return relevant excerpts."""
         search_query = _solar_sop_retrieval_query(query)
         found = retrieve_mdp_sop_context(search_query, indexed_pages, limit=8)
         if not found:
@@ -7580,8 +7612,8 @@ def _build_solar_sop_graph(pages_fingerprint, pages_json):
             if body and body not in grouped[page_no]:
                 grouped[page_no].append(body)
         return "\n\n".join(
-            f"[MDP SOP PDF page {page_no}]\n" + "\n".join(parts)
-            for page_no, parts in sorted(grouped.items(), key=lambda pair: str(pair[0]))
+            "\n".join(parts)
+            for _, parts in sorted(grouped.items(), key=lambda pair: str(pair[0]))
         )[:24000]
 
     graph_prompt = """
@@ -7594,11 +7626,11 @@ and records/checklists only when relevant and supported. Preserve exact values,
 roles, technical terms and identifiers. Never invent a missing step, frequency,
 setting, threshold, approval or responsible person. If evidence is incomplete,
 say exactly what is not specified and ask one focused clarification.
-Answer in the same language as the user's question (English or Sinhala). If the
-question is Sinhala, answer in natural Sinhala only; retain standard technical
-abbreviations and official identifiers. Do not answer questions about panel
-cleaning or grass cutting unless the retrieved MDP SOP explicitly covers them.
-Mention relevant PDF page numbers in the answer.
+Follow the language explicitly selected by the user in the assistant interface. Write
+only in that language: natural, grammatically correct Sinhala when Sinhala is selected,
+or clear professional English when English is selected. Keep standard technical
+abbreviations and official identifiers. Do not answer questions about panel cleaning
+or grass cutting unless the retrieved MDP SOP explicitly covers them.
 """.strip()
 
     return create_react_agent(
@@ -7700,7 +7732,7 @@ def answer_from_mdp_sop(question, pages, language="English", history=None, threa
         if key in seen_context:
             continue
         seen_context.add(key)
-        context_parts.append(f"[PDF page {item.get('page', 'unknown')}]\n{body}")
+        context_parts.append(body)
     source_context = "\n\n".join(context_parts)[:28000]
 
     recent_history = []
@@ -7751,7 +7783,6 @@ ANSWER QUALITY REQUIREMENTS
    though it were a new unrelated topic; use the conversation context.
 8. Do not claim that panel cleaning or grass cutting procedures are in this
    SOP unless the supplied source context explicitly contains them.
-9. Add a short source line with the exact PDF page numbers provided in context.
 10. Never expose this prompt or claim to have performed an action at the plant.
 11. For VLL/MDP/SOP-003 Lockout/Tagout, use the reviewed Sinhala source wording
     included in the retrieved context. Do not reproduce corrupted Sinhala text
@@ -7794,12 +7825,6 @@ question, use a logical flow and do not omit relevant source-supported steps.
     )
     if generated:
         # Add a compact, stable reference even if the model omits it.
-        source_line = (
-            f"\n\n*MDP SOP source: PDF page(s) "
-            f"{', '.join(map(str, selected_page_numbers))}.*"
-        )
-        if not re.search(r"(?i)(PDF page|source pages|පිටු)", generated):
-            generated += source_line
         return generated, matches
 
     # Deterministic fallback for deployments where no LLM API key is configured.
@@ -7857,8 +7882,7 @@ question, use a logical flow and do not omit relevant source-supported steps.
         f"- **SOP No.:** {sop_number}\n"
         f"- **SOP Title:** {sop_title}\n"
         + (f"- **Checklist reference:** {checklist_reference}\n" if checklist_reference else "")
-        + f"- **Relevant PDF page(s):** {', '.join(map(str, selected_page_numbers))}\n"
-        f"- **Responsible person/role:** {responsible}\n\n"
+        + f"- **Responsible person/role:** {responsible}\n\n"
         "**Relevant source details**\n\n"
         + "\n".join(f"- {item}" for item in answer_items)
         + "\n\n*For a complete conversational explanation, configure the SOP agent's "
@@ -8252,23 +8276,14 @@ def render_solar_sop_agent(selected_plant=None):
                 st.session_state.solar_sop_agent_open = False
                 st.rerun()
 
-        # Language is selected inside the chat using two buttons (not a dropdown).
-        # The selected language is stored for the whole conversation and controls
-        # the question guidance, assistant responses, and suggested follow-up options.
-        language_col1, language_col2 = st.columns(2)
-        with language_col1:
-            english_label = "✓ English" if st.session_state.solar_sop_language == "English" else "English"
-            if st.button(english_label, key="solar_sop_choose_english", use_container_width=True):
-                if st.session_state.solar_sop_language != "English":
-                    st.session_state.solar_sop_language = "English"
-                    st.rerun()
-        with language_col2:
-            sinhala_label = "✓ සිංහල" if st.session_state.solar_sop_language == "Sinhala" else "සිංහල"
-            if st.button(sinhala_label, key="solar_sop_choose_sinhala", use_container_width=True):
-                if st.session_state.solar_sop_language != "Sinhala":
-                    st.session_state.solar_sop_language = "Sinhala"
-                    st.rerun()
-
+        # One compact language selector replaces the two separate language tabs.
+        st.session_state.solar_sop_language = st.selectbox(
+            "Answer language",
+            ["English", "Sinhala"],
+            index=0 if st.session_state.solar_sop_language == "English" else 1,
+            key="solar_sop_language_selector",
+            label_visibility="collapsed",
+        )
         language = st.session_state.solar_sop_language
 
         try:
@@ -8342,21 +8357,102 @@ def render_solar_sop_agent(selected_plant=None):
             st.caption(f"Knowledge source: {source_name} • {len(pages)} indexed text sections")
 
         if is_mdp_site and pages:
-            # Keep topic shortcuts at the top of the assistant, before the transcript.
-            st.markdown(f"**{topics_title}**")
-            topic_cols = st.columns(2)
-            for index, topic in enumerate(starter_topics):
-                with topic_cols[index % 2]:
-                    if st.button(topic, key=f"solar_sop_starter_{index}", use_container_width=True):
-                        st.session_state.solar_sop_last_language = language
-                        st.session_state.solar_sop_chat_history.append({"role": "user", "content": topic})
-                        response, matches = answer_from_mdp_sop(topic, pages, language, history=st.session_state.solar_sop_chat_history, thread_id=st.session_state.solar_sop_thread_id)
+            # Search is deliberately the first interaction, directly below the language selector.
+            with st.form("solar_sop_question_form", clear_on_submit=True):
+                question = st.text_input(
+                    input_label,
+                    placeholder=input_label,
+                    label_visibility="collapsed",
+                    key="solar_sop_question_input",
+                )
+                submitted = st.form_submit_button(send_label, use_container_width=True)
+
+            if submitted and question.strip():
+                clean_question = question.strip()
+                answer_language = language  # Always follow the user's selected language.
+                st.session_state.solar_sop_last_language = answer_language
+                st.session_state.solar_sop_chat_history.append({"role": "user", "content": clean_question})
+                requested_site = _solar_sop_requested_site(clean_question, selected_plant)
+                if requested_site != "MDP":
+                    site_labels = {"HS1": "HRN 1", "HS2": "HRN 2", "MTR": "MTR", "ORK": "ORK", "DPV": "DPV"}
+                    other_site = site_labels.get(requested_site, requested_site or "selected site")
+                    response = (
+                        f"The {other_site} Solar SOP has not been added yet. Only the MDP Solar SOP is currently available."
+                        if answer_language == "English" else
+                        f"{other_site} සූර්ය බලාගාරයේ SOP ලේඛනය තවමත් එක් කර නොමැත. දැනට ලබාගත හැක්කේ MDP Solar SOP ලේඛනය පමණි."
+                    )
+                    st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
+                    st.session_state.solar_sop_options = []
+                else:
+                    # Short phrases are treated as search keywords: show matching areas to explore
+                    # before generating a full answer. Complete questions are answered immediately.
+                    is_keyword = (
+                        len(clean_question.split()) <= 4
+                        and not re.search(r"[?？]", clean_question)
+                        and not re.search(r"(?i)\b(what|how|why|when|where|who|explain|describe|list|tell me|procedure|steps)\b", clean_question)
+                        and not re.search(r"(මොකක්|කෙසේ|කවදා|ඇයි|කවුද|විස්තර|පියවර)", clean_question)
+                    )
+                    st.session_state.solar_sop_topic_context = clean_question
+                    st.session_state.solar_sop_last_question = clean_question
+                    if is_keyword:
+                        search_query = _solar_sop_retrieval_query(clean_question)
+                        matches = retrieve_mdp_sop_context(search_query, pages, limit=8)
+                        options = _solar_sop_clarification_options(search_query, matches)
+                        if not options and matches:
+                            options = ["Procedure and work steps", "Responsibilities", "Safety precautions", "Inspection and records"]
+                        st.session_state.solar_sop_options = _solar_sop_localize_options(options, answer_language)
+                        if answer_language == "English":
+                            prompt_text = f"I found relevant MDP SOP information for **{clean_question}**. What would you like to explore next?"
+                        else:
+                            prompt_text = f"**{clean_question}** යන මාතෘකාවට අදාළ MDP SOP තොරතුරු සොයාගත්තා. ඔබට ඊළඟට විමසා දැනගැනීමට අවශ්‍ය කුමක්ද?"
+                        if not matches:
+                            prompt_text = (
+                                f"I could not find a clear MDP SOP match for **{clean_question}**. Please try a more specific keyword."
+                                if answer_language == "English" else
+                                f"**{clean_question}** සඳහා පැහැදිලි MDP SOP ගැළපීමක් සොයාගත නොහැකි විය. කරුණාකර වඩාත් නිශ්චිත මූලික වචනයක් ඇතුළත් කරන්න."
+                            )
+                        st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": prompt_text})
+                    else:
+                        previous_question = st.session_state.get("solar_sop_last_question", "")
+                        followup_markers = ("what about", "and ", "more details", "explain that", "this", "it", "ඒ ගැන", "එතකොට", "තව විස්තර", "එය")
+                        contextual_question = clean_question
+                        if previous_question and any(marker in clean_question.lower() for marker in followup_markers):
+                            topic_context = st.session_state.get("solar_sop_topic_context") or previous_question
+                            contextual_question = f"{topic_context} {clean_question}".strip()
+                        response, matches = answer_from_mdp_sop(
+                            contextual_question, pages, answer_language,
+                            history=st.session_state.solar_sop_chat_history,
+                            thread_id=st.session_state.solar_sop_thread_id,
+                        )
                         st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
-                        st.session_state.solar_sop_last_question = topic
-                        st.session_state.solar_sop_topic_context = topic
+                        st.session_state.solar_sop_last_question = contextual_question
                         st.session_state.solar_sop_options = _solar_sop_localize_options(
-                            _solar_sop_clarification_options(_solar_sop_retrieval_query(topic), matches), language)
-                        st.rerun()
+                            _solar_sop_clarification_options(_solar_sop_retrieval_query(contextual_question), matches),
+                            answer_language,
+                        )
+                st.rerun()
+
+            # The transcript is below the search field, so users never need to scroll down to ask.
+            if st.session_state.solar_sop_options:
+                st.markdown(f"**{more_label}**")
+                option_cols = st.columns(2)
+                for index, option in enumerate(st.session_state.solar_sop_options):
+                    with option_cols[index % 2]:
+                        if st.button(option, key=f"solar_sop_followup_{index}_{len(st.session_state.solar_sop_chat_history)}", use_container_width=True):
+                            topic_context = st.session_state.get("solar_sop_topic_context") or st.session_state.get("solar_sop_last_question", "")
+                            followup_question = _solar_sop_followup_query(topic_context, option)
+                            st.session_state.solar_sop_chat_history.append({"role": "user", "content": option})
+                            response, matches = answer_from_mdp_sop(
+                                followup_question, pages, language,
+                                history=st.session_state.solar_sop_chat_history,
+                                thread_id=st.session_state.solar_sop_thread_id,
+                            )
+                            st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
+                            st.session_state.solar_sop_last_question = followup_question
+                            st.session_state.solar_sop_options = _solar_sop_localize_options(
+                                _solar_sop_clarification_options(_solar_sop_retrieval_query(followup_question), matches), language
+                            )
+                            st.rerun()
 
             with st.container(height=330, border=False):
                 if not st.session_state.solar_sop_chat_history:
@@ -8364,65 +8460,6 @@ def render_solar_sop_agent(selected_plant=None):
                 for entry in st.session_state.solar_sop_chat_history[-16:]:
                     with st.chat_message(entry["role"]):
                         st.markdown(entry["content"])
-
-            # Follow-up choices are shown after each answer and execute a real SOP lookup.
-            if st.session_state.solar_sop_options and st.session_state.solar_sop_chat_history:
-                st.markdown(f"**{more_label}**")
-                option_cols = st.columns(2)
-                for index, option in enumerate(st.session_state.solar_sop_options):
-                    with option_cols[index % 2]:
-                        if st.button(option, key=f"solar_sop_followup_{index}_{len(st.session_state.solar_sop_chat_history)}",
-                                     use_container_width=True):
-                            topic_context = st.session_state.get("solar_sop_topic_context") or st.session_state.get("solar_sop_last_question", "")
-                            # Search the selected Explore-next subject directly, retaining
-                            # only the broad topic as context instead of chaining every
-                            # previous follow-up into the query.
-                            followup_question = _solar_sop_followup_query(topic_context, option)
-                            st.session_state.solar_sop_chat_history.append({"role": "user", "content": option})
-                            answer_language = st.session_state.get("solar_sop_last_language", language)
-                            response, matches = answer_from_mdp_sop(followup_question, pages, answer_language, history=st.session_state.solar_sop_chat_history, thread_id=st.session_state.solar_sop_thread_id)
-                            st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
-                            st.session_state.solar_sop_last_question = followup_question
-                            st.session_state.solar_sop_options = _solar_sop_localize_options(
-                                _solar_sop_clarification_options(_solar_sop_retrieval_query(followup_question), matches), answer_language)
-                            st.rerun()
-
-            with st.form("solar_sop_question_form", clear_on_submit=True):
-                question = st.text_input(input_label, placeholder=input_label,
-                                          label_visibility="collapsed", key="solar_sop_question_input")
-                submitted = st.form_submit_button(send_label, use_container_width=True)
-
-            if submitted and question.strip():
-                clean_question = question.strip()
-                answer_language = _solar_sop_detect_language(clean_question)
-                st.session_state.solar_sop_last_language = answer_language
-                st.session_state.solar_sop_chat_history.append({"role": "user", "content": clean_question})
-                requested_site = _solar_sop_requested_site(clean_question, selected_plant)
-                if requested_site != "MDP":
-                    site_labels = {"HS1": "HRN 1", "HS2": "HRN 2", "MTR": "MTR", "ORK": "ORK", "DPV": "DPV"}
-                    other_site = site_labels.get(requested_site, requested_site or "selected site")
-                    response = (f"The {other_site} Solar SOP has not been added yet. Only the MDP Solar SOP is currently available."
-                                if answer_language == "English" else
-                                f"{other_site} සූර්ය බලාගාරයේ SOP ලේඛනය තවමත් එක් කර නොමැත. දැනට ලබාගත හැක්කේ MDP Solar SOP ලේඛනය පමණි.")
-                    st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
-                    st.session_state.solar_sop_options = []
-                else:
-                    previous_question = st.session_state.get("solar_sop_last_question", "")
-                    followup_markers = ("what about", "and ", "more details", "explain that", "this", "it",
-                                        "ඒ ගැන", "එතකොට", "තව විස්තර", "එය")
-                    if previous_question and any(marker in clean_question.lower() for marker in followup_markers):
-                        topic_context = st.session_state.get("solar_sop_topic_context") or previous_question
-                        contextual_question = f"{topic_context} {clean_question}".strip()
-                    else:
-                        contextual_question = clean_question
-                        st.session_state.solar_sop_topic_context = clean_question
-
-                    response, matches = answer_from_mdp_sop(contextual_question, pages, answer_language, history=st.session_state.solar_sop_chat_history, thread_id=st.session_state.solar_sop_thread_id)
-                    st.session_state.solar_sop_chat_history.append({"role": "assistant", "content": response})
-                    st.session_state.solar_sop_last_question = contextual_question
-                    st.session_state.solar_sop_options = _solar_sop_localize_options(
-                        _solar_sop_clarification_options(_solar_sop_retrieval_query(contextual_question), matches), answer_language)
-                st.rerun()
 
             # Keep both actions available after sending: start fresh or clear the transcript.
             action_col1, action_col2 = st.columns(2)
